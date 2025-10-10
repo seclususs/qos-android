@@ -4,6 +4,8 @@
       "name": "Android",
       "includePath": [
         "${workspaceFolder}/**",
+        "${workspaceFolder}/ndk-build/c-build/jni/include",
+        "${workspaceFolder}/ndk-build/c-build/jni/src",
         "C:/Users/HP/AppData/Local/Android/Sdk/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include",
         "C:/Users/HP/AppData/Local/Android/Sdk/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/aarch64-linux-android",
         "C:/Users/HP/AppData/Local/Android/Sdk/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/windows-x86_64/include"

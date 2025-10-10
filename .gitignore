@@ -30,6 +30,7 @@ google-services.json
 *.hprof
 
 build/
+obj/
 *.zip
 libs/
 enhancer/enhancer_binary
