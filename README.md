@@ -5,9 +5,7 @@
 [![Architecture](https://img.shields.io/badge/Arch-ARM64-blue.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Enhancer** is a **Magisk module** powered by a **C++ binary**, designed to improve **performance, efficiency, and overall user experience** on Android devices.
-
-> ⚠️ **Note**: This module is specifically tuned and tested for the **Redmi 10 2022 (codename: selene)**.
+> ⚠️ This module is specifically tuned and tested for the **Redmi 10 2022 (codename: selene)**.
 > While it may work on other ARM64 devices, best results are expected on **Selene**.
 
 ---
