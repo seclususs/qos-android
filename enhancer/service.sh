@@ -1,4 +1,4 @@
 #!/system/bin/sh
 
 MODDIR="${0%/*}"
-$MODDIR/enhancer_binary &
+$MODDIR/system/bin/enhancer_binary &

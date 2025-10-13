@@ -33,4 +33,4 @@ build/
 obj/
 *.zip
 libs/
-enhancer/enhancer_binary
+enhancer/system/

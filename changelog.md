@@ -2,23 +2,9 @@
 
 ## v1.0
 
-### Performance & Boosting
-- Tiered Boosting
-- BoostManager & Cleaner Callbacks
-- App Launch Boost
-- UI Interaction Booster
-- Adaptive Boost / Thermal Guard
-
-### Memory & Cache
-- Proactive Memory Management
-- Cache Cleaner Improvements
-
-### System & Stability
-- Thermal Guard
-- Kernel, Memory, I/O Optimizations
-- Signal Handling
-- Background Overhead Reduction
-- Build & Stability Improvements
-
-### Visuals
+- Added dynamic CPU governor tweak
+- Added adaptive memory manager
+- Added auto refresh rate switching
+- Automatically disables ADB and debugging mode
+- Applied kernel & LMK tweaks for better performance stability
 - Custom Gemini Boot Animation
