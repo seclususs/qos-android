@@ -1,5 +1,10 @@
 # Changelog 
 
+## v1.1
+- Rewrote entire codebase from C++ to C
+
+---
+
 ## v1.0
 
 - Added dynamic CPU governor tweak
