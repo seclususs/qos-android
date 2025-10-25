@@ -12,6 +12,9 @@ captures/
 *.apk
 output-metadata.json
 
+# VsCode
+.vscode/
+
 # IntelliJ
 *.iml
 .idea/
