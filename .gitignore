@@ -36,4 +36,4 @@ build/
 obj/
 *.zip
 libs/
-enhancer/system/
+magisk-module/system/
