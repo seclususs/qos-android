@@ -41,11 +41,15 @@ const char* const SYSTEM_PATHS_SWAPPINESS = "/proc/sys/vm/swappiness";
 /** @brief Path to the vfs_cache_pressure kernel parameter. */
 const char* const SYSTEM_PATHS_VFS_CACHE_PRESSURE =
     "/proc/sys/vm/vfs_cache_pressure";
+/** @brief Path to the page-cluster kernel parameter. */
+const char* const SYSTEM_PATHS_PAGE_CLUSTER = "/proc/sys/vm/page-cluster";
 
 /** @brief Swappiness value for the LOW memory pressure state. */
 const char* const MEMORY_TWEAK_VALUES_SWAPPINESS_LOW = "20";
 /** @brief VFS cache pressure value for the LOW memory pressure state. */
 const char* const MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_LOW = "50";
+/** @brief Page-cluster value for the LOW memory pressure state. */
+const char* const MEMORY_TWEAK_VALUES_PAGE_CLUSTER_LOW_MID = "1";
 /** @brief Swappiness value for the MID memory pressure state. */
 const char* const MEMORY_TWEAK_VALUES_SWAPPINESS_MID = "100";
 /** @brief VFS cache pressure value for the MID memory pressure state. */
@@ -54,15 +58,17 @@ const char* const MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_MID = "100";
 const char* const MEMORY_TWEAK_VALUES_SWAPPINESS_HIGH = "150";
 /** @brief VFS cache pressure value for the HIGH memory pressure state. */
 const char* const MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_HIGH = "200";
+/** @brief Page-cluster value for the HIGH memory pressure state. */
+const char* const MEMORY_TWEAK_VALUES_PAGE_CLUSTER_HIGH = "0";
 
-/** @brief Free RAM percentage threshold to transition to the HIGH state. */
-const int MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD = 20;
-/** @brief Free RAM percentage threshold to transition to the LOW state. */
-const int MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD = 45;
-/** @brief Free RAM percentage threshold to return to MID from LOW state. */
-const int MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_LOW_THRESHOLD = 40;
-/** @brief Free RAM percentage threshold to return to MID from HIGH state. */
-const int MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_HIGH_THRESHOLD = 25;
+/** @brief Available RAM threshold (in KB) to transition to the HIGH state. */
+const long MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD_KB = 1200000; /* 1.2 GB */
+/** @brief Available RAM threshold (in KB) to transition to the LOW state. */
+const long MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD_KB = 2700000; /* 2.7 GB */
+/** @brief Available RAM threshold (in KB) to return to MID from LOW state. */
+const long MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_LOW_THRESHOLD_KB = 2400000; /* 2.4 GB */
+/** @brief Available RAM threshold (in KB) to return to MID from HIGH state. */
+const long MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_HIGH_THRESHOLD_KB = 1500000; /* 1.5 GB */
 
 /**
  * @brief Applies new memory kernel tunables based on the new state.
@@ -75,13 +81,13 @@ static void adaptiveMemoryManager_applyMemoryTweaks(
 );
 
 /**
- * @brief Reads /proc/meminfo to calculate the free RAM percentage.
+ * @brief Reads /proc/meminfo to get available RAM in KB.
  *
- * Considers "MemAvailable" as the free memory.
+ * Reads the "MemAvailable" field from /proc/meminfo.
  *
- * @return The percentage of free RAM (0-100), or -1 on error.
+ * @return The available RAM (in KB), or -1 on error.
  */
-static int adaptiveMemoryManager_getFreeRamPercentage(void);
+static long adaptiveMemoryManager_getFreeRamKb(void);
 
 /**
  * @brief The main function for the memory monitor thread.
@@ -101,37 +107,37 @@ static void* adaptiveMemoryManager_monitor(void* arg) {
     struct timespec sleep_time = {5, 0}; /* 5 seconds */
 
     while (running && !g_shutdown_requested) {
-        int freeRamPercent = adaptiveMemoryManager_getFreeRamPercentage();
-        if (freeRamPercent >= 0) {
-            LOGD("MemoryManager: Free RAM percentage: %d%%", freeRamPercent);
+        long freeRamKb = adaptiveMemoryManager_getFreeRamKb();
+        if (freeRamKb >= 0) {
+            LOGD("MemoryManager: Available RAM: %ld KB", freeRamKb);
             enum MemoryState newState = this_ptr->currentState;
 
             switch (this_ptr->currentState) {
                 case MEM_UNKNOWN:
-                    if (freeRamPercent < MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD) {
+                    if (freeRamKb < MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD_KB) {
                         newState = MEM_HIGH;
-                    } else if (freeRamPercent > MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD) {
+                    } else if (freeRamKb > MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD_KB) {
                         newState = MEM_LOW;
                     } else {
                         newState = MEM_MID;
                     }
                     break;
                 case MEM_HIGH:
-                    if (freeRamPercent >=
-                        MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_HIGH_THRESHOLD) {
+                    if (freeRamKb >=
+                        MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_HIGH_THRESHOLD_KB) {
                         newState = MEM_MID;
                     }
                     break;
                 case MEM_MID:
-                    if (freeRamPercent < MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD) {
+                    if (freeRamKb < MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD_KB) {
                         newState = MEM_HIGH;
-                    } else if (freeRamPercent > MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD) {
+                    } else if (freeRamKb > MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD_KB) {
                         newState = MEM_LOW;
                     }
                     break;
                 case MEM_LOW:
-                    if (freeRamPercent <
-                        MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_LOW_THRESHOLD) {
+                    if (freeRamKb <
+                        MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_LOW_THRESHOLD_KB) {
                         newState = MEM_MID;
                     }
                     break;
@@ -149,7 +155,7 @@ static void* adaptiveMemoryManager_monitor(void* arg) {
     return NULL;
 }
 
-static int adaptiveMemoryManager_getFreeRamPercentage(void) {
+static long adaptiveMemoryManager_getFreeRamKb(void) {
     FILE* file = fopen(SYSTEM_PATHS_MEM_INFO, "r");
     if (!file) {
         LOGE("MemoryManager: Failed to open %s (errno: %d - %s)",
@@ -157,28 +163,23 @@ static int adaptiveMemoryManager_getFreeRamPercentage(void) {
         return -1;
     }
 
-    long memTotal = -1, memAvailable = -1;
+    long memAvailable = -1;
     char line[256];
 
     while (fgets(line, sizeof(line), file)) {
-        if (strncmp(line, "MemTotal:", 9) == 0) {
-            sscanf(line, "MemTotal: %ld kB", &memTotal);
-        } else if (strncmp(line, "MemAvailable:", 13) == 0) {
+        if (strncmp(line, "MemAvailable:", 13) == 0) {
             sscanf(line, "MemAvailable: %ld kB", &memAvailable);
-        }
-        if (memTotal != -1 && memAvailable != -1) {
             break;
         }
     }
 
     fclose(file);
 
-    if (memTotal > 0 && memAvailable >= 0) {
-        return (int)(((double)memAvailable / memTotal) * 100.0);
+    if (memAvailable >= 0) {
+        return memAvailable;
     }
 
-    LOGD("MemoryManager: Incomplete data - MemTotal: %ld, MemAvailable: %ld",
-         memTotal, memAvailable);
+    LOGD("MemoryManager: Failed to read MemAvailable");
     return -1;
 }
 
@@ -197,13 +198,17 @@ static void adaptiveMemoryManager_applyMemoryTweaks(
                                    MEMORY_TWEAK_VALUES_SWAPPINESS_LOW);
             systemUtils_applyTweak(SYSTEM_PATHS_VFS_CACHE_PRESSURE,
                                    MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_LOW);
+            systemUtils_applyTweak(SYSTEM_PATHS_PAGE_CLUSTER,
+                                   MEMORY_TWEAK_VALUES_PAGE_CLUSTER_LOW_MID);
             break;
         case MEM_MID:
             LOGI("MemoryManager: Moderate RAM usage. Profile: MID");
-            systemUtils_applyTweak(SYSTEM_PATHS_SWAPPINESS,
+            systemUtils_applyTGetKey(SYSTEM_PATHS_SWAPPINESS,
                                    MEMORY_TWEAK_VALUES_SWAPPINESS_MID);
             systemUtils_applyTweak(SYSTEM_PATHS_VFS_CACHE_PRESSURE,
                                    MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_MID);
+            systemUtils_applyTweak(SYSTEM_PATHS_PAGE_CLUSTER,
+                                   MEMORY_TWEAK_VALUES_PAGE_CLUSTER_LOW_MID);
             break;
         case MEM_HIGH:
             LOGI("MemoryManager: RAM nearly full. Profile: HIGH");
@@ -211,6 +216,8 @@ static void adaptiveMemoryManager_applyMemoryTweaks(
                                    MEMORY_TWEAK_VALUES_SWAPPINESS_HIGH);
             systemUtils_applyTweak(SYSTEM_PATHS_VFS_CACHE_PRESSURE,
                                    MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_HIGH);
+            systemUtils_applyTweak(SYSTEM_PATHS_PAGE_CLUSTER,
+                                   MEMORY_TWEAK_VALUES_PAGE_CLUSTER_HIGH);
             break;
         default:
             break;

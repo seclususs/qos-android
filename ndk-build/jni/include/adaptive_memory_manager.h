@@ -34,11 +34,15 @@ extern const char* const SYSTEM_PATHS_MEM_INFO;
 extern const char* const SYSTEM_PATHS_SWAPPINESS;
 /** @brief Path to the vfs_cache_pressure kernel parameter. */
 extern const char* const SYSTEM_PATHS_VFS_CACHE_PRESSURE;
+/** @brief Path to the page-cluster kernel parameter. */
+extern const char* const SYSTEM_PATHS_PAGE_CLUSTER;
 
 /** @brief Swappiness value for the LOW memory pressure state. */
 extern const char* const MEMORY_TWEAK_VALUES_SWAPPINESS_LOW;
 /** @brief VFS cache pressure value for the LOW memory pressure state. */
 extern const char* const MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_LOW;
+/** @brief Page-cluster value for the LOW memory pressure state. */
+extern const char* const MEMORY_TWEAK_VALUES_PAGE_CLUSTER_LOW_MID;
 /** @brief Swappiness value for the MID memory pressure state. */
 extern const char* const MEMORY_TWEAK_VALUES_SWAPPINESS_MID;
 /** @brief VFS cache pressure value for the MID memory pressure state. */
@@ -47,15 +51,17 @@ extern const char* const MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_MID;
 extern const char* const MEMORY_TWEAK_VALUES_SWAPPINESS_HIGH;
 /** @brief VFS cache pressure value for the HIGH memory pressure state. */
 extern const char* const MEMORY_TWEAK_VALUES_VFS_CACHE_PRESSURE_HIGH;
+/** @brief Page-cluster value for the HIGH memory pressure state. */
+extern const char* const MEMORY_TWEAK_VALUES_PAGE_CLUSTER_HIGH;
 
-/** @brief Free RAM percentage threshold to transition to the HIGH state. */
-extern const int MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD;
-/** @brief Free RAM percentage threshold to transition to the LOW state. */
-extern const int MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD;
-/** @brief Free RAM percentage threshold to return to MID from LOW state. */
-extern const int MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_LOW_THRESHOLD;
-/** @brief Free RAM percentage threshold to return to MID from HIGH state. */
-extern const int MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_HIGH_THRESHOLD;
+/** @brief Available RAM threshold (in KB) to transition to the HIGH state. */
+extern const long MEMORY_TWEAK_VALUES_GO_TO_HIGH_THRESHOLD_KB;
+/** @brief Available RAM threshold (in KB) to transition to the LOW state. */
+extern const long MEMORY_TWEAK_VALUES_GO_TO_LOW_THRESHOLD_KB;
+/** @brief Available RAM threshold (in KB) to return to MID from LOW state. */
+extern const long MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_LOW_THRESHOLD_KB;
+/** @brief Available RAM threshold (in KB) to return to MID from HIGH state. */
+extern const long MEMORY_TWEAK_VALUES_RETURN_TO_MID_FROM_HIGH_THRESHOLD_KB;
 
 /**
  * @enum MemoryState

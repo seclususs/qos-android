@@ -92,8 +92,6 @@ void systemTweaker_applyAll(void) {
     }
 
     /* VM Tweaks */
-    systemUtils_applyTweak(SYSTEM_PATHS_PAGE_CLUSTER,
-                           TWEAK_VALUES_PAGE_CLUSTER);
     systemUtils_setSystemProp("lmk.minfree_levels",
                               TWEAK_VALUES_LMK_MINFREE_LEVELS);
     systemUtils_setSystemProp("persist.sys.lmk.reportkills",
