@@ -1,0 +1,28 @@
+# Scripts
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# Source code
+*.cpp text
+*.h text
+*.rs text
+
+# Configuration
+*.json text
+*.prop text
+*.toml text
+
+# Text
+*.md text
+*.txt text
+
+# Magisk
+magisk-module/META-INF/com/google/android/update-binary -text
+magisk-module/META-INF/com/google/android/updater-script -text
+
+# Binary
+*.so binary
+*.dll binary
+*.dylib binary
+*.a binary
+*.lib binary
