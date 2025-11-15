@@ -1,39 +1,55 @@
-# Local configuration file (sdk path, etc)
+# Local configuration
 local.properties
 
-# Log/OS Files
+# Logs
 *.log
+*.hprof
 
-# Android Studio generated files and folders
+# Android Studio / Gradle
 captures/
 .externalNativeBuild/
 .cxx/
 *.aab
 *.apk
 output-metadata.json
+build/
+obj/
+libs/
+*.zip
+magisk-module/system/
 
-# VsCode
+# IDE
 .vscode/
-
-# IntelliJ
 *.iml
 .idea/
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
 
-# Keystore files
+# Keystore
 *.jks
 *.keystore
 
-# Google Services (e.g. APIs or Firebase)
+# Google Services
 google-services.json
 
-# Android Profiling
-*.hprof
+# Rust
+/target/
+Cargo.lock
+**/*.rs.bk
 
-build/
-obj/
-*.zip
-libs/
-magisk-module/system/
+# C / C++
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
