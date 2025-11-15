@@ -1,54 +1,71 @@
 @echo off
+setlocal
 
-if not defined ANDROID_NDK_HOME (
-    echo Error: The ANDROID_NDK_HOME environment variable is not set.
-    echo Please set the path to your Android NDK root directory.
-    echo Example: setx ANDROID_NDK_HOME "C:\path\to\android-ndk"
-    exit /b 1
-)
+SET "DEFAULT_ABI=arm64-v8a"
+SET "ANDROID_API=23"
+SET "BUILD_TYPE=Release"
 
-set "NDK_BUILD=%ANDROID_NDK_HOME%\ndk-build.cmd"
-
-if not exist "%NDK_BUILD%" (
-    echo Error: ndk-build.cmd not found at "%NDK_BUILD%"
-    exit /b 1
-)
-
-set "PROJECT_DIR=%~dp0"
-if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
-
-set "OUTPUT_DIR=%PROJECT_DIR%\build"
-
-set "TARGET_ABIS=arm64-v8a armeabi-v7a x86_64 x86"
-
-echo Cleaning previous builds...
-if exist "%OUTPUT_DIR%" rd /s /q "%OUTPUT_DIR%"
-if exist "%PROJECT_DIR%\libs" rd /s /q "%PROJECT_DIR%\libs"
-if exist "%PROJECT_DIR%\obj" rd /s /q "%PROJECT_DIR%\obj"
-
-for %%a in (%TARGET_ABIS%) do (
-    echo.
-    echo =================================================
-    echo      Starting compilation for architecture: %%a
-    echo =================================================
-    
-    call "%NDK_BUILD%" ^
-    NDK_PROJECT_PATH="%PROJECT_DIR%" ^
-    APP_BUILD_SCRIPT="%PROJECT_DIR%\jni\Android.mk" ^
-    APP_ABI=%%a ^
-    NDK_OUT="%OUTPUT_DIR%"
-    
-    if errorlevel 1 (
-        echo Error: Compilation for %%a failed.
-        exit /b 1
+SET "NDK_PATH=%ANDROID_NDK_HOME%"
+IF NOT DEFINED NDK_PATH (
+    SET "DEFAULT_NDK_SEARCH_PATH=%LOCALAPPDATA%\Android\Sdk\ndk"
+    IF EXIST "%DEFAULT_NDK_SEARCH_PATH%" (
+        echo ANDROID_NDK_HOME not set, searching default path...
+        FOR /f "delims=" %%i IN ('dir /b /ad /o-n "%DEFAULT_NDK_SEARCH_PATH%"') DO (
+            SET "NDK_PATH=%DEFAULT_NDK_SEARCH_PATH%\%%i"
+        )
     )
 )
+IF NOT DEFINED NDK_PATH (
+    echo Error: ANDROID_NDK_HOME is not set and default NDK path was not found.
+    echo Please set ANDROID_NDK_HOME to your NDK directory.
+    echo Example: set ANDROID_NDK_HOME=C:\Users\HP\AppData\Local\Android\Sdk\ndk\android-ndk-r28c
+    exit /b 1
+)
+echo Using NDK at: %NDK_PATH%
+SET "TOOLCHAIN_FILE=%NDK_PATH%\build\cmake\android.toolchain.cmake"
+IF NOT EXIST "%TOOLCHAIN_FILE%" (
+    echo Error: CMake toolchain file not found at %TOOLCHAIN_FILE%
+    exit /b 1
+)
 
-echo.
-echo =================================================
-echo               Compilation Complete!
-echo =================================================
-echo Binary files can be found at: %OUTPUT_DIR%\libs\
-echo.
+SET "TARGET_ABI=%DEFAULT_ABI%"
+IF "%1"=="clean" (
+    echo Cleaning build directory...
+    IF EXIST build (
+        rmdir /s /q build
+    )
+    echo Done.
+    exit /b 0
+)
+IF NOT "%1"=="" (
+    SET "TARGET_ABI=%1"
+)
 
-tree /F "%OUTPUT_DIR%\libs"
+SET "RUST_TARGET="
+IF "%TARGET_ABI%"=="arm64-v8a" SET "RUST_TARGET=aarch64-linux-android"
+IF "%TARGET_ABI%"=="armeabi-v7a" SET "RUST_TARGET=armv7-linux-androideabi"
+IF "%TARGET_ABI%"=="x86_64" SET "RUST_TARGET=x86_64-linux-android"
+IF "%TARGET_ABI%"=="x86" SET "RUST_TARGET=i686-linux-android"
+IF NOT DEFINED RUST_TARGET (
+    echo Error: ABI '%TARGET_ABI%' is not supported.
+    exit /b 1
+)
+
+echo --- Ensuring Rust target '%RUST_TARGET%' is installed ---
+rustup target add %RUST_TARGET%
+
+SET "BUILD_DIR=build\%TARGET_ABI%"
+echo --- Starting build for %TARGET_ABI% in %BUILD_DIR% ---
+mkdir "%BUILD_DIR%"
+cd "%BUILD_DIR%"
+cmake -DANDROID_ABI=%TARGET_ABI% ^
+      -DANDROID_PLATFORM=android-%ANDROID_API% ^
+      -DCMAKE_TOOLCHAIN_FILE="%TOOLCHAIN_FILE%" ^
+      -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
+      -G "Ninja" ^
+      ..\..
+ninja
+cd ..\..
+echo.
+echo --- Build Complete! ---
+echo Your binary is at: %BUILD_DIR%\adaptive_daemon
