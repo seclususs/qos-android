@@ -1,5 +1,11 @@
 # Changelog 
 
+## v1.3
+- Smart I/O Logic
+- Optimize Memory Logic
+
+---
+
 ## v1.2
 - Hybrid Architecture
 
