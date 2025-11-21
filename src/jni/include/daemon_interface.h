@@ -79,18 +79,11 @@ void cpp_log_error(const char* message);
 void cpp_close_fd(int fd);
 
 /**
- * @brief Gets the percentage of free RAM.
+ * @brief Gets the memory pressure stall information.
  *
- * @return The free RAM percentage (0-100), or -1 on failure.
+ * @return The avg10 PSI value, or -1.0 on failure.
  */
-int cpp_get_free_ram_percentage(void);
-
-/**
- * @brief Creates and binds a netlink socket.
- *
- * @return The file descriptor for the netlink socket, or -1 on failure.
- */
-int cpp_create_netlink_socket(void);
+double cpp_get_memory_pressure(void);
 
 /**
  * @brief Polls a file descriptor for readable data.
@@ -100,16 +93,6 @@ int cpp_create_netlink_socket(void);
  * @return 1 if data is available, 0 on timeout, -1 on error.
  */
 int cpp_poll_fd(int fd, int timeout_ms);
-
-/**
- * @brief Reads a netlink event from a socket.
- *
- * @param fd The netlink socket file descriptor.
- * @param buffer A pointer to the destination buffer.
- * @param buffer_size The size of the destination buffer.
- * @return The number of bytes read, 0 if non-blocking read or interrupt, or -1 on error.
- */
-int cpp_read_netlink_event(int fd, char* buffer, int buffer_size);
 
 /**
  * @brief Opens a touch input device.

@@ -5,11 +5,10 @@
 
 #include <string>
 #include <fstream>
-#include <sstream>
-#include <cstdio>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
 #include <sys/poll.h>
-#include <sys/socket.h>
-#include <linux/netlink.h>
 #include <linux/input.h>
 
 extern "C" bool cpp_apply_tweak(const char* path, const char* value) {
@@ -27,29 +26,29 @@ extern "C" bool cpp_set_android_setting(const char* property, const char* value)
     return SystemUtils::setAndroidSetting(property, value);
 }
 
-extern "C" int cpp_get_free_ram_percentage(void) {
-    const char* kMemInfo = "/proc/meminfo";
-    std::ifstream file(kMemInfo);
+extern "C" double cpp_get_memory_pressure(void) {
+    const char* kPsiMemory = "/proc/pressure/memory";
+    std::ifstream file(kPsiMemory);
     if (!file) {
-        LOGE("cpp_get_free_ram_percentage: Failed to open %s", kMemInfo);
-        return -1;
+        LOGE("cpp_get_memory_pressure: Failed to open %s", kPsiMemory);
+        return -1.0;
     }
-    long memTotal = -1, memAvailable = -1;
     std::string line;
-    line.reserve(128);
     while (std::getline(file, line)) {
-        if (line.rfind("MemTotal:", 0) == 0) {
-            std::sscanf(line.c_str(), "MemTotal: %ld kB", &memTotal);
-        } else if (line.rfind("MemAvailable:", 0) == 0) {
-            std::sscanf(line.c_str(), "MemAvailable: %ld kB", &memAvailable);
+        if (line.rfind("some", 0) == 0) {
+            double avg10 = 0.0;
+            size_t pos = line.find("avg10=");
+            if (pos != std::string::npos) {
+                try {
+                    avg10 = std::stod(line.substr(pos + 6));
+                    return avg10;
+                } catch (...) {
+                    LOGE("cpp_get_memory_pressure: Failed to parse avg10");
+                }
+            }
         }
-        if (memTotal != -1 && memAvailable != -1) break;
     }
-    if (memTotal > 0 && memAvailable >= 0) {
-        return static_cast<int>((static_cast<double>(memAvailable) / memTotal) * 100.0);
-    }
-    LOGD("cpp_get_free_ram_percentage: Incomplete data");
-    return -1;
+    return -1.0;
 }
 
 extern "C" void cpp_close_fd(int fd) {
@@ -95,38 +94,6 @@ extern "C" int cpp_poll_fd(int fd, int timeout_ms) {
         LOGE("cpp_poll_fd: poll() error (errno: %d - %s)", errno, strerror(errno));
         return -1;
     }
-}
-
-extern "C" int cpp_create_netlink_socket(void) {
-    struct sockaddr_nl sa;
-    std::memset(&sa, 0, sizeof(sa));
-    sa.nl_family = AF_NETLINK;
-    sa.nl_groups = 1;
-    sa.nl_pid = getpid();
-    int fd = socket(AF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC, NETLINK_KOBJECT_UEVENT);
-    if (fd < 0) {
-        LOGE("cpp_create_netlink_socket: socket() failed (errno: %d - %s)", errno, strerror(errno));
-        return -1;
-    }
-    if (bind(fd, (struct sockaddr*)&sa, sizeof(sa)) < 0) {
-        LOGE("cpp_create_netlink_socket: bind() failed (errno: %d - %s)", errno, strerror(errno));
-        close(fd);
-        return -1;
-    }
-    LOGI("Netlink socket created successfully.");
-    return fd;
-}
-
-extern "C" int cpp_read_netlink_event(int fd, char* buffer, int buffer_size) {
-    if (fd < 0 || !buffer || buffer_size <= 0) return -1;
-    ssize_t len = recv(fd, buffer, buffer_size - 1, 0);
-    if (len < 0) {
-        if (errno == EINTR) return 0;
-        LOGE("cpp_read_netlink_event: recv() failed (errno: %d - %s)", errno, strerror(errno));
-        return -1;
-    }
-    buffer[len] = '\0';
-    return static_cast<int>(len);
 }
 
 extern "C" void cpp_log_info(const char* message) {

@@ -6,120 +6,89 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-const K_SWAPPINESS_LOW: &str = "20";
-const K_VFS_CACHE_PRESSURE_LOW: &str = "50";
-const K_SWAPPINESS_MID: &str = "100";
-const K_VFS_CACHE_PRESSURE_MID: &str = "100";
-const K_SWAPPINESS_HIGH: &str = "150";
-const K_VFS_CACHE_PRESSURE_HIGH: &str = "200";
-const K_GO_TO_HIGH_THRESHOLD: i32 = 20;
-const K_GO_TO_LOW_THRESHOLD: i32 = 45;
-const K_RETURN_TO_MID_FROM_LOW_THRESHOLD: i32 = 40;
-const K_RETURN_TO_MID_FROM_HIGH_THRESHOLD: i32 = 25;
+const K_SWAPPINESS_GREEN: &str = "30";
+const K_CACHE_PRESSURE_GREEN: &str = "50";
+const K_SWAPPINESS_YELLOW: &str = "100";
+const K_CACHE_PRESSURE_YELLOW: &str = "120";
+const K_SWAPPINESS_RED: &str = "190";
+const K_CACHE_PRESSURE_RED: &str = "200";
+
+const K_PSI_UP_TO_YELLOW: f64 = 6.0;
+const K_PSI_UP_TO_RED: f64 = 18.0;
+const K_PSI_DOWN_TO_YELLOW: f64 = 12.0;
+const K_PSI_DOWN_TO_GREEN: f64 = 3.0;
+
 const K_SWAPPINESS_PATH: &str = "/proc/sys/vm/swappiness";
 const K_VFS_CACHE_PRESSURE_PATH: &str = "/proc/sys/vm/vfs_cache_pressure";
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-enum MemoryState {
-    Low,
-    Mid,
-    High,
+enum PressureZone {
+    Green,
+    Yellow,
+    Red,
     Unknown,
 }
 
-fn apply_memory_tweaks(new_state: MemoryState, current_state: &mut MemoryState) {
-    if new_state == *current_state {
+fn apply_pressure_response(new_zone: PressureZone, current_zone: &mut PressureZone) {
+    if new_zone == *current_zone {
         return;
     }
-    match new_state {
-        MemoryState::Low => {
-            ffi::log_info("MemoryManager: RAM ample. Profile: LOW");
-            ffi::apply_tweak(K_SWAPPINESS_PATH, K_SWAPPINESS_LOW);
-            ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, K_VFS_CACHE_PRESSURE_LOW);
+    match new_zone {
+        PressureZone::Green => {
+            ffi::log_info("MemoryManager: (Power Save). Zone: GREEN");
+            ffi::apply_tweak(K_SWAPPINESS_PATH, K_SWAPPINESS_GREEN);
+            ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, K_CACHE_PRESSURE_GREEN);
         }
-        MemoryState::Mid => {
-            ffi::log_info("MemoryManager: Moderate RAM usage. Profile: MID");
-            ffi::apply_tweak(K_SWAPPINESS_PATH, K_SWAPPINESS_MID);
-            ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, K_VFS_CACHE_PRESSURE_MID);
+        PressureZone::Yellow => {
+            ffi::log_info("MemoryManager: (Balanced). Zone: YELLOW");
+            ffi::apply_tweak(K_SWAPPINESS_PATH, K_SWAPPINESS_YELLOW);
+            ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, K_CACHE_PRESSURE_YELLOW);
         }
-        MemoryState::High => {
-            ffi::log_info("MemoryManager: RAM nearly full. Profile: HIGH");
-            ffi::apply_tweak(K_SWAPPINESS_PATH, K_SWAPPINESS_HIGH);
-            ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, K_VFS_CACHE_PRESSURE_HIGH);
+        PressureZone::Red => {
+            ffi::log_info("MemoryManager: (Performance). Zone: RED");
+            ffi::apply_tweak(K_SWAPPINESS_PATH, K_SWAPPINESS_RED);
+            ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, K_CACHE_PRESSURE_RED);
         }
-        MemoryState::Unknown => {}
+        PressureZone::Unknown => {}
     }
-    *current_state = new_state;
-}
-
-fn check_ram_percentage(current_state: &mut MemoryState) {
-    let free_ram_percent = ffi::get_free_ram_percentage();
-    if free_ram_percent < 0 {
-        return;
-    }
-    ffi::log_debug(&format!("MemoryManager: Free RAM percentage: {}%", free_ram_percent));
-    let new_state = match *current_state {
-        MemoryState::Unknown => {
-            if free_ram_percent < K_GO_TO_HIGH_THRESHOLD { MemoryState::High }
-            else if free_ram_percent > K_GO_TO_LOW_THRESHOLD { MemoryState::Low }
-            else { MemoryState::Mid }
-        }
-        MemoryState::High => {
-            if free_ram_percent >= K_RETURN_TO_MID_FROM_HIGH_THRESHOLD { MemoryState::Mid }
-            else { *current_state }
-        }
-        MemoryState::Mid => {
-            if free_ram_percent < K_GO_TO_HIGH_THRESHOLD { MemoryState::High }
-            else if free_ram_percent > K_GO_TO_LOW_THRESHOLD { MemoryState::Low }
-            else { *current_state }
-        }
-        MemoryState::Low => {
-            if free_ram_percent < K_RETURN_TO_MID_FROM_LOW_THRESHOLD { MemoryState::Mid }
-            else { *current_state }
-        }
-    };
-    apply_memory_tweaks(new_state, current_state);
+    *current_zone = new_zone;
 }
 
 pub fn monitor_memory(shutdown_requested: &AtomicBool) {
-    ffi::log_info("MemoryManager: Starting event-driven monitoring...");
-    let mut current_state = MemoryState::Unknown;
-    check_ram_percentage(&mut current_state);
-    let netlink_fd = ffi::create_netlink_socket();
-    if netlink_fd < 0 {
-        ffi::log_error("MemoryManager: Failed to create netlink socket. Falling back to 15s polling.");
-        while !shutdown_requested.load(Ordering::Acquire) {
-            check_ram_percentage(&mut current_state);
-            thread::sleep(Duration::from_secs(15));
-        }
-        return;
-    }
-    let mut event_buffer = [0u8; 2048];
+    ffi::log_info("MemoryManager: Starting monitoring...");
+    let mut current_zone = PressureZone::Unknown;
     while !shutdown_requested.load(Ordering::Acquire) {
-        let poll_result = ffi::poll_fd(netlink_fd, 5000);
-        if poll_result > 0 {
-            if let Some(event_str) = ffi::read_netlink_event(netlink_fd, &mut event_buffer) {
-                if event_str.contains("SUBSYSTEM=lowmemorykiller") {
-                    ffi::log_info("MemoryManager: LMK event received! Applying HIGH profile.");
-                    apply_memory_tweaks(MemoryState::High, &mut current_state);
-                    thread::sleep(Duration::from_secs(10));
-                    check_ram_percentage(&mut current_state);
-                }
-            }
-        } else if poll_result == 0 {
-            if current_state == MemoryState::High {
-                ffi::log_debug("MemoryManager: Re-checking recovery from HIGH state...");
-                check_ram_percentage(&mut current_state);
-            } else if current_state == MemoryState::Unknown {
-                check_ram_percentage(&mut current_state);
-            }
-        } else {
-            ffi::log_error("MemoryManager: Netlink poll error. Recreating socket.");
-            ffi::close_fd(netlink_fd);
+        let psi_value = ffi::get_memory_pressure();
+        if psi_value < 0.0 {
+            ffi::log_error("MemoryManager: Failed to read. Retrying in 5s...");
             thread::sleep(Duration::from_secs(5));
-            let _ = ffi::create_netlink_socket();
+            continue;
         }
+        ffi::log_debug(&format!("MemoryManager: {:.2}% | Zone: {:?}", psi_value, current_zone));
+        let new_zone = match current_zone {
+            PressureZone::Green => {
+                if psi_value > K_PSI_UP_TO_RED { PressureZone::Red }
+                else if psi_value > K_PSI_UP_TO_YELLOW { PressureZone::Yellow }
+                else { PressureZone::Green }
+            },
+            PressureZone::Yellow => {
+                if psi_value > K_PSI_UP_TO_RED { PressureZone::Red }
+                else if psi_value < K_PSI_DOWN_TO_GREEN { PressureZone::Green }
+                else { PressureZone::Yellow }
+            },
+            PressureZone::Red => {
+                if psi_value < K_PSI_DOWN_TO_GREEN { PressureZone::Green }
+                else if psi_value < K_PSI_DOWN_TO_YELLOW { PressureZone::Yellow }
+                else { PressureZone::Red }
+            },
+            PressureZone::Unknown => {
+                if psi_value >= K_PSI_UP_TO_RED { PressureZone::Red }
+                else if psi_value >= K_PSI_UP_TO_YELLOW { PressureZone::Yellow }
+                else { PressureZone::Green }
+            }
+        };
+        apply_pressure_response(new_zone, &mut current_zone);
+        thread::sleep(Duration::from_secs(1));
     }
     ffi::log_info("MemoryManager: Monitoring stopped.");
-    ffi::close_fd(netlink_fd);
 }
