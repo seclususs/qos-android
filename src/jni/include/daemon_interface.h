@@ -1,5 +1,10 @@
 /**
- * @brief C-style function interface for communication between Rust and C++ components.
+ * @brief Defines the Foreign Function Interface (FFI) boundary between C++ and Rust.
+ *
+ * This header exposes the C-compatible API used for bidirectional communication.
+ * It allows the C++ layer to control the Rust daemon lifecycle and
+ * permits Rust logic to invoke system-level C++ utilities.
+ *
  * @author Seclususs
  * https://github.com/seclususs
  */
@@ -15,107 +20,134 @@ extern "C" {
 #endif
 
 /**
- * @brief Starts the background Rust services.
+ * @brief Initializes and spawns the background Rust service threads.
+ *
+ * This function triggers the creation of monitoring threads.
+ *
+ * @note This function returns immediately after spawning threads.
+ * @warning Should be called only once during the application startup phase.
  */
 void rust_start_services(void);
 
 /**
- * @brief Stops the background Rust services.
+ * @brief Signals the Rust services to terminate and joins all threads.
+ *
+ * This function sets the internal shutdown flag and blocks the calling thread
+ * until all Rust background threads have exited gracefully.
+ *
+ * @post All monitoring threads are destroyed and resources released.
  */
 void rust_stop_services(void);
 
 /**
- * @brief Applies a system tweak by writing a value to a file path.
+ * @brief Writes a string value to a specified file path.
  *
- * @param path The file path to write to.
- * @param value The string value to write.
- * @return true if the write was successful, false otherwise.
+ * Used primarily for writing to sysfs or procfs nodes (e.g., generic kernel tunables).
+ *
+ * @param path Absolute path to the target file.
+ * @param value Null-terminated string value to write.
+ * @return true if the write operation completed successfully; false on failure.
  */
 bool cpp_apply_tweak(const char* path, const char* value);
 
 /**
  * @brief Sets an Android system property.
  *
- * @param key The property key.
- * @param value The value to set for the property.
+ * Wraps the native property setting mechanism (equivalent to `setprop`).
+ *
+ * @param key Property key (e.g., "persist.sys.my_prop").
+ * @param value Property value.
  */
 void cpp_set_system_prop(const char* key, const char* value);
 
 /**
- * @brief Sets an Android system setting.
+ * @brief Modifies an entry in the Android Settings database.
  *
- * @param property The setting property name.
- * @param value The value to set for the setting.
- * @return true if the setting was set successfully, false otherwise.
+ * Executes the system `settings` command to update global/system settings.
+ *
+ * @param property The specific setting key to update.
+ * @param value The new value for the setting.
+ * @return true if the settings command returned a success exit code; false otherwise.
  */
 bool cpp_set_android_setting(const char* property, const char* value);
 
 /**
- * @brief Logs an informational message.
+ * @brief Logs an informational message to the Android system log.
  *
- * @param message The message string to log.
+ * @param message Null-terminated string to log.
  */
 void cpp_log_info(const char* message);
 
 /**
- * @brief Logs a debug message.
+ * @brief Logs a debug message to the Android system log.
  *
- * @param message The message string to log.
+ * @note These logs may be stripped in release builds depending on compilation flags.
+ * @param message Null-terminated string to log.
  */
 void cpp_log_debug(const char* message);
 
 /**
- * @brief Logs an error message.
+ * @brief Logs an error message to the Android system log.
  *
- * @param message The message string to log.
+ * @param message Null-terminated string to log.
  */
 void cpp_log_error(const char* message);
 
 /**
- * @brief Closes a file descriptor.
+ * @brief Closes a raw file descriptor.
  *
- * @param fd The file descriptor to close.
+ * @param fd The file descriptor to close. If negative, the call is ignored.
  */
 void cpp_close_fd(int fd);
 
 /**
- * @brief Gets the memory pressure stall information.
+ * @brief Retrieves the current Memory Pressure Stall Information (PSI).
  *
- * @return The avg10 PSI value, or -1.0 on failure.
+ * Reads the "some" pressure average over the last 10 seconds (avg10).
+ *
+ * @return The pressure value (0.0 to 100.0), or -1.0 if retrieval fails.
  */
 double cpp_get_memory_pressure(void);
 
 /**
- * @brief Gets the IO pressure stall information.
+ * @brief Retrieves the current I/O Pressure Stall Information (PSI).
  *
- * @return The avg10 PSI value, or -1.0 on failure.
+ * Reads the "some" pressure average over the last 10 seconds (avg10).
+ *
+ * @return The pressure value (0.0 to 100.0), or -1.0 if retrieval fails.
  */
 double cpp_get_io_pressure(void);
 
 /**
- * @brief Polls a file descriptor for readable data.
+ * @brief Checks a file descriptor for data availability.
  *
  * @param fd The file descriptor to poll.
- * @param timeout_ms The maximum time to wait in milliseconds.
- * @return 1 if data is available, 0 on timeout, -1 on error.
+ * @param timeout_ms Maximum time to wait in milliseconds.
+ * @return
+ * -  1: Data is available to read.
+ * -  0: Timeout occurred.
+ * - -1: Error occurred during polling.
  */
 int cpp_poll_fd(int fd, int timeout_ms);
 
 /**
- * @brief Opens a touch input device.
+ * @brief Opens a touch input device for event reading.
  *
- * @param path The path to the input event device.
- * @return The file descriptor for the device, or -1 on failure.
+ * Opens the device in non-blocking mode.
+ *
+ * @param path Path to the input device (e.g., "/dev/input/eventX").
+ * @return A valid file descriptor on success, or -1 on failure.
  */
 int cpp_open_touch_device(const char* path);
 
 /**
- * @brief Drains all pending touch events from a file descriptor.
+ * @brief Consumes all pending events from the file descriptor.
  *
- * @param fd The file descriptor of the touch device.
+ * Intended to drain the event buffer to prevent stale data reads.
+ *
+ * @param fd Valid file descriptor for the input device.
  */
 void cpp_read_touch_events(int fd);
-
 
 #ifdef __cplusplus
 }

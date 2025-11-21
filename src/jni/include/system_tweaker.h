@@ -1,5 +1,6 @@
 /**
- * @brief Applies static system-wide tweaks at daemon startup.
+ * @brief Component responsible for applying static system configurations.
+ *
  * @author Seclususs
  * https://github.com/seclususs
  */
@@ -8,11 +9,17 @@
 #define SYSTEM_TWEAKER_H
 
 /**
- * @brief Namespace containing system tweak-related functions.
+ * @namespace SystemTweaker
+ * @brief Container for system initialization logic.
  */
 namespace SystemTweaker {
     /**
-     * @brief Applies all predefined static system tweaks.
+     * @brief Applies the set of predefined system tweaks.
+     *
+     * Iterates through configured values
+     * and applies them to the system.
+     *
+     * @note This is typically invoked once at daemon startup.
      */
     void applyAll();
 }

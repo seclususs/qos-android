@@ -1,5 +1,6 @@
 /**
- * @brief A C++ RAII (Resource Acquisition Is Initialization) wrapper for file descriptors.
+ * @brief RAII wrapper for managing POSIX file descriptor ownership.
+ * 
  * @author Seclususs
  * https://github.com/seclususs
  */
@@ -14,22 +15,26 @@
 #include <cstring>
 
 /**
- * @brief A RAII wrapper for managing file descriptors.
+ * @class FdWrapper
+ * @brief Encapsulates a file descriptor with strict ownership rules.
  */
 class FdWrapper {
+    
 public:
     /**
-     * @brief Constructs an FdWrapper, optionally taking ownership of an existing fd.
+     * @brief Wraps an existing raw file descriptor.
      *
-     * @param fd The file descriptor to manage. Defaults to -1 (invalid).
+     * @param fd The raw descriptor to manage. Defaults to -1 (invalid).
+     * The FdWrapper takes ownership of this fd.
      */
     explicit FdWrapper(int fd = -1) : fd_(fd) {}
 
     /**
-     * @brief Constructs an FdWrapper by opening a file.
+     * @brief Opens a file and manages the resulting descriptor.
      *
-     * @param path The file path to open.
-     * @param flags The flags to use when opening (e.g., O_RDONLY).
+     * @param path Filesystem path to open.
+     * @param flags Open flags.
+     * @post Check isValid() to verify if the file was opened successfully.
      */
     FdWrapper(const char* path, int flags) : fd_(open(path, flags)) {
         if (!isValid()) {
@@ -38,7 +43,9 @@ public:
     }
 
     /**
-     * @brief Destructor. Closes the managed file descriptor if it is valid.
+     * @brief Destructor.
+     *
+     * Automatically closes the managed file descriptor if it is valid.
      */
     ~FdWrapper() {
         if (isValid()) {
@@ -47,27 +54,33 @@ public:
     }
 
     /**
-     * @brief Deleted copy constructor.
+     * @brief Deleted Copy Constructor.
+     *
+     * Prevent copying to ensure unique ownership of the descriptor.
      */
     FdWrapper(const FdWrapper&) = delete;
 
     /**
-     * @brief Deleted copy assignment operator.
+     * @brief Deleted Copy Assignment.
+     *
+     * Prevent copying to ensure unique ownership of the descriptor.
      */
     FdWrapper& operator=(const FdWrapper&) = delete;
 
     /**
-     * @brief Move constructor.
+     * @brief Move Constructor.
      *
-     * @param other The FdWrapper to move from, which will be invalidated.
+     * Transfers ownership from another FdWrapper.
+     * @param other The source object. It will be invalidated (fd set to -1).
      */
     FdWrapper(FdWrapper&& other) noexcept : fd_(other.fd_) { other.fd_ = -1; }
 
     /**
-     * @brief Move assignment operator.
+     * @brief Move Assignment.
      *
-     * @param other The FdWrapper to move from, which will be invalidated.
-     * @return A reference to this object.
+     * Closes the current descriptor (if valid) and takes ownership from the source.
+     * @param other The source object. It will be invalidated.
+     * @return Reference to this object.
      */
     FdWrapper& operator=(FdWrapper&& other) noexcept {
         if (this != &other) {
@@ -79,25 +92,26 @@ public:
     }
 
     /**
-     * @brief Gets the raw file descriptor value.
+     * @brief Returns the raw file descriptor without transferring ownership.
      *
-     * @return The managed file descriptor.
+     * @warning Do not manually close the returned fd.
+     * @return The raw file descriptor.
      */
     int get() const { return fd_; }
 
     /**
-     * @brief Checks if the managed file descriptor is valid.
+     * @brief Checks if the managed descriptor is valid.
      *
-     * @return true if fd_ is >= 0, false otherwise.
+     * @return true if fd >= 0; false otherwise.
      */
     bool isValid() const { return fd_ >= 0; }
 
     /**
      * @brief Writes data to the file descriptor.
      *
-     * @param buf Pointer to the data buffer.
+     * @param buf Buffer containing data to write.
      * @param count Number of bytes to write.
-     * @return The number of bytes written, or -1 on error.
+     * @return Number of bytes written, or -1 on error.
      */
     ssize_t write(const void* buf, size_t count) const {
         return ::write(fd_, buf, count);
@@ -106,17 +120,16 @@ public:
     /**
      * @brief Reads data from the file descriptor.
      *
-     * @param buf Pointer to the destination buffer.
-     * @param count Number of bytes to read.
-     * @return The number of bytes read, 0 on EOF, or -1 on error.
+     * @param buf Buffer to store read data.
+     * @param count Maximum bytes to read.
+     * @return Number of bytes read, 0 on EOF, or -1 on error.
      */
     ssize_t read(void* buf, size_t count) const {
         return ::read(fd_, buf, count);
     }
+
 private:
-    /**
-     * @brief The managed file descriptor.
-     */
+    /** @brief The underlying raw file descriptor. */
     int fd_;
 };
 

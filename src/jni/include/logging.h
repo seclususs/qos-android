@@ -1,5 +1,6 @@
 /**
- * @brief Macro-based logging definitions for Android.
+ * @brief Android Logcat integration macros.
+ *
  * @author Seclususs
  * https://github.com/seclususs
  */
@@ -10,44 +11,34 @@
 #include <android/log.h>
 
 /**
- * @brief The log tag to use for all Android logcat messages.
+ * @brief The tag used to identify logs in `adb logcat`.
  */
 #define LOG_TAG "AdaptiveDaemon"
 
 /**
- * @brief Compile-time flag to disable INFO and ERROR logs.
+ * @brief Feature flag to suppress INFO and ERROR logs.
+ *
+ * Define this to compile out standard logging calls.
  */
 #define DISABLE_INFO_ERROR_LOGS
 
 #ifdef DISABLE_INFO_ERROR_LOGS
-    /**
-     * @brief Logs an informational message. (Disabled)
-     */
+    /** @brief INFO log (Disabled). */
     #define LOGI(...) do {} while (0)
-    /**
-     * @brief Logs an error message. (Disabled)
-     */
+    /** @brief ERROR log (Disabled). */
     #define LOGE(...) do {} while (0)
 #else
-    /**
-     * @brief Logs an informational message. (Enabled)
-     */
+    /** @brief INFO log (Enabled). Writes to ANDROID_LOG_INFO. */
     #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-    /**
-     * @brief Logs an error message. (Enabled)
-     */
+    /** @brief ERROR log (Enabled). Writes to ANDROID_LOG_ERROR. */
     #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #endif
 
 #ifdef DEBUG
-    /**
-     * @brief Logs a debug message. (Enabled in DEBUG builds)
-     */
+    /** @brief DEBUG log (Enabled). Writes to ANDROID_LOG_DEBUG only if DEBUG is defined. */
     #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #else
-    /**
-     * @brief Logs a debug message. (Disabled in non-DEBUG builds)
-     */
+    /** @brief DEBUG log (Disabled). Stripped from the binary. */
     #define LOGD(...) do {} while (0)
 #endif
 

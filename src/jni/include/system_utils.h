@@ -1,5 +1,6 @@
 /**
- * @brief Provides utility functions for interacting with the Android system.
+ * @brief Utilities for filesystem and system property interaction.
+ * 
  * @author Seclususs
  * https://github.com/seclususs
  */
@@ -10,32 +11,38 @@
 #include <string>
 
 /**
- * @brief Namespace for general system utility functions.
+ * @namespace SystemUtils
+ * @brief Helper functions for system modifications.
  */
 namespace SystemUtils {
     /**
-     * @brief Applies a tweak by writing a string value to a file.
+     * @brief Writes a string payload to a target file.
      *
-     * @param path The absolute file path to write to.
-     * @param value The string value to write.
-     * @return true on successful write, false otherwise.
+     * Attempts to perform a robust write operation, handling file opening
+     * and data transfer.
+     *
+     * @param path The absolute path of the destination file.
+     * @param value The string content to write.
+     * @return true on success; false if the file cannot be opened or written to.
      */
     bool applyTweak(const std::string& path, const std::string& value);
 
     /**
      * @brief Sets an Android system property.
      *
-     * @param key The property key.
-     * @param value The property value.
+     * @param key The property identifier.
+     * @param value The value to set.
      */
     void setSystemProp(const std::string& key, const std::string& value);
 
     /**
-     * @brief Sets an Android system setting by executing the `settings` binary.
+     * @brief Updates a value in the Android 'system' settings provider.
      *
-     * @param property The setting name.
-     * @param value The value to set.
-     * @return true on successful execution, false otherwise.
+     * Involves spawning a process to execute the `settings` binary.
+     *
+     * @param property The setting name to modify.
+     * @param value The new value.
+     * @return true if the settings command executed successfully.
      */
     bool setAndroidSetting(const std::string& property, const std::string& value);
 }
