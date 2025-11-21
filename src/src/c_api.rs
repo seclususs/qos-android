@@ -1,13 +1,14 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 
-use crate::{ffi, memory_logic, refresh_logic};
+use crate::{ffi, memory_logic, refresh_logic, storage_logic};
 use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 use std::thread::{self, JoinHandle};
 
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static MEMORY_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 static REFRESH_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+static STORAGE_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_start_services() {
@@ -21,6 +22,10 @@ pub unsafe extern "C" fn rust_start_services() {
         refresh_logic::monitor_refresh_rate(&SHUTDOWN_REQUESTED);
     });
     *REFRESH_THREAD.lock().unwrap() = Some(refresh_handle);
+    let storage_handle = thread::spawn(|| {
+        storage_logic::monitor_storage(&SHUTDOWN_REQUESTED);
+    });
+    *STORAGE_THREAD.lock().unwrap() = Some(storage_handle);
 }
 
 #[unsafe(no_mangle)]
@@ -32,6 +37,9 @@ pub unsafe extern "C" fn rust_stop_services() {
     }
     if let Some(handle) = REFRESH_THREAD.lock().unwrap().take() {
         handle.join().unwrap_or_else(|e| ffi::log_error(&format!("Refresh thread join failed: {:?}", e)));
+    }
+    if let Some(handle) = STORAGE_THREAD.lock().unwrap().take() {
+        handle.join().unwrap_or_else(|e| ffi::log_error(&format!("Storage thread join failed: {:?}", e)));
     }
     ffi::log_info("Rust services stopped.");
 }

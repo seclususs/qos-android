@@ -86,6 +86,13 @@ void cpp_close_fd(int fd);
 double cpp_get_memory_pressure(void);
 
 /**
+ * @brief Gets the IO pressure stall information.
+ *
+ * @return The avg10 PSI value, or -1.0 on failure.
+ */
+double cpp_get_io_pressure(void);
+
+/**
  * @brief Polls a file descriptor for readable data.
  *
  * @param fd The file descriptor to poll.

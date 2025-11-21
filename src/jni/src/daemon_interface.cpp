@@ -51,6 +51,31 @@ extern "C" double cpp_get_memory_pressure(void) {
     return -1.0;
 }
 
+extern "C" double cpp_get_io_pressure(void) {
+    const char* kPsiIo = "/proc/pressure/io";
+    std::ifstream file(kPsiIo);
+    if (!file) {
+        LOGE("cpp_get_io_pressure: Failed to open %s", kPsiIo);
+        return -1.0;
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.rfind("some", 0) == 0) {
+            double avg10 = 0.0;
+            size_t pos = line.find("avg10=");
+            if (pos != std::string::npos) {
+                try {
+                    avg10 = std::stod(line.substr(pos + 6));
+                    return avg10;
+                } catch (...) {
+                    LOGE("cpp_get_io_pressure: Failed to parse avg10");
+                }
+            }
+        }
+    }
+    return -1.0;
+}
+
 extern "C" void cpp_close_fd(int fd) {
     if (fd >= 0) {
         close(fd);

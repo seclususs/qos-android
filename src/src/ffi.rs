@@ -15,6 +15,7 @@ unsafe extern "C" {
     fn cpp_log_error(message: *const c_char);
     fn cpp_close_fd(fd: c_int);
     fn cpp_get_memory_pressure() -> c_double;
+    fn cpp_get_io_pressure() -> c_double;
     fn cpp_poll_fd(fd: c_int, timeout_ms: c_int) -> c_int;
     fn cpp_open_touch_device(path: *const c_char) -> c_int;
     fn cpp_read_touch_events(fd: c_int);
@@ -53,6 +54,10 @@ pub fn set_android_setting(property: &str, value: &str) -> bool {
 
 pub fn get_memory_pressure() -> f64 {
     unsafe { cpp_get_memory_pressure() }
+}
+
+pub fn get_io_pressure() -> f64 {
+    unsafe { cpp_get_io_pressure() }
 }
 
 pub fn open_touch_device(path: &str) -> i32 {
