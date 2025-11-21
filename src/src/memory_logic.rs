@@ -12,12 +12,10 @@ const K_SWAPPINESS_YELLOW: &str = "100";
 const K_CACHE_PRESSURE_YELLOW: &str = "120";
 const K_SWAPPINESS_RED: &str = "190";
 const K_CACHE_PRESSURE_RED: &str = "200";
-
 const K_PSI_UP_TO_YELLOW: f64 = 6.0;
 const K_PSI_UP_TO_RED: f64 = 18.0;
 const K_PSI_DOWN_TO_YELLOW: f64 = 12.0;
 const K_PSI_DOWN_TO_GREEN: f64 = 3.0;
-
 const K_SWAPPINESS_PATH: &str = "/proc/sys/vm/swappiness";
 const K_VFS_CACHE_PRESSURE_PATH: &str = "/proc/sys/vm/vfs_cache_pressure";
 

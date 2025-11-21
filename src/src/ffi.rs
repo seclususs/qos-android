@@ -1,6 +1,5 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-
 use libc::{c_char, c_int, c_double};
 use std::ffi::CString;
 

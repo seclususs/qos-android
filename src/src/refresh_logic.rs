@@ -1,6 +1,5 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-
 use crate::ffi;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;

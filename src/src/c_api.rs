@@ -1,6 +1,5 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-
 use crate::{ffi, memory_logic, refresh_logic, storage_logic};
 use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 use std::thread::{self, JoinHandle};

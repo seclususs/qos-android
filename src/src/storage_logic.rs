@@ -1,22 +1,18 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-
 use crate::ffi;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
 const K_READ_AHEAD_PATH: &str = "/sys/block/mmcblk0/queue/read_ahead_kb";
-
 const K_READ_AHEAD_GREEN: &str = "128";
 const K_READ_AHEAD_YELLOW: &str = "256";
 const K_READ_AHEAD_RED: &str = "512";
-
 const K_PSI_UP_TO_YELLOW: f64 = 2.0;
 const K_PSI_DOWN_TO_GREEN: f64 = 0.5;
 const K_PSI_UP_TO_RED: f64 = 5.0;
 const K_PSI_DOWN_TO_YELLOW: f64 = 3.5;
-
 const K_BURST_SUSTAIN_SECONDS: i32 = 8;
 
 #[derive(Debug, PartialEq, Copy, Clone, PartialOrd)]
