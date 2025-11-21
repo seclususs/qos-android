@@ -1,3 +1,8 @@
+/**
+ * @author Seclususs
+ * https://github.com/seclususs
+ */
+
 #include "daemon_interface.h"
 #include "system_utils.h"
 #include "fd_wrapper.h"
@@ -29,10 +34,12 @@ extern "C" bool cpp_set_android_setting(const char* property, const char* value)
 extern "C" double cpp_get_memory_pressure(void) {
     const char* kPsiMemory = "/proc/pressure/memory";
     std::ifstream file(kPsiMemory);
+
     if (!file) {
         LOGE("cpp_get_memory_pressure: Failed to open %s", kPsiMemory);
         return -1.0;
     }
+
     std::string line;
     while (std::getline(file, line)) {
         if (line.rfind("some", 0) == 0) {
@@ -48,16 +55,19 @@ extern "C" double cpp_get_memory_pressure(void) {
             }
         }
     }
+
     return -1.0;
 }
 
 extern "C" double cpp_get_io_pressure(void) {
     const char* kPsiIo = "/proc/pressure/io";
     std::ifstream file(kPsiIo);
+
     if (!file) {
         LOGE("cpp_get_io_pressure: Failed to open %s", kPsiIo);
         return -1.0;
     }
+
     std::string line;
     while (std::getline(file, line)) {
         if (line.rfind("some", 0) == 0) {
@@ -73,6 +83,7 @@ extern "C" double cpp_get_io_pressure(void) {
             }
         }
     }
+
     return -1.0;
 }
 
@@ -84,11 +95,14 @@ extern "C" void cpp_close_fd(int fd) {
 
 extern "C" int cpp_open_touch_device(const char* path) {
     if (!path) return -1;
+
     FdWrapper fd(path, O_RDONLY | O_NONBLOCK);
     if (!fd.isValid()) {
-        LOGE("cpp_open_touch_device: Failed to open %s (errno: %d - %s)", path, errno, strerror(errno));
+        LOGE("cpp_open_touch_device: Failed to open %s (errno: %d - %s)",
+             path, errno, strerror(errno));
         return -1;
     }
+
     int raw_fd = fd.get();
     new FdWrapper(std::move(fd));
     return raw_fd;
@@ -96,15 +110,18 @@ extern "C" int cpp_open_touch_device(const char* path) {
 
 extern "C" void cpp_read_touch_events(int fd) {
     if (fd < 0) return;
+
     char buffer[sizeof(struct input_event) * 64];
     while (read(fd, buffer, sizeof(buffer)) > 0);
 }
 
 extern "C" int cpp_poll_fd(int fd, int timeout_ms) {
     if (fd < 0) return -1;
+
     struct pollfd pfd;
     pfd.fd = fd;
     pfd.events = POLLIN;
+
     int result = poll(&pfd, 1, timeout_ms);
     if (result > 0) {
         if (pfd.revents & POLLIN) {

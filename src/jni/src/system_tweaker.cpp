@@ -1,3 +1,8 @@
+/**
+ * @author Seclususs
+ * https://github.com/seclususs
+ */
+
 #include "system_tweaker.h"
 #include "system_utils.h"
 #include "logging.h"
