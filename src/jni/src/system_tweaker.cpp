@@ -16,15 +16,20 @@ namespace TweakValues {
     constexpr const char* kVmStatInterval = "5";
     constexpr const char* kDirtyRatio = "30";
     constexpr const char* kDirtyBackgroundRatio = "10";
+    constexpr const char* kDirtyExpire = "1500";
+    constexpr const char* kDirtyWriteback = "1500";
     constexpr const char* kOomDumpTasks = "0";
+    constexpr const char* kVmWatermarkScale = "100";
+    constexpr const char* kMinFreeKbytes = "65536";
     
     // Low Memory Killer
     constexpr const char* kLmkMinfreeLevels = "0:55296,100:80640,200:106200,300:131760,900:197640,999:262144";
     constexpr const char* kLmkReportKills = "false";
 
     // CPU Scheduler
-    constexpr const char* kSchedLatencyNs = "18000000";
-    constexpr const char* kSchedMinGranularityNs = "2250000";
+    constexpr const char* kSchedLatencyNs = "12000000";
+    constexpr const char* kSchedMinGranularityNs = "2000000";
+    constexpr const char* kSchedMigrationCost = "500000";
 
     // I/O & Storage
     constexpr const char* kIoAddRandom = "0";
@@ -46,11 +51,16 @@ namespace SystemPaths {
     constexpr const char* kVmStatInterval = "/proc/sys/vm/stat_interval";
     constexpr const char* kDirtyRatio = "/proc/sys/vm/dirty_ratio";
     constexpr const char* kDirtyBackgroundRatio = "/proc/sys/vm/dirty_background_ratio";
+    constexpr const char* kDirtyExpire = "/proc/sys/vm/dirty_expire_centisecs";
+    constexpr const char* kDirtyWriteback = "/proc/sys/vm/dirty_writeback_centisecs";
     constexpr const char* kOomDumpTasks = "/proc/sys/vm/oom_dump_tasks";
+    constexpr const char* kVmWatermarkScale = "/proc/sys/vm/watermark_scale_factor";
+    constexpr const char* kMinFreeKbytes = "/proc/sys/vm/min_free_kbytes";
 
     // CPU Scheduler
     constexpr const char* kSchedLatencyNs = "/proc/sys/kernel/sched_latency_ns";
     constexpr const char* kSchedMinGranularityNs = "/proc/sys/kernel/sched_min_granularity_ns";
+    constexpr const char* kSchedMigrationCost = "/proc/sys/kernel/sched_migration_cost_ns";
 
     // I/O & Storage
     constexpr const char* kIoAddRandom = "/sys/block/mmcblk0/queue/add_random";
@@ -73,7 +83,11 @@ namespace SystemTweaker {
         SystemUtils::applyTweak(SystemPaths::kVmStatInterval, TweakValues::kVmStatInterval);
         SystemUtils::applyTweak(SystemPaths::kDirtyRatio, TweakValues::kDirtyRatio);
         SystemUtils::applyTweak(SystemPaths::kDirtyBackgroundRatio, TweakValues::kDirtyBackgroundRatio);
+        SystemUtils::applyTweak(SystemPaths::kDirtyExpire, TweakValues::kDirtyExpire);
+        SystemUtils::applyTweak(SystemPaths::kDirtyWriteback, TweakValues::kDirtyWriteback);
         SystemUtils::applyTweak(SystemPaths::kOomDumpTasks, TweakValues::kOomDumpTasks);
+        SystemUtils::applyTweak(SystemPaths::kVmWatermarkScale, TweakValues::kVmWatermarkScale);
+        SystemUtils::applyTweak(SystemPaths::kMinFreeKbytes, TweakValues::kMinFreeKbytes);
 
         // Low Memory Killer
         SystemUtils::setSystemProp("lmk.minfree_levels", TweakValues::kLmkMinfreeLevels);
@@ -82,6 +96,7 @@ namespace SystemTweaker {
         // CPU Scheduler
         SystemUtils::applyTweak(SystemPaths::kSchedLatencyNs, TweakValues::kSchedLatencyNs);
         SystemUtils::applyTweak(SystemPaths::kSchedMinGranularityNs, TweakValues::kSchedMinGranularityNs);
+        SystemUtils::applyTweak(SystemPaths::kSchedMigrationCost, TweakValues::kSchedMigrationCost);
 
         // I/O & Storage
         SystemUtils::applyTweak(SystemPaths::kIoAddRandom, TweakValues::kIoAddRandom);
