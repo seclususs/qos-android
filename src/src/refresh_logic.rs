@@ -11,7 +11,6 @@ const K_HIGH_REFRESH_RATE: &str = "90.0";
 const K_REFRESH_RATE_PROPERTY: &str = "min_refresh_rate";
 const K_IDLE_TIMEOUT: Duration = Duration::from_secs(4);
 const K_MAX_CONSECUTIVE_ERRORS: i32 = 10;
-const K_CHECK_INTERVAL_MS: i32 = 100;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum RefreshRateMode {
@@ -47,7 +46,17 @@ pub fn monitor_refresh_rate(shutdown_requested: &AtomicBool) {
     let mut last_touch_time = Instant::now();
     let mut consecutive_errors = 0;
     while !shutdown_requested.load(Ordering::Acquire) {
-        let poll_result = ffi::poll_fd(fd, K_CHECK_INTERVAL_MS);
+        let timeout_ms = if current_mode == RefreshRateMode::High {
+            let elapsed = Instant::now().duration_since(last_touch_time);
+            if elapsed >= K_IDLE_TIMEOUT {
+                0 
+            } else {
+                (K_IDLE_TIMEOUT - elapsed).as_millis() as i32
+            }
+        } else {
+            -1
+        };
+        let poll_result = ffi::poll_fd(fd, timeout_ms);
         match poll_result {
             1 => {
                 consecutive_errors = 0;
@@ -59,8 +68,7 @@ pub fn monitor_refresh_rate(shutdown_requested: &AtomicBool) {
                 }
             }
             0 => {
-                let idle_duration = Instant::now().duration_since(last_touch_time);
-                if idle_duration >= K_IDLE_TIMEOUT && current_mode == RefreshRateMode::High {
+                if current_mode == RefreshRateMode::High {
                     ffi::log_info(&format!("No activity -> Reverting to {}Hz.", K_LOW_REFRESH_RATE));
                     set_refresh_rate(RefreshRateMode::Low, &mut current_mode);
                 }

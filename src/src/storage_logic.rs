@@ -55,6 +55,7 @@ pub fn monitor_storage(shutdown_requested: &AtomicBool) {
     ffi::log_info("StorageManager: Starting monitoring...");
     let mut current_zone = IoPressureZone::Unknown;
     let mut sustain_counter = 0;
+    let mut idle_bonus_counter = 0;
     while !shutdown_requested.load(Ordering::Acquire) {
         let psi_value = ffi::get_io_pressure();
         if psi_value < 0.0 {
@@ -86,6 +87,7 @@ pub fn monitor_storage(shutdown_requested: &AtomicBool) {
         };
         if target_zone > current_zone {
             sustain_counter = K_BURST_SUSTAIN_SECONDS;
+            idle_bonus_counter = 0;
             apply_io_response(target_zone, &mut current_zone);
         } else if target_zone < current_zone {
             if sustain_counter > 0 {
@@ -101,8 +103,22 @@ pub fn monitor_storage(shutdown_requested: &AtomicBool) {
         }
         if psi_value > 0.0 {
             ffi::log_debug(&format!("StorageManager: IO {:.2}% | Zone: {:?}", psi_value, current_zone));
+            idle_bonus_counter = 0;
         }
-        thread::sleep(Duration::from_secs(1));
+        let sleep_duration = if current_zone == IoPressureZone::Green && sustain_counter == 0 {
+            if psi_value == 0.0 {
+                if idle_bonus_counter < 4 {
+                    idle_bonus_counter += 1;
+                }
+                Duration::from_secs(4 + idle_bonus_counter)
+            } else {
+                idle_bonus_counter = 0;
+                Duration::from_secs(4)
+            }
+        } else {
+            Duration::from_secs(1)
+        };
+        thread::sleep(sleep_duration);
     }
     ffi::log_info("StorageManager: Monitoring stopped.");
 }
