@@ -1,5 +1,11 @@
 # Changelog 
 
+## v1.4
+- Smart Network Logic
+- Optimize kernel tweaks
+
+---
+
 ## v1.3
 - Smart I/O Logic
 - Optimize Memory Logic
