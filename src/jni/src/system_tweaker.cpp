@@ -37,6 +37,8 @@ namespace TweakValues {
     constexpr const char* kSchedWakeupGranularity = "2500000";
     constexpr const char* kPerfCpuLimit = "10";
     constexpr const char* kKernelPidMax = "65536";
+    constexpr const char* kSchedSchedstats = "0";
+    constexpr const char* kPerfEventParanoid = "2";
 
     // I/O & Storage
     constexpr const char* kIoAddRandom = "0";
@@ -61,6 +63,8 @@ namespace TweakValues {
     constexpr const char* kDebuggableEnabled = "0";
     constexpr const char* kKernelPrintk = "0 0 0 0";
     constexpr const char* kKernelPrintkMsg = "off";
+    constexpr const char* kCorePattern = "/dev/null";
+    constexpr const char* kDmesgRestrict = "1";
 }
 
 namespace SystemPaths {
@@ -86,6 +90,8 @@ namespace SystemPaths {
     constexpr const char* kSchedWakeupGranularity = "/proc/sys/kernel/sched_wakeup_granularity_ns";
     constexpr const char* kPerfCpuLimit = "/proc/sys/kernel/perf_cpu_time_max_percent";
     constexpr const char* kKernelPidMax = "/proc/sys/kernel/pid_max";
+    constexpr const char* kSchedSchedstats = "/proc/sys/kernel/sched_schedstats";
+    constexpr const char* kPerfEventParanoid = "/proc/sys/kernel/perf_event_paranoid";
 
     // I/O & Storage
     constexpr const char* kIoAddRandom = "/sys/block/mmcblk0/queue/add_random";
@@ -108,6 +114,8 @@ namespace SystemPaths {
     // System
     constexpr const char* kKernelPrintk = "/proc/sys/kernel/printk";
     constexpr const char* kKernelPrintkMsg = "/proc/sys/kernel/printk_devkmsg";
+    constexpr const char* kCorePattern = "/proc/sys/kernel/core_pattern";
+    constexpr const char* kDmesgRestrict = "/proc/sys/kernel/dmesg_restrict";
 }
 
 namespace SystemTweaker {
@@ -140,6 +148,8 @@ namespace SystemTweaker {
         SystemUtils::applyTweak(SystemPaths::kSchedWakeupGranularity, TweakValues::kSchedWakeupGranularity);
         SystemUtils::applyTweak(SystemPaths::kPerfCpuLimit, TweakValues::kPerfCpuLimit);
         SystemUtils::applyTweak(SystemPaths::kKernelPidMax, TweakValues::kKernelPidMax);
+        SystemUtils::applyTweak(SystemPaths::kSchedSchedstats, TweakValues::kSchedSchedstats);
+        SystemUtils::applyTweak(SystemPaths::kPerfEventParanoid, TweakValues::kPerfEventParanoid);
 
         // I/O & Storage
         SystemUtils::applyTweak(SystemPaths::kIoAddRandom, TweakValues::kIoAddRandom);
@@ -164,6 +174,8 @@ namespace SystemTweaker {
         SystemUtils::setSystemProp("persist.service.debuggable", TweakValues::kDebuggableEnabled);
         SystemUtils::applyTweak(SystemPaths::kKernelPrintk, TweakValues::kKernelPrintk);
         SystemUtils::applyTweak(SystemPaths::kKernelPrintkMsg, TweakValues::kKernelPrintkMsg);
+        SystemUtils::applyTweak(SystemPaths::kCorePattern, TweakValues::kCorePattern);
+        SystemUtils::applyTweak(SystemPaths::kDmesgRestrict, TweakValues::kDmesgRestrict);
 
         LOGI("Static tweaks applied successfully.");
     }
