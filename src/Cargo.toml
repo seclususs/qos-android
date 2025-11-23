@@ -1,10 +1,10 @@
 [package]
-name = "adaptive_daemon_logic"
+name = "qos_logic"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "adaptive_daemon_logic"
+name = "qos_logic"
 crate-type = ["staticlib"]
 
 [dependencies]

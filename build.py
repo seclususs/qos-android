@@ -11,7 +11,7 @@ from pathlib import Path
 
 ANDROID_API = "23"
 BUILD_TYPE = "Release"
-PROJECT_NAME = "AdaptiveDaemon"
+PROJECT_NAME = "QoS"
 
 ABI_MAP = {
     "arm64-v8a": "aarch64-linux-android",
@@ -170,7 +170,7 @@ def build_architecture(abi, ndk_path):
     log_step("Compiling...")
     run_command(["ninja"], cwd=build_dir)
 
-    binary_path = build_dir / "adaptive_daemon"
+    binary_path = build_dir / "qos_daemon"
     
     if binary_path.exists():
         log_success(f"Build Successful! Binary located at:\n  {Style.BOLD}{binary_path.absolute()}{Style.ENDC}")

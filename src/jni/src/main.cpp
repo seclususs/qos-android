@@ -17,7 +17,7 @@ using namespace std::chrono_literals;
 
 namespace {
     std::atomic<bool> g_shutdown_requested{false};
-    constexpr const char* kAppName = "AdaptiveDaemon";
+    constexpr const char* kAppName = "QoS";
 }
 
 void signalHandler(int signum) {

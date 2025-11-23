@@ -1,7 +1,7 @@
-id=android_enhancer
-name=Enhancer
-version=1.4
-versionCode=5
+id=sys_qos
+name=QoS
+version=1.0
+versionCode=1
 author=seclususs
-description=Experience a smoother.
-updateJson=https://raw.githubusercontent.com/seclususs/os-enhancer/main/update.json
+description=Native daemon for system optimization.
+updateJson=https://raw.githubusercontent.com/seclususs/qos-android/main/update.json

@@ -1,6 +1,6 @@
 {
-  "version": "v1.4",
-  "versionCode": 5,
-  "zipUrl": "https://github.com/seclususs/os-enhancer/releases/download/v1.4/enhancer-v1.4.zip",
-  "changelog": "https://raw.githubusercontent.com/seclususs/os-enhancer/main/changelog.md"
+  "version": "v1.0",
+  "versionCode": 1,
+  "zipUrl": "https://github.com/seclususs/qos-android/releases/download/v1.0/qos-v1.0.zip",
+  "changelog": "https://raw.githubusercontent.com/seclususs/qos-android/main/changelog.md"
 }
