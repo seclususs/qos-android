@@ -1,4 +1,4 @@
-# Enhancer
+# QoS
 
 [![Magisk](https://img.shields.io/badge/Magisk-24%2B-green.svg)](https://github.com/topjohnwu/Magisk)
 [![Platform](https://img.shields.io/badge/Platform-Android-lightgrey.svg)]()

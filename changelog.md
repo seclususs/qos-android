@@ -1,32 +1,12 @@
-# Changelog 
-
-## v1.4
-- Smart Network Logic
-- Optimize kernel tweaks
-
----
-
-## v1.3
-- Smart I/O Logic
-- Optimize Memory Logic
-
----
-
-## v1.2
-- Hybrid Architecture
-
----
-
-## v1.1
-- Rewrote entire codebase from C++ to C
-
----
+# Changelog
 
 ## v1.0
-
-- Added dynamic CPU governor tweak
-- Added adaptive memory manager
-- Added auto refresh rate switching
-- Automatically disables ADB and debugging mode
-- Applied kernel & LMK tweaks for better performance stability
-- Custom Gemini Boot Animation
+- Adaptive Resource Control
+- Smart Memory Management
+- Intelligent I/O Scheduler
+- Dynamic Refresh Rate
+- Network Optimization
+- Kernel Optimization
+- VM Tuning
+- Enhanced Security Settings
+- Custom Boot Animation

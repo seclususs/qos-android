@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(AdaptiveDaemon LANGUAGES CXX C)
+project(QoS LANGUAGES CXX C)
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
@@ -18,7 +18,7 @@ message(STATUS "NDK ABI: ${ANDROID_ABI}")
 message(STATUS "Rust Target: ${RUST_TARGET}")
 set(RUST_CRATE_PATH ${CMAKE_SOURCE_DIR}/src)
 set(RUST_LIB_DIR ${RUST_CRATE_PATH}/target/${RUST_TARGET}/release)
-set(RUST_LIB_NAME "adaptive_daemon_logic")
+set(RUST_LIB_NAME "qos_logic")
 set(RUST_STATIC_LIB ${RUST_LIB_DIR}/lib${RUST_LIB_NAME}.a)
 
 add_custom_command(
@@ -50,30 +50,30 @@ file(GLOB CPP_SOURCES
     "${JNI_SRC_DIR}/*.cpp"
 )
 
-add_library(adaptive_daemon_cpp
+add_library(qos_daemon_cpp
     STATIC
     ${CPP_SOURCES}
     ${CPP_HEADERS}
 )
 
-set_target_properties(adaptive_daemon_cpp PROPERTIES
+set_target_properties(qos_daemon_cpp PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )
 
-target_include_directories(adaptive_daemon_cpp
+target_include_directories(qos_daemon_cpp
     PUBLIC
     ${JNI_INCLUDE_DIR}
 )
 
-add_executable(adaptive_daemon
+add_executable(qos_daemon
     ${JNI_SRC_DIR}/main.cpp
 )
 
-add_dependencies(adaptive_daemon RustLib)
+add_dependencies(qos_daemon RustLib)
 
-target_link_libraries(adaptive_daemon
-    adaptive_daemon_cpp
+target_link_libraries(qos_daemon
+    qos_daemon_cpp
     ${RUST_STATIC_LIB}
     android
     log
@@ -82,11 +82,11 @@ target_link_libraries(adaptive_daemon
     dl
 )
 
-target_include_directories(adaptive_daemon
+target_include_directories(qos_daemon
     PRIVATE
     ${JNI_INCLUDE_DIR}
 )
 
-install(TARGETS adaptive_daemon
+install(TARGETS qos_daemon
     DESTINATION bin
 )

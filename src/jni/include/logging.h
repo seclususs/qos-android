@@ -13,7 +13,7 @@
 /**
  * @brief The tag used to identify logs in `adb logcat`.
  */
-#define LOG_TAG "AdaptiveDaemon"
+#define LOG_TAG "QoS"
 
 /**
  * @brief Feature flag to suppress INFO and ERROR logs.
