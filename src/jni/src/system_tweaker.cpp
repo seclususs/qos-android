@@ -12,29 +12,29 @@
 
 namespace TweakValues {
     // Memory & VM
-    constexpr const char* kPageCluster = "3";
-    constexpr const char* kVmStatInterval = "2";
-    constexpr const char* kDirtyRatio = "20";
-    constexpr const char* kDirtyBackgroundRatio = "10";
-    constexpr const char* kDirtyExpire = "2000";
-    constexpr const char* kDirtyWriteback = "2000";
+    constexpr const char* kPageCluster = "2";
+    constexpr const char* kVmStatInterval = "3";
+    constexpr const char* kDirtyRatio = "10";
+    constexpr const char* kDirtyBackgroundRatio = "3";
+    constexpr const char* kDirtyExpire = "3000";
+    constexpr const char* kDirtyWriteback = "1500";
     constexpr const char* kOomDumpTasks = "0";
-    constexpr const char* kVmWatermarkScale = "100";
-    constexpr const char* kMinFreeKbytes = "65536";
+    constexpr const char* kVmWatermarkScale = "120";
+    constexpr const char* kMinFreeKbytes = "98304";
     constexpr const char* kVmLaptopMode = "5";
-    constexpr const char* kVmExtfragThreshold = "600";
+    constexpr const char* kVmExtfragThreshold = "750";
     constexpr const char* kVmOomKillAlloc = "1";
     
     // Low Memory Killer
-    constexpr const char* kLmkMinfreeLevels = "0:18432,100:23040,200:27648,300:51200,800:102400,999:192000";
+    constexpr const char* kLmkMinfreeLevels = "18432,23040,27648,32256,55296,80640";
     constexpr const char* kLmkReportKills = "false";
 
     // CPU Scheduler
-    constexpr const char* kSchedLatencyNs = "12000000";
+    constexpr const char* kSchedLatencyNs = "10000000";
     constexpr const char* kSchedMinGranularityNs = "2000000";
-    constexpr const char* kSchedMigrationCost = "2000000";
+    constexpr const char* kSchedMigrationCost = "500000";
     constexpr const char* kSchedChildFirst = "1";
-    constexpr const char* kSchedWakeupGranularity = "2500000";
+    constexpr const char* kSchedWakeupGranularity = "3000000";
     constexpr const char* kPerfCpuLimit = "10";
     constexpr const char* kKernelPidMax = "65536";
     constexpr const char* kSchedSchedstats = "0";
@@ -44,19 +44,28 @@ namespace TweakValues {
     constexpr const char* kIoAddRandom = "0";
     constexpr const char* kIoStats = "0";
     constexpr const char* kMmcRqAffinity = "2";
-    constexpr const char* kFsLeaseBreak = "15";
+    constexpr const char* kFsLeaseBreak = "10";
+    constexpr const char* kMaxUserWatches = "524288";
+    constexpr const char* kFileMax = "2097152";
+    constexpr const char* kProtectedSymlinks = "1";
+    constexpr const char* kProtectedHardlinks = "1";
 
     // Network Tweaks
-    constexpr const char* kTcpNotsentLowat = "4096";
-    constexpr const char* kNetDevBacklog = "5000";
+    constexpr const char* kTcpNotsentLowat = "16384";
+    constexpr const char* kNetDevBacklog = "2500";
     constexpr const char* kTcpSlowStartIdle = "0";
     constexpr const char* kTcpTwReuse = "1";
-    constexpr const char* kNetDevBudget = "600";
+    constexpr const char* kNetDevBudget = "300";
     constexpr const char* kNetIpDynaddr = "1";
     constexpr const char* kTcpKeepalive = "1800";
-    constexpr const char* kTcpSynBacklog = "1024";
-    constexpr const char* kRndReseedSecs = "120";
-    constexpr const char* kTcpTimestamps = "1";
+    constexpr const char* kTcpSynBacklog = "2048";
+    constexpr const char* kRndReseedSecs = "60";
+    constexpr const char* kTcpTimestamps = "0";
+    constexpr const char* kSomaxconn = "2048";
+    constexpr const char* kTcpFinTimeout = "15";
+    constexpr const char* kTcpRetries2 = "5";
+    constexpr const char* kIpv6UseTempAddr = "2";
+    constexpr const char* kRpFilter = "1";
 
     // System & Debugging
     constexpr const char* kAdbEnabled = "0";
@@ -98,6 +107,10 @@ namespace SystemPaths {
     constexpr const char* kIoStats = "/sys/block/mmcblk0/queue/iostats";
     constexpr const char* kMmcRqAffinity = "/sys/block/mmcblk0/queue/rq_affinity";
     constexpr const char* kFsLeaseBreak = "/proc/sys/fs/lease-break-time";
+    constexpr const char* kMaxUserWatches = "/proc/sys/fs/inotify/max_user_watches";
+    constexpr const char* kFileMax = "/proc/sys/fs/file-max";
+    constexpr const char* kProtectedSymlinks = "/proc/sys/fs/protected_symlinks";
+    constexpr const char* kProtectedHardlinks = "/proc/sys/fs/protected_hardlinks";
 
     // Network
     constexpr const char* kTcpNotsentLowat = "/proc/sys/net/ipv4/tcp_notsent_lowat";
@@ -110,6 +123,11 @@ namespace SystemPaths {
     constexpr const char* kTcpSynBacklog = "/proc/sys/net/ipv4/tcp_max_syn_backlog";
     constexpr const char* kRndReseedSecs = "/proc/sys/kernel/random/urandom_min_reseed_secs";
     constexpr const char* kTcpTimestamps = "/proc/sys/net/ipv4/tcp_timestamps";
+    constexpr const char* kSomaxconn = "/proc/sys/net/core/somaxconn";
+    constexpr const char* kTcpFinTimeout = "/proc/sys/net/ipv4/tcp_fin_timeout";
+    constexpr const char* kTcpRetries2 = "/proc/sys/net/ipv4/tcp_retries2";
+    constexpr const char* kIpv6UseTempAddr = "/proc/sys/net/ipv6/conf/all/use_tempaddr";
+    constexpr const char* kRpFilter = "/proc/sys/net/ipv4/conf/default/rp_filter";
 
     // System
     constexpr const char* kKernelPrintk = "/proc/sys/kernel/printk";
@@ -156,6 +174,10 @@ namespace SystemTweaker {
         SystemUtils::applyTweak(SystemPaths::kIoStats, TweakValues::kIoStats);
         SystemUtils::applyTweak(SystemPaths::kMmcRqAffinity, TweakValues::kMmcRqAffinity);
         SystemUtils::applyTweak(SystemPaths::kFsLeaseBreak, TweakValues::kFsLeaseBreak);
+        SystemUtils::applyTweak(SystemPaths::kMaxUserWatches, TweakValues::kMaxUserWatches);
+        SystemUtils::applyTweak(SystemPaths::kFileMax, TweakValues::kFileMax);
+        SystemUtils::applyTweak(SystemPaths::kProtectedSymlinks, TweakValues::kProtectedSymlinks);
+        SystemUtils::applyTweak(SystemPaths::kProtectedHardlinks, TweakValues::kProtectedHardlinks);
 
         // Network
         SystemUtils::applyTweak(SystemPaths::kTcpNotsentLowat, TweakValues::kTcpNotsentLowat);
@@ -168,6 +190,11 @@ namespace SystemTweaker {
         SystemUtils::applyTweak(SystemPaths::kTcpSynBacklog, TweakValues::kTcpSynBacklog);
         SystemUtils::applyTweak(SystemPaths::kRndReseedSecs, TweakValues::kRndReseedSecs);
         SystemUtils::applyTweak(SystemPaths::kTcpTimestamps, TweakValues::kTcpTimestamps);
+        SystemUtils::applyTweak(SystemPaths::kSomaxconn, TweakValues::kSomaxconn);
+        SystemUtils::applyTweak(SystemPaths::kTcpFinTimeout, TweakValues::kTcpFinTimeout);
+        SystemUtils::applyTweak(SystemPaths::kTcpRetries2, TweakValues::kTcpRetries2);
+        SystemUtils::applyTweak(SystemPaths::kIpv6UseTempAddr, TweakValues::kIpv6UseTempAddr);
+        SystemUtils::applyTweak(SystemPaths::kRpFilter, TweakValues::kRpFilter);
 
         // System & Debugging
         SystemUtils::setSystemProp("persist.service.adb.enable", TweakValues::kAdbEnabled);
