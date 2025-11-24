@@ -14,9 +14,11 @@
 #include <cerrno>
 #include <cstring>
 #include <sys/poll.h>
+#include <sys/epoll.h>
 #include <linux/input.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 extern "C" bool cpp_apply_tweak(const char* path, const char* value) {
     if (!path || !value) return false;
@@ -148,6 +150,57 @@ extern "C" int cpp_poll_fd(int fd, int timeout_ms) {
         LOGE("cpp_poll_fd: poll() error (errno: %d - %s)", errno, strerror(errno));
         return -1;
     }
+}
+
+extern "C" int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us) {
+    if (!path) return -1;
+
+    int fd = open(path, O_RDWR | O_CLOEXEC);
+    if (fd < 0) {
+        LOGE("Failed to open PSI file for trigger: %s", path);
+        return -1;
+    }
+
+    char trigger_cmd[128];
+    snprintf(trigger_cmd, sizeof(trigger_cmd), "some %d %d", threshold_us, window_us);
+    
+    if (write(fd, trigger_cmd, strlen(trigger_cmd) + 1) < 0) {
+        LOGE("Failed to write trigger command: %s (errno: %d)", trigger_cmd, errno);
+        close(fd);
+        return -1;
+    }
+
+    int epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (epoll_fd < 0) {
+        LOGE("Failed to create epoll instance");
+        close(fd);
+        return -1;
+    }
+
+    struct epoll_event ev;
+    ev.events = EPOLLPRI;
+    ev.data.fd = fd;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+        LOGE("Failed to add PSI fd to epoll");
+        close(epoll_fd);
+        close(fd);
+        return -1;
+    }
+    
+    return epoll_fd;
+}
+
+extern "C" int cpp_wait_for_psi_event(int epoll_fd, int timeout_ms) {
+    struct epoll_event events[1];
+    int nfds = epoll_wait(epoll_fd, events, 1, timeout_ms);
+    
+    if (nfds > 0) return 1;
+    if (nfds == 0) return 0;
+    if (errno == EINTR) return 0;
+    
+    LOGE("epoll_wait failed (errno: %d)", errno);
+    return -1;
 }
 
 extern "C" void cpp_log_info(const char* message) {

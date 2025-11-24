@@ -149,6 +149,24 @@ int cpp_open_touch_device(const char* path);
  */
 void cpp_read_touch_events(int fd);
 
+/**
+ * @brief Registers a PSI trigger for a specific resource.
+ * * Writes a trigger command to the specified PSI path and returns an epoll fd.
+ * * @param path Path to the PSI file (e.g., /proc/pressure/io).
+ * @param threshold_us Stall threshold in microseconds.
+ * @param window_us Window size in microseconds.
+ * @return File descriptor for the trigger, or -1 on failure.
+ */
+int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us);
+
+/**
+ * @brief Waits for a PSI trigger event.
+ * * @param epoll_fd The epoll file descriptor returned by register.
+ * @param timeout_ms Timeout in milliseconds.
+ * @return 1 on event, 0 on timeout, -1 on error.
+ */
+int cpp_wait_for_psi_event(int epoll_fd, int timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif
