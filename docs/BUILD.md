@@ -1,66 +1,53 @@
-# How to Build
+# Build Guide
 
-## 1. Build Instructions
+## How to Build
 
-Use the provided automatic build script.
+### Interactive
+Run without any arguments:
 
-**(Linux/macOS only):** Make the script executable:
-
-```bash
-chmod +x build.sh
+```
+python3 build.py
 ```
 
-### A. Default Build (arm64-v8a)
+---
 
-**Windows:**
+### Argument
 
-```powershell
-.\build.bat
+**Syntax:**
+```
+python3 build.py [--abi ABI|all] [--api LEVEL] [--type Release|Debug] [--clean]
 ```
 
-**Linux/macOS:**
+---
 
-```bash
-./build.sh
+### Examples
+
+Build for arm64:
+```
+python3 build.py --abi arm64-v8a
 ```
 
-### B. Build Other ABIs
-
-**Windows:**
-
-```powershell
-.\build.bat armeabi-v7a
+Build in debug mode:
+```
+python3 build.py --abi arm64-v8a --type Debug
 ```
 
-**Linux/macOS:**
-
-```bash
-./build.sh armeabi-v7a
+Build with a specific API level:
+```
+python3 build.py --abi arm64-v8a --api 29
 ```
 
-### C. Clean Build
-
-**Windows:**
-
-```powershell
-.\build.bat clean
+Build all ABIs:
+```
+python3 build.py --abi all
 ```
 
-**Linux/macOS:**
-
-```bash
-./build.sh clean
+Clean and then build:
+```
+python3 build.py --clean --abi arm64-v8a
 ```
 
-## 2. Build Output
-
-The binary will be available in `build/<ABI>/adaptive_daemon` (e.g., `build/arm64-v8a/adaptive_daemon`).
-
-Use `adb` to push and execute:
-
-```bash
-adb push build/arm64-v8a/adaptive_daemon /data/local/tmp/
-adb shell
-su
-/data/local/tmp/adaptive_daemon
+Clean only:
+```
+python3 build.py --clean
 ```
