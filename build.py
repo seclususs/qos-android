@@ -8,9 +8,8 @@ import shutil
 import time
 from pathlib import Path
 
-
-ANDROID_API = "23"
-BUILD_TYPE = "Release"
+DEFAULT_ANDROID_API = "33"
+DEFAULT_BUILD_TYPE = "Release"
 PROJECT_NAME = "QoS"
 
 ABI_MAP = {
@@ -22,29 +21,35 @@ ABI_MAP = {
 
 class Style:
     HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
+    SUCCESS = '\033[92m'
+    INPUT = '\033[96m'
     WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
+    ERROR = '\033[91m'
+    DIM = '\033[90m'
     BOLD = '\033[1m'
+    RESET = '\033[0m'
 
 def log_header(msg):
-    print(f"\n{Style.HEADER}{Style.BOLD}=== {msg} ==={Style.ENDC}")
+    print(f"\n{Style.BOLD}{Style.HEADER}=== {msg} ==={Style.RESET}")
 
-def log_info(msg):
-    print(f"{Style.BLUE}ℹ {msg}{Style.ENDC}")
-
-def log_success(msg):
-    print(f"{Style.GREEN}✔ {msg}{Style.ENDC}")
-
-def log_error(msg):
-    print(f"{Style.FAIL}✖ {msg}{Style.ENDC}")
-    sys.exit(1)
+def log_section(msg):
+    print(f"\n{Style.BOLD}{Style.DIM}=== {msg} ==={Style.RESET}")
 
 def log_step(msg):
-    print(f"{Style.CYAN}➜ {msg}{Style.ENDC}")
+    print(f"{Style.WARNING}>>{Style.RESET} {msg}...")
+
+def log_kv(key, value):
+    print(f"   {Style.DIM}{key:<15}{Style.RESET} : {Style.INPUT}{value}{Style.RESET}")
+
+def log_info(msg):
+    print(f"   {Style.DIM}{msg}{Style.RESET}")
+
+def log_success(msg):
+    print(f"   {Style.SUCCESS}[OK]{Style.RESET} {msg}")
+
+def log_error(msg):
+    print(f"\n{Style.ERROR}[ERROR] {msg}{Style.RESET}")
+    sys.exit(1)
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -80,49 +85,54 @@ def find_ndk():
 
 def check_tool(tool_name):
     if not shutil.which(tool_name):
-        log_error(f"Tool '{tool_name}' not found in PATH. Please install it first.")
+        log_error(f"Tool '{tool_name}' missing. Please install it.")
 
 
 def run_command(cmd, cwd=None, shell=False):
     try:
         subprocess.run(cmd, check=True, cwd=cwd, shell=shell)
     except subprocess.CalledProcessError:
-        log_error(f"Failed to execute command: {' '.join(cmd)}")
+        log_error(f"Command failed: {' '.join(cmd)}")
 
 
 def clean_specific_build(build_dir):
     if build_dir.exists():
         try:
-            # log_info(f"Cleaning previous build artifacts in {build_dir.name}...")
             shutil.rmtree(build_dir)
         except Exception as e:
             log_error(f"Failed to clean directory {build_dir}: {e}")
 
 
+def clean_rust_target(rust_target):
+    crate_path = Path("src")
+    if crate_path.exists():
+        cmd = ["cargo", "clean", "--target", rust_target, "--release"]
+        run_command(cmd, cwd=crate_path)
+
+
 def clean_all_builds():
-    log_header("Cleaning All Builds")
+    log_header("Cleaning Workspace")
     build_path = Path("build")
     if build_path.exists():
         try:
             shutil.rmtree(build_path)
-            log_success("Folder 'build/' successfully removed.")
+            log_success("Folder 'build/' removed.")
         except Exception as e:
             log_error(f"Failed to remove build folder: {e}")
     else:
-        log_info("Folder 'build/' not found, nothing to clean.")
+        log_info("Nothing to clean.")
 
 
-def get_user_selection():
-    print(f"\n{Style.BOLD}Select Action:{Style.ENDC}")
+def get_abi_selection():
+    log_section("Select Architecture")
     abis = list(ABI_MAP.keys())
     
     for i, abi in enumerate(abis):
-        print(f"  {Style.GREEN}[{i+1}]{Style.ENDC} Build {abi}")
-    
-    print(f"  {Style.GREEN}[A]{Style.ENDC} Build All")
-    print(f"  {Style.GREEN}[Q]{Style.ENDC} Quit")
+        print(f"   {Style.SUCCESS}[{i+1}]{Style.RESET} {abi}")
+    print(f"   {Style.SUCCESS}[a]{Style.RESET} Build All")
+    print(f"   {Style.ERROR}[q]{Style.RESET} Quit")
 
-    choice = input(f"\n{Style.CYAN}Enter choice: {Style.ENDC}").strip().lower()
+    choice = input(f"\n   {Style.DIM}>{Style.RESET} Enter choice: ").strip().lower()
 
     if choice == 'q':
         sys.exit(0)
@@ -134,68 +144,91 @@ def get_user_selection():
         if 0 <= idx < len(abis):
             return abis[idx]
         else:
-            log_error("Invalid selection number.")
+            log_error("Invalid selection.")
     except ValueError:
         log_error("Invalid input.")
 
 
-def build_architecture(abi, ndk_path):
+def get_api_selection():
+    log_section("Select Android API Level")
+    print(f"   {Style.SUCCESS}[Enter]{Style.RESET} Default ({DEFAULT_ANDROID_API})")
+    
+    choice = input(f"\n   {Style.DIM}>{Style.RESET} Enter API level: ").strip()
+    
+    if not choice:
+        return DEFAULT_ANDROID_API
+    
+    if choice.isdigit() and int(choice) >= 21:
+        return choice
+    else:
+        print(f"{Style.WARNING}   Invalid API. Using default: {DEFAULT_ANDROID_API}{Style.RESET}")
+        return DEFAULT_ANDROID_API
+    
+
+def get_build_type_selection():
+    log_section("Select Build Type")
+    print(f"   {Style.SUCCESS}[1]{Style.RESET} Release (Default)")
+    print(f"   {Style.SUCCESS}[2]{Style.RESET} Debug")
+    
+    choice = input(f"\n   {Style.DIM}>{Style.RESET} Enter choice: ").strip()
+    return "Debug" if choice == '2' else "Release"
+
+
+def build_architecture(abi, ndk_path, api_level, build_type):
     rust_target = ABI_MAP[abi]
     toolchain_file = ndk_path / "build/cmake/android.toolchain.cmake"
     build_dir = Path("build") / abi
     
-    log_header(f"Building for {abi}")
-    log_info(f"Rust Target : {rust_target}")
-
+    log_header(f"Building: {abi}")
+    log_kv("Build Type", build_type)
+    log_kv("Rust Target", rust_target)
+    
+    log_step("Cleaning previous artifacts")
     clean_specific_build(build_dir)
+    clean_rust_target(rust_target)
 
-    log_step("Checking Rust target...")
+    log_step("Checking Rust environment")
     run_command(["rustup", "target", "add", rust_target])
 
     build_dir.mkdir(parents=True, exist_ok=True)
-    log_info(f"Build Dir   : {build_dir}")
 
-    log_step("Configuring CMake...")
+    log_step("Configuring CMake")
     cmake_cmd = [
         "cmake",
         f"-DANDROID_ABI={abi}",
-        f"-DANDROID_PLATFORM=android-{ANDROID_API}",
+        f"-DANDROID_PLATFORM=android-{api_level}",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_file}",
-        f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
         "-G", "Ninja",
         "../.." 
     ]
     run_command(cmake_cmd, cwd=build_dir)
 
-    log_step("Compiling...")
+    log_step("Compiling Native Code")
     run_command(["ninja"], cwd=build_dir)
 
     binary_path = build_dir / "qos_daemon"
     
     if binary_path.exists():
-        log_success(f"Build Successful! Binary located at:\n  {Style.BOLD}{binary_path.absolute()}{Style.ENDC}")
+        log_success(f"Artifact created: {Style.BOLD}{binary_path.name}{Style.RESET}")
     else:
-        log_error(f"Build finished, but binary not found at: {binary_path}")
+        log_error(f"Binary not found at: {binary_path}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=f"Smart Builder for {PROJECT_NAME}")
-    parser.add_argument(
-        "--abi", 
-        choices=["all"] + list(ABI_MAP.keys()), 
-        help="Select build architecture"
-    )
-    parser.add_argument(
-        "--clean", 
-        action="store_true", 
-        help="Clean ALL build folders"
-    )
+    parser = argparse.ArgumentParser(description=f"Builder for {PROJECT_NAME}")
+    parser.add_argument("--abi", choices=["all"] + list(ABI_MAP.keys()))
+    parser.add_argument("--api")
+    parser.add_argument("--type", choices=["Release", "Debug"])
+    parser.add_argument("--clean", action="store_true")
     
     args = parser.parse_args()
 
-    print(f"\n{Style.BOLD}{Style.CYAN}=== Build ==={Style.ENDC}")
-    print(f"{Style.CYAN}Platform: {platform.system()} | Python: {platform.python_version()}{Style.ENDC}")
+    if not any([args.abi, args.clean]):
+        clear_screen()
 
+    print(f"{Style.BOLD}{Style.HEADER}Builder{Style.RESET}")
+    
     check_tool("cmake")
     check_tool("ninja")
     check_tool("rustup")
@@ -203,23 +236,33 @@ def main():
 
     if args.clean:
         clean_all_builds()
-        if not args.abi:
+        if not any([args.abi, args.api, args.type]):
             return
-        
-    log_step("Detecting NDK...")
+
     ndk_path = find_ndk()
     if not ndk_path:
-        log_error("Android NDK not found! Set ANDROID_NDK_HOME environment variable.")
+        log_error("Android NDK not found! Set ANDROID_NDK_HOME.")
+    
+    log_kv("NDK", ndk_path.name)
 
     toolchain = ndk_path / "build/cmake/android.toolchain.cmake"
     if not toolchain.exists():
-        log_error(f"Invalid toolchain file at: {toolchain}")
-
-    log_success(f"NDK Found: {ndk_path}")
+        log_error(f"Invalid toolchain: {toolchain}")
 
     selected_abi = args.abi
+    selected_api = args.api
+    selected_type = args.type
+
     if not selected_abi:
-        selected_abi = get_user_selection()
+        selected_abi = get_abi_selection()
+        clear_screen()
+
+    if not selected_api:
+        selected_api = get_api_selection()
+        clear_screen()
+
+    if not selected_type:
+        selected_type = get_build_type_selection()
         clear_screen()
 
     start_time = time.time()
@@ -232,14 +275,15 @@ def main():
 
     for abi in abis_to_build:
         try:
-            build_architecture(abi, ndk_path)
+            build_architecture(abi, ndk_path, selected_api, selected_type)
         except KeyboardInterrupt:
-            log_error("\nBuild cancelled by user.")
+            print(f"\n{Style.ERROR}Build cancelled.{Style.RESET}")
+            sys.exit(0)
         except Exception as e:
             log_error(f"Unexpected error: {e}")
 
     elapsed = time.time() - start_time
-    print(f"\n{Style.BOLD}{Style.GREEN}Completed in {elapsed:.2f}s{Style.ENDC}\n")
+    print(f"\n{Style.SUCCESS}{Style.BOLD}Build Completed in {elapsed:.2f}s{Style.RESET}\n")
 
 if __name__ == "__main__":
     main()
