@@ -38,7 +38,10 @@ int main() {
     LOGI("=== %s Starting ===", kAppName);
     LOGI("PID: %d", getpid());
 
-    SystemTweaker::applyAll();
+    std::thread([] {
+        std::this_thread::sleep_for(std::chrono::minutes(1));
+        SystemTweaker::applyAll();
+    }).detach();
 
     LOGI("Starting Rust services...");
     rust_start_services();
