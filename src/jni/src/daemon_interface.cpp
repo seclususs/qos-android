@@ -15,6 +15,8 @@
 #include <cstring>
 #include <sys/poll.h>
 #include <linux/input.h>
+#include <fcntl.h>
+#include <stdlib.h>
 
 extern "C" bool cpp_apply_tweak(const char* path, const char* value) {
     if (!path || !value) return false;
@@ -32,56 +34,66 @@ extern "C" bool cpp_set_android_setting(const char* property, const char* value)
 }
 
 extern "C" double cpp_get_memory_pressure(void) {
+    static int mem_fd = -1;
     const char* kPsiMemory = "/proc/pressure/memory";
-    std::ifstream file(kPsiMemory);
-
-    if (!file) {
-        LOGE("cpp_get_memory_pressure: Failed to open %s", kPsiMemory);
-        return -1.0;
+    
+    if (mem_fd < 0) {
+        mem_fd = open(kPsiMemory, O_RDONLY | O_CLOEXEC);
+        if (mem_fd < 0) {
+            LOGE("cpp_get_memory_pressure: Failed to open %s", kPsiMemory);
+            return -1.0;
+        }
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.rfind("some", 0) == 0) {
-            double avg10 = 0.0;
-            size_t pos = line.find("avg10=");
-            if (pos != std::string::npos) {
-                try {
-                    avg10 = std::stod(line.substr(pos + 6));
-                    return avg10;
-                } catch (...) {
-                    LOGE("cpp_get_memory_pressure: Failed to parse avg10");
-                }
+    char buffer[128];
+    ssize_t bytes_read = pread(mem_fd, buffer, sizeof(buffer) - 1, 0);
+
+    if (bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+        char* avg10_ptr = strstr(buffer, "avg10=");
+        if (avg10_ptr) {
+            char* end_ptr;
+            double val = strtod(avg10_ptr + 6, &end_ptr);
+            if (avg10_ptr + 6 != end_ptr) {
+                return val;
             }
         }
+    } else {
+        close(mem_fd);
+        mem_fd = -1; 
     }
 
     return -1.0;
 }
 
 extern "C" double cpp_get_io_pressure(void) {
+    static int io_fd = -1;
     const char* kPsiIo = "/proc/pressure/io";
-    std::ifstream file(kPsiIo);
 
-    if (!file) {
-        LOGE("cpp_get_io_pressure: Failed to open %s", kPsiIo);
-        return -1.0;
+    if (io_fd < 0) {
+        io_fd = open(kPsiIo, O_RDONLY | O_CLOEXEC);
+        if (io_fd < 0) {
+            LOGE("cpp_get_io_pressure: Failed to open %s", kPsiIo);
+            return -1.0;
+        }
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.rfind("some", 0) == 0) {
-            double avg10 = 0.0;
-            size_t pos = line.find("avg10=");
-            if (pos != std::string::npos) {
-                try {
-                    avg10 = std::stod(line.substr(pos + 6));
-                    return avg10;
-                } catch (...) {
-                    LOGE("cpp_get_io_pressure: Failed to parse avg10");
-                }
+    char buffer[128];
+    ssize_t bytes_read = pread(io_fd, buffer, sizeof(buffer) - 1, 0);
+
+    if (bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+        char* avg10_ptr = strstr(buffer, "avg10=");
+        if (avg10_ptr) {
+            char* end_ptr;
+            double val = strtod(avg10_ptr + 6, &end_ptr);
+            if (avg10_ptr + 6 != end_ptr) {
+                return val;
             }
         }
+    } else {
+        close(io_fd);
+        io_fd = -1;
     }
 
     return -1.0;

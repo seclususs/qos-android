@@ -65,6 +65,8 @@ pub fn monitor_refresh_rate(shutdown_requested: &AtomicBool) {
                 if current_mode != RefreshRateMode::High {
                     ffi::log_info(&format!("Touch detected -> Switching to {}Hz.", K_HIGH_REFRESH_RATE));
                     set_refresh_rate(RefreshRateMode::High, &mut current_mode);
+                } else {
+                    thread::sleep(Duration::from_millis(50));
                 }
             }
             0 => {
