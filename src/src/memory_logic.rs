@@ -18,6 +18,8 @@ const K_PSI_DOWN_TO_YELLOW: f64 = 12.0;
 const K_PSI_DOWN_TO_GREEN: f64 = 3.0;
 const K_SWAPPINESS_PATH: &str = "/proc/sys/vm/swappiness";
 const K_VFS_CACHE_PRESSURE_PATH: &str = "/proc/sys/vm/vfs_cache_pressure";
+const K_BASE_INTERVAL: Duration = Duration::from_secs(3);
+const K_MAX_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum PressureZone {
@@ -55,16 +57,13 @@ fn apply_pressure_response(new_zone: PressureZone, current_zone: &mut PressureZo
 pub fn monitor_memory(shutdown_requested: &AtomicBool) {
     ffi::log_info("MemoryManager: Starting monitoring...");
     let mut current_zone = PressureZone::Unknown;
-    let mut stability_counter = 0;
+    let mut current_sleep = K_BASE_INTERVAL;
     while !shutdown_requested.load(Ordering::Acquire) {
         let psi_value = ffi::get_memory_pressure();
         if psi_value < 0.0 {
             ffi::log_error("MemoryManager: Failed to read. Retrying in 5s...");
             thread::sleep(Duration::from_secs(5));
             continue;
-        }
-        if stability_counter == 0 || psi_value > K_PSI_DOWN_TO_GREEN {
-            ffi::log_debug(&format!("MemoryManager: {:.2}% | Zone: {:?}", psi_value, current_zone));
         }
         let new_zone = match current_zone {
             PressureZone::Green => {
@@ -89,21 +88,17 @@ pub fn monitor_memory(shutdown_requested: &AtomicBool) {
             }
         };
         apply_pressure_response(new_zone, &mut current_zone);
-        let sleep_duration = if current_zone == PressureZone::Green {
-            if psi_value < 1.0 {
-                if stability_counter < 3 {
-                    stability_counter += 1;
-                }
-                Duration::from_secs(3 + stability_counter)
-            } else {
-                stability_counter = 0;
-                Duration::from_secs(3)
-            }
+        if current_zone == PressureZone::Green && psi_value < 1.0 {
+            current_sleep = std::cmp::min(current_sleep * 2, K_MAX_INTERVAL);
+            ffi::log_debug(&format!("MemoryManager: Deep Sleep. Interval: {}s", current_sleep.as_secs()));
         } else {
-            stability_counter = 0;
-            Duration::from_secs(1)
-        };
-        thread::sleep(sleep_duration);
+            current_sleep = K_BASE_INTERVAL;
+            if current_zone != PressureZone::Green {
+                current_sleep = Duration::from_secs(1);
+            }
+            ffi::log_debug(&format!("MemoryManager: {:.2}% | Zone: {:?}", psi_value, current_zone));
+        }
+        thread::sleep(current_sleep);
     }
     ffi::log_info("MemoryManager: Monitoring stopped.");
 }

@@ -14,6 +14,8 @@ const K_PSI_DOWN_TO_GREEN: f64 = 0.5;
 const K_PSI_UP_TO_RED: f64 = 5.0;
 const K_PSI_DOWN_TO_YELLOW: f64 = 3.5;
 const K_BURST_SUSTAIN_SECONDS: i32 = 8;
+const K_BASE_INTERVAL: Duration = Duration::from_secs(4);
+const K_MAX_INTERVAL: Duration = Duration::from_secs(40);
 
 #[derive(Debug, PartialEq, Copy, Clone, PartialOrd)]
 enum IoPressureZone {
@@ -55,7 +57,7 @@ pub fn monitor_storage(shutdown_requested: &AtomicBool) {
     ffi::log_info("StorageManager: Starting monitoring...");
     let mut current_zone = IoPressureZone::Unknown;
     let mut sustain_counter = 0;
-    let mut idle_bonus_counter = 0;
+    let mut current_sleep = K_BASE_INTERVAL;
     while !shutdown_requested.load(Ordering::Acquire) {
         let psi_value = ffi::get_io_pressure();
         if psi_value < 0.0 {
@@ -87,38 +89,33 @@ pub fn monitor_storage(shutdown_requested: &AtomicBool) {
         };
         if target_zone > current_zone {
             sustain_counter = K_BURST_SUSTAIN_SECONDS;
-            idle_bonus_counter = 0;
             apply_io_response(target_zone, &mut current_zone);
+            current_sleep = Duration::from_secs(1); 
         } else if target_zone < current_zone {
             if sustain_counter > 0 {
                 sustain_counter -= 1;
                 ffi::log_debug(&format!("StorageManager: Sustaining zone {:?} for {}s", current_zone, sustain_counter));
+                current_sleep = Duration::from_secs(1);
             } else {
                 apply_io_response(target_zone, &mut current_zone);
             }
         } else {
             if current_zone != IoPressureZone::Green {
                 sustain_counter = K_BURST_SUSTAIN_SECONDS;
+                current_sleep = Duration::from_secs(1);
+            }
+        }
+        if current_zone == IoPressureZone::Green && sustain_counter == 0 {
+            if psi_value == 0.0 {
+                current_sleep = std::cmp::min(current_sleep * 2, K_MAX_INTERVAL);
+            } else {
+                current_sleep = K_BASE_INTERVAL;
             }
         }
         if psi_value > 0.0 {
-            ffi::log_debug(&format!("StorageManager: IO {:.2}% | Zone: {:?}", psi_value, current_zone));
-            idle_bonus_counter = 0;
+             ffi::log_debug(&format!("StorageManager: IO {:.2}% | Zone: {:?}", psi_value, current_zone));
         }
-        let sleep_duration = if current_zone == IoPressureZone::Green && sustain_counter == 0 {
-            if psi_value == 0.0 {
-                if idle_bonus_counter < 4 {
-                    idle_bonus_counter += 1;
-                }
-                Duration::from_secs(4 + idle_bonus_counter)
-            } else {
-                idle_bonus_counter = 0;
-                Duration::from_secs(4)
-            }
-        } else {
-            Duration::from_secs(1)
-        };
-        thread::sleep(sleep_duration);
+        thread::sleep(current_sleep);
     }
     ffi::log_info("StorageManager: Monitoring stopped.");
 }
