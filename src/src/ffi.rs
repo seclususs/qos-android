@@ -18,6 +18,8 @@ unsafe extern "C" {
     fn cpp_poll_fd(fd: c_int, timeout_ms: c_int) -> c_int;
     fn cpp_open_touch_device(path: *const c_char) -> c_int;
     fn cpp_read_touch_events(fd: c_int);
+    fn cpp_register_psi_trigger(path: *const c_char, threshold_us: c_int, window_us: c_int) -> c_int;
+    fn cpp_wait_for_psi_event(epoll_fd: c_int, timeout_ms: c_int) -> c_int;
 }
 
 pub fn log_info(msg: &str) {
@@ -70,4 +72,13 @@ pub fn poll_fd(fd: i32, timeout_ms: i32) -> i32 {
 
 pub fn read_touch_events(fd: i32) {
     unsafe { cpp_read_touch_events(fd) }
+}
+
+pub fn register_psi_trigger(path: &str, threshold_us: i32, window_us: i32) -> i32 {
+    let c_path = CString::new(path).unwrap_or_default();
+    unsafe { cpp_register_psi_trigger(c_path.as_ptr(), threshold_us, window_us) }
+}
+
+pub fn wait_for_psi_event(epoll_fd: i32, timeout_ms: i32) -> i32 {
+    unsafe { cpp_wait_for_psi_event(epoll_fd, timeout_ms) }
 }
