@@ -13,8 +13,6 @@
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
-#include <sys/poll.h>
-#include <sys/epoll.h>
 #include <linux/input.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -101,16 +99,10 @@ extern "C" double cpp_get_io_pressure(void) {
     return -1.0;
 }
 
-extern "C" void cpp_close_fd(int fd) {
-    if (fd >= 0) {
-        close(fd);
-    }
-}
-
 extern "C" int cpp_open_touch_device(const char* path) {
     if (!path) return -1;
 
-    FdWrapper fd(path, O_RDONLY | O_NONBLOCK);
+    FdWrapper fd(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (!fd.isValid()) {
         LOGE("cpp_open_touch_device: Failed to open %s (errno: %d - %s)",
              path, errno, strerror(errno));
@@ -129,33 +121,10 @@ extern "C" void cpp_read_touch_events(int fd) {
     while (read(fd, buffer, sizeof(buffer)) > 0);
 }
 
-extern "C" int cpp_poll_fd(int fd, int timeout_ms) {
-    if (fd < 0) return -1;
-
-    struct pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = POLLIN;
-
-    int result = poll(&pfd, 1, timeout_ms);
-    if (result > 0) {
-        if (pfd.revents & POLLIN) {
-            return 1;
-        } else {
-            return -1;
-        }
-    } else if (result == 0) {
-        return 0;
-    } else {
-        if (errno == EINTR) return 0;
-        LOGE("cpp_poll_fd: poll() error (errno: %d - %s)", errno, strerror(errno));
-        return -1;
-    }
-}
-
 extern "C" int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us) {
     if (!path) return -1;
 
-    int fd = open(path, O_RDWR | O_CLOEXEC);
+    int fd = open(path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
     if (fd < 0) {
         LOGE("Failed to open PSI file for trigger: %s", path);
         return -1;
@@ -169,38 +138,8 @@ extern "C" int cpp_register_psi_trigger(const char* path, int threshold_us, int 
         close(fd);
         return -1;
     }
-
-    int epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-    if (epoll_fd < 0) {
-        LOGE("Failed to create epoll instance");
-        close(fd);
-        return -1;
-    }
-
-    struct epoll_event ev;
-    ev.events = EPOLLPRI;
-    ev.data.fd = fd;
-
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        LOGE("Failed to add PSI fd to epoll");
-        close(epoll_fd);
-        close(fd);
-        return -1;
-    }
     
-    return epoll_fd;
-}
-
-extern "C" int cpp_wait_for_psi_event(int epoll_fd, int timeout_ms) {
-    struct epoll_event events[1];
-    int nfds = epoll_wait(epoll_fd, events, 1, timeout_ms);
-    
-    if (nfds > 0) return 1;
-    if (nfds == 0) return 0;
-    if (errno == EINTR) return 0;
-    
-    LOGE("epoll_wait failed (errno: %d)", errno);
-    return -1;
+    return fd;
 }
 
 extern "C" void cpp_log_info(const char* message) {

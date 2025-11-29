@@ -22,20 +22,20 @@ extern "C" {
 /**
  * @brief Initializes and spawns the background Rust service threads.
  *
- * This function triggers the creation of monitoring threads.
+ * This function triggers the creation of the main event loop.
  *
- * @note This function returns immediately after spawning threads.
+ * @note This function returns immediately after spawning the service.
  * @warning Should be called only once during the application startup phase.
  */
 void rust_start_services(void);
 
 /**
- * @brief Signals the Rust services to terminate and joins all threads.
+ * @brief Signals the Rust services to terminate and joins threads.
  *
  * This function sets the internal shutdown flag and blocks the calling thread
- * until all Rust background threads have exited gracefully.
+ * until the Rust service has exited gracefully.
  *
- * @post All monitoring threads are destroyed and resources released.
+ * @post All monitoring resources are released.
  */
 void rust_stop_services(void);
 
@@ -94,13 +94,6 @@ void cpp_log_debug(const char* message);
 void cpp_log_error(const char* message);
 
 /**
- * @brief Closes a raw file descriptor.
- *
- * @param fd The file descriptor to close. If negative, the call is ignored.
- */
-void cpp_close_fd(int fd);
-
-/**
  * @brief Retrieves the current Memory Pressure Stall Information (PSI).
  *
  * Reads the "some" pressure average over the last 10 seconds (avg10).
@@ -119,21 +112,9 @@ double cpp_get_memory_pressure(void);
 double cpp_get_io_pressure(void);
 
 /**
- * @brief Checks a file descriptor for data availability.
- *
- * @param fd The file descriptor to poll.
- * @param timeout_ms Maximum time to wait in milliseconds.
- * @return
- * -  1: Data is available to read.
- * -  0: Timeout occurred.
- * - -1: Error occurred during polling.
- */
-int cpp_poll_fd(int fd, int timeout_ms);
-
-/**
  * @brief Opens a touch input device for event reading.
  *
- * Opens the device in non-blocking mode.
+ * Opens the device in non-blocking mode suitable for event polling.
  *
  * @param path Path to the input device (e.g., "/dev/input/eventX").
  * @return A valid file descriptor on success, or -1 on failure.
@@ -151,21 +132,16 @@ void cpp_read_touch_events(int fd);
 
 /**
  * @brief Registers a PSI trigger for a specific resource.
- * * Writes a trigger command to the specified PSI path and returns an epoll fd.
- * * @param path Path to the PSI file (e.g., /proc/pressure/io).
+ *
+ * Writes a trigger command to the specified PSI path and returns the
+ * file descriptor associated with the resource.
+ *
+ * @param path Path to the PSI file (e.g., /proc/pressure/io).
  * @param threshold_us Stall threshold in microseconds.
  * @param window_us Window size in microseconds.
- * @return File descriptor for the trigger, or -1 on failure.
+ * @return File descriptor for the trigger resource, or -1 on failure.
  */
 int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us);
-
-/**
- * @brief Waits for a PSI trigger event.
- * * @param epoll_fd The epoll file descriptor returned by register.
- * @param timeout_ms Timeout in milliseconds.
- * @return 1 on event, 0 on timeout, -1 on error.
- */
-int cpp_wait_for_psi_event(int epoll_fd, int timeout_ms);
 
 #ifdef __cplusplus
 }

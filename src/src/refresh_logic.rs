@@ -1,93 +1,63 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::ffi;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
+use crate::traits::EventHandler;
+use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 use std::time::{Duration, Instant};
 
-const K_TOUCH_DEVICE_PATH: &str = "/dev/input/event3";
-const K_LOW_REFRESH_RATE: &str = "60.0";
-const K_HIGH_REFRESH_RATE: &str = "90.0";
-const K_REFRESH_RATE_PROPERTY: &str = "min_refresh_rate";
+const K_TOUCH_PATH: &str = "/dev/input/event3";
 const K_IDLE_TIMEOUT: Duration = Duration::from_secs(4);
-const K_MAX_CONSECUTIVE_ERRORS: i32 = 10;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-enum RefreshRateMode {
-    Low,
-    High,
-    Unknown,
+#[derive(PartialEq, Clone, Copy)]
+enum RefreshMode { Low, High }
+
+pub struct RefreshManager {
+    fd: OwnedFd,
+    current_mode: RefreshMode,
+    last_touch: Instant,
 }
 
-fn set_refresh_rate(new_mode: RefreshRateMode, current_mode: &mut RefreshRateMode) {
-    if new_mode == *current_mode {
-        return;
+impl RefreshManager {
+    pub fn new() -> Result<Self, String> {
+        ffi::log_info("RefreshManager: Initializing...");
+        Self::set_rate(RefreshMode::Low);
+        let raw_fd = ffi::open_touch_device(K_TOUCH_PATH);
+        if raw_fd < 0 { return Err(format!("Failed to open {}", K_TOUCH_PATH)); }
+        let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
+        Ok(Self { fd, current_mode: RefreshMode::Low, last_touch: Instant::now() })
     }
-    let (rate_str, mode_str) = match new_mode {
-        RefreshRateMode::High => (K_HIGH_REFRESH_RATE, "HIGH"),
-        _ => (K_LOW_REFRESH_RATE, "LOW"),
-    };
-    ffi::log_debug(&format!("RefreshManager: Requesting switch to {} mode ({}Hz)", mode_str, rate_str));
-    if ffi::set_android_setting(K_REFRESH_RATE_PROPERTY, rate_str) {
-        *current_mode = new_mode;
+    fn set_rate(mode: RefreshMode) {
+        let val = match mode { RefreshMode::High => "90.0", RefreshMode::Low => "60.0" };
+        ffi::set_android_setting("min_refresh_rate", val);
     }
 }
 
-pub fn monitor_refresh_rate(shutdown_requested: &AtomicBool) {
-    ffi::log_info(&format!("RefreshManager: Starting monitoring on: {}", K_TOUCH_DEVICE_PATH));
-    ffi::log_info(&format!("RefreshManager: LOW mode: {}Hz, HIGH mode: {}Hz", K_LOW_REFRESH_RATE, K_HIGH_REFRESH_RATE));
-    let fd = ffi::open_touch_device(K_TOUCH_DEVICE_PATH);
-    if fd < 0 {
-        ffi::log_error(&format!("RefreshManager: Failed to open {}. Exiting.", K_TOUCH_DEVICE_PATH));
-        return;
+impl EventHandler for RefreshManager {
+    fn as_raw_fd(&self) -> RawFd { self.fd.as_raw_fd() }
+    fn on_event(&mut self) {
+        ffi::read_touch_events(self.fd.as_raw_fd());
+        self.last_touch = Instant::now();
+        if self.current_mode != RefreshMode::High {
+            ffi::log_info("Touch -> High Refresh Rate");
+            Self::set_rate(RefreshMode::High);
+            self.current_mode = RefreshMode::High;
+        }
     }
-    let mut current_mode = RefreshRateMode::Unknown;
-    set_refresh_rate(RefreshRateMode::Low, &mut current_mode);
-    let mut last_touch_time = Instant::now();
-    let mut consecutive_errors = 0;
-    while !shutdown_requested.load(Ordering::Acquire) {
-        let timeout_ms = if current_mode == RefreshRateMode::High {
-            let elapsed = Instant::now().duration_since(last_touch_time);
-            if elapsed >= K_IDLE_TIMEOUT {
-                0 
-            } else {
-                (K_IDLE_TIMEOUT - elapsed).as_millis() as i32
-            }
+    fn get_timeout_ms(&self) -> i32 {
+        if self.current_mode == RefreshMode::High {
+            let elapsed = self.last_touch.elapsed();
+            if elapsed >= K_IDLE_TIMEOUT { 0 } else { (K_IDLE_TIMEOUT - elapsed).as_millis() as i32 }
         } else {
             -1
-        };
-        let poll_result = ffi::poll_fd(fd, timeout_ms);
-        match poll_result {
-            1 => {
-                consecutive_errors = 0;
-                ffi::read_touch_events(fd);
-                last_touch_time = Instant::now();
-                if current_mode != RefreshRateMode::High {
-                    ffi::log_info(&format!("Touch detected -> Switching to {}Hz.", K_HIGH_REFRESH_RATE));
-                    set_refresh_rate(RefreshRateMode::High, &mut current_mode);
-                } else {
-                    thread::sleep(Duration::from_millis(250));
-                }
-            }
-            0 => {
-                if current_mode == RefreshRateMode::High {
-                    ffi::log_info(&format!("No activity -> Reverting to {}Hz.", K_LOW_REFRESH_RATE));
-                    set_refresh_rate(RefreshRateMode::Low, &mut current_mode);
-                }
-            }
-            _ => {
-                consecutive_errors += 1;
-                ffi::log_error(&format!("RefreshManager: poll() error, attempt {}/{}", consecutive_errors, K_MAX_CONSECUTIVE_ERRORS));
-                if consecutive_errors >= K_MAX_CONSECUTIVE_ERRORS {
-                    ffi::log_error("RefreshManager: Too many errors, stopping monitoring.");
-                    break;
-                }
-                thread::sleep(Duration::from_secs(1));
+        }
+    }
+    fn on_timeout(&mut self) {
+        if self.current_mode == RefreshMode::High {
+            if self.last_touch.elapsed() >= K_IDLE_TIMEOUT {
+                ffi::log_info("Idle -> Low Refresh Rate");
+                Self::set_rate(RefreshMode::Low);
+                self.current_mode = RefreshMode::Low;
             }
         }
     }
-    ffi::log_info("RefreshManager: Monitoring stopped. Reverting to power-saving mode.");
-    set_refresh_rate(RefreshRateMode::Low, &mut current_mode);
-    ffi::close_fd(fd);
-    ffi::log_debug("RefreshManager: Monitor thread exited.");
 }
