@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use libc::{c_char, c_int, c_double};
+use libc::{c_char, c_double, c_int};
 use std::ffi::CString;
 
 #[allow(dead_code)]
@@ -12,14 +12,11 @@ unsafe extern "C" {
     fn cpp_log_info(message: *const c_char);
     fn cpp_log_debug(message: *const c_char);
     fn cpp_log_error(message: *const c_char);
-    fn cpp_close_fd(fd: c_int);
     fn cpp_get_memory_pressure() -> c_double;
     fn cpp_get_io_pressure() -> c_double;
-    fn cpp_poll_fd(fd: c_int, timeout_ms: c_int) -> c_int;
     fn cpp_open_touch_device(path: *const c_char) -> c_int;
     fn cpp_read_touch_events(fd: c_int);
     fn cpp_register_psi_trigger(path: *const c_char, threshold_us: c_int, window_us: c_int) -> c_int;
-    fn cpp_wait_for_psi_event(epoll_fd: c_int, timeout_ms: c_int) -> c_int;
 }
 
 pub fn log_info(msg: &str) {
@@ -35,10 +32,6 @@ pub fn log_debug(msg: &str) {
 pub fn log_error(msg: &str) {
     let c_msg = CString::new(msg).unwrap_or_default();
     unsafe { cpp_log_error(c_msg.as_ptr()) }
-}
-
-pub fn close_fd(fd: i32) {
-    unsafe { cpp_close_fd(fd) }
 }
 
 pub fn apply_tweak(path: &str, value: &str) -> bool {
@@ -66,10 +59,6 @@ pub fn open_touch_device(path: &str) -> i32 {
     unsafe { cpp_open_touch_device(c_path.as_ptr()) }
 }
 
-pub fn poll_fd(fd: i32, timeout_ms: i32) -> i32 {
-    unsafe { cpp_poll_fd(fd, timeout_ms) }
-}
-
 pub fn read_touch_events(fd: i32) {
     unsafe { cpp_read_touch_events(fd) }
 }
@@ -77,8 +66,4 @@ pub fn read_touch_events(fd: i32) {
 pub fn register_psi_trigger(path: &str, threshold_us: i32, window_us: i32) -> i32 {
     let c_path = CString::new(path).unwrap_or_default();
     unsafe { cpp_register_psi_trigger(c_path.as_ptr(), threshold_us, window_us) }
-}
-
-pub fn wait_for_psi_event(epoll_fd: i32, timeout_ms: i32) -> i32 {
-    unsafe { cpp_wait_for_psi_event(epoll_fd, timeout_ms) }
 }

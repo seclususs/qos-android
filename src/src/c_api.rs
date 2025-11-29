@@ -1,52 +1,91 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::{ffi, memory_logic, network_logic, refresh_logic, storage_logic};
-use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
+use crate::{ffi, traits::EventHandler};
+use crate::memory_logic::MemoryManager;
+use crate::refresh_logic::RefreshManager;
+use crate::storage_logic::StorageManager;
+
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
+use std::sync::Mutex;
+use std::time::Duration;
+use std::os::fd::{AsRawFd, OwnedFd, FromRawFd};
 
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
-static MEMORY_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
-static REFRESH_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
-static STORAGE_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
-static NETWORK_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+static MAIN_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+
+const MAX_EVENTS: usize = 16;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_start_services() {
     ffi::log_info("Rust services starting...");
     SHUTDOWN_REQUESTED.store(false, Ordering::Release);
-    let mem_handle = thread::spawn(|| {
-        memory_logic::monitor_memory(&SHUTDOWN_REQUESTED);
+    let handle = thread::spawn(|| {
+        if let Err(e) = run_event_loop() {
+            ffi::log_error(&format!("Event loop failed: {}", e));
+        }
     });
-    *MEMORY_THREAD.lock().unwrap() = Some(mem_handle);
-    let refresh_handle = thread::spawn(|| {
-        refresh_logic::monitor_refresh_rate(&SHUTDOWN_REQUESTED);
-    });
-    *REFRESH_THREAD.lock().unwrap() = Some(refresh_handle);
-    let storage_handle = thread::spawn(|| {
-        storage_logic::monitor_storage(&SHUTDOWN_REQUESTED);
-    });
-    *STORAGE_THREAD.lock().unwrap() = Some(storage_handle);
-    let network_handle = thread::spawn(|| {
-        network_logic::monitor_network(&SHUTDOWN_REQUESTED);
-    });
-    *NETWORK_THREAD.lock().unwrap() = Some(network_handle);
+    *MAIN_THREAD.lock().expect("Failed to lock MAIN_THREAD: Mutex poisoned") = Some(handle);
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_stop_services() {
     ffi::log_info("Rust services stopping...");
     SHUTDOWN_REQUESTED.store(true, Ordering::Release);
-    if let Some(handle) = MEMORY_THREAD.lock().unwrap().take() {
-        handle.join().unwrap_or_else(|e| ffi::log_error(&format!("Memory thread join failed: {:?}", e)));
-    }
-    if let Some(handle) = REFRESH_THREAD.lock().unwrap().take() {
-        handle.join().unwrap_or_else(|e| ffi::log_error(&format!("Refresh thread join failed: {:?}", e)));
-    }
-    if let Some(handle) = STORAGE_THREAD.lock().unwrap().take() {
-        handle.join().unwrap_or_else(|e| ffi::log_error(&format!("Storage thread join failed: {:?}", e)));
-    }
-    if let Some(handle) = NETWORK_THREAD.lock().unwrap().take() {
-        handle.join().unwrap_or_else(|e| ffi::log_error(&format!("Network thread join failed: {:?}", e)));
+    if let Some(handle) = MAIN_THREAD.lock().expect("Failed to lock MAIN_THREAD during stop").take() {
+        if let Err(e) = handle.join() {
+            ffi::log_error(&format!("Main thread panicked: {:?}", e));
+        }
     }
     ffi::log_info("Rust services stopped.");
+}
+
+fn run_event_loop() -> Result<(), String> {
+    let epoll_raw = unsafe { libc::epoll_create1(libc::EPOLL_CLOEXEC) };
+    if epoll_raw < 0 { return Err("Failed to create epoll".to_string()); }
+    let epoll_fd = unsafe { OwnedFd::from_raw_fd(epoll_raw) };
+    let mut managers: Vec<Box<dyn EventHandler>> = Vec::new();
+    managers.push(Box::new(MemoryManager::new()?));
+    managers.push(Box::new(StorageManager::new()?));
+    managers.push(Box::new(RefreshManager::new()?));
+    for (i, manager) in managers.iter().enumerate() {
+        let mut event = libc::epoll_event {
+            events: (libc::EPOLLIN | libc::EPOLLPRI | libc::EPOLLERR) as u32,
+            u64: i as u64,
+        };
+        unsafe {
+            if libc::epoll_ctl(epoll_fd.as_raw_fd(), libc::EPOLL_CTL_ADD, manager.as_raw_fd(), &mut event) < 0 {
+                return Err(format!("Failed to register manager index {}", i));
+            }
+        }
+    }
+    let mut events: [libc::epoll_event; MAX_EVENTS] = unsafe { std::mem::zeroed() };
+    ffi::log_info("Event Loop Started.");
+    while !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+        let timeout = managers.iter()
+            .map(|m| m.get_timeout_ms())
+            .filter(|&t| t >= 0)
+            .min()
+            .unwrap_or(-1);
+        let nfds = unsafe {
+            libc::epoll_wait(epoll_fd.as_raw_fd(), events.as_mut_ptr(), MAX_EVENTS as i32, timeout)
+        };
+        if nfds < 0 {
+            if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+                ffi::log_error("Epoll wait error");
+                thread::sleep(Duration::from_secs(1));
+            }
+            continue;
+        }
+        for manager in managers.iter_mut() {
+            manager.on_timeout();
+        }
+        for i in 0..nfds as usize {
+            let index = events[i].u64 as usize;
+            if let Some(manager) = managers.get_mut(index) {
+                manager.on_event();
+            }
+        }
+    }
+    Ok(())
 }
