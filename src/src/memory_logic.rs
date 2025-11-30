@@ -29,8 +29,8 @@ impl MemoryManager {
         if new_zone == old_zone { return; }
         let (swap, cache, label) = match new_zone {
             PressureZone::Green => ("30", "50", "(Power Save) -> GREEN"),
-            PressureZone::Yellow => ("60", "120", "(Balanced) -> YELLOW"),
-            PressureZone::Red => ("120", "200", "(Performance) -> RED"),
+            PressureZone::Yellow => ("60", "100", "(Balanced) -> YELLOW"),
+            PressureZone::Red => ("100", "150", "(Performance) -> RED"),
             _ => return,
         };
         ffi::log_info(&format!("MemoryManager: {}", label));
