@@ -26,9 +26,9 @@ impl StorageManager {
     }
     fn apply_tweak(zone: IoPressureZone) {
         let val = match zone {
-            IoPressureZone::Green => "128",
+            IoPressureZone::Green => "512",
             IoPressureZone::Yellow => "256",
-            IoPressureZone::Red => "512",
+            IoPressureZone::Red => "128",
         };
         ffi::apply_tweak(K_READ_AHEAD_PATH, val);
     }

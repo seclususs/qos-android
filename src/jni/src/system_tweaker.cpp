@@ -16,11 +16,11 @@ namespace TweakValues {
     constexpr const char* kVmStatInterval = "3";
     constexpr const char* kDirtyRatio = "10";
     constexpr const char* kDirtyBackgroundRatio = "3";
-    constexpr const char* kDirtyExpire = "3000";
+    constexpr const char* kDirtyExpire = "500";
     constexpr const char* kDirtyWriteback = "1500";
     constexpr const char* kOomDumpTasks = "0";
-    constexpr const char* kVmWatermarkScale = "120";
-    constexpr const char* kMinFreeKbytes = "98304";
+    constexpr const char* kVmWatermarkScale = "50";
+    constexpr const char* kMinFreeKbytes = "65536";
     constexpr const char* kVmLaptopMode = "5";
     constexpr const char* kVmExtfragThreshold = "750";
     constexpr const char* kVmOomKillAlloc = "1";
@@ -30,11 +30,11 @@ namespace TweakValues {
     constexpr const char* kLmkReportKills = "false";
 
     // CPU Scheduler
-    constexpr const char* kSchedLatencyNs = "10000000";
-    constexpr const char* kSchedMinGranularityNs = "2000000";
-    constexpr const char* kSchedMigrationCost = "500000";
+    constexpr const char* kSchedLatencyNs = "8000000";
+    constexpr const char* kSchedMinGranularityNs = "1000000";
+    constexpr const char* kSchedMigrationCost = "1000000";
     constexpr const char* kSchedChildFirst = "1";
-    constexpr const char* kSchedWakeupGranularity = "3000000";
+    constexpr const char* kSchedWakeupGranularity = "1500000";
     constexpr const char* kPerfCpuLimit = "10";
     constexpr const char* kKernelPidMax = "65536";
     constexpr const char* kSchedSchedstats = "0";
@@ -66,6 +66,7 @@ namespace TweakValues {
     constexpr const char* kTcpRetries2 = "5";
     constexpr const char* kIpv6UseTempAddr = "2";
     constexpr const char* kRpFilter = "1";
+    constexpr const char* kTcpCongestion = "westwood";
 
     // System & Debugging
     constexpr const char* kAdbEnabled = "0";
@@ -128,6 +129,7 @@ namespace SystemPaths {
     constexpr const char* kTcpRetries2 = "/proc/sys/net/ipv4/tcp_retries2";
     constexpr const char* kIpv6UseTempAddr = "/proc/sys/net/ipv6/conf/all/use_tempaddr";
     constexpr const char* kRpFilter = "/proc/sys/net/ipv4/conf/default/rp_filter";
+    constexpr const char* kTcpCongestion = "/proc/sys/net/ipv4/tcp_congestion_control";
 
     // System
     constexpr const char* kKernelPrintk = "/proc/sys/kernel/printk";
@@ -195,6 +197,7 @@ namespace SystemTweaker {
         SystemUtils::applyTweak(SystemPaths::kTcpRetries2, TweakValues::kTcpRetries2);
         SystemUtils::applyTweak(SystemPaths::kIpv6UseTempAddr, TweakValues::kIpv6UseTempAddr);
         SystemUtils::applyTweak(SystemPaths::kRpFilter, TweakValues::kRpFilter);
+        SystemUtils::applyTweak(SystemPaths::kTcpCongestion, TweakValues::kTcpCongestion);
 
         // System & Debugging
         SystemUtils::setSystemProp("persist.service.adb.enable", TweakValues::kAdbEnabled);
