@@ -7,47 +7,125 @@ use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 const K_PSI_MEMORY_PATH: &str = "/proc/pressure/memory";
 const K_SWAPPINESS_PATH: &str = "/proc/sys/vm/swappiness";
 const K_VFS_CACHE_PRESSURE_PATH: &str = "/proc/sys/vm/vfs_cache_pressure";
+const THRESHOLD_GREEN_TO_YELLOW: f64 = 3.0;
+const THRESHOLD_YELLOW_TO_GREEN: f64 = 1.5;
+const THRESHOLD_YELLOW_TO_RED: f64 = 15.0;
+const THRESHOLD_RED_TO_YELLOW: f64 = 10.0;
+const MONITORING_INTERVAL_MS: i32 = 2000;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-enum PressureZone { Green, Yellow, Red, Unknown }
+enum MemoryState {
+    Idle,
+    Balanced,
+    Pressure,
+}
+
+struct KernelConfigCache {
+    swappiness: String,
+    vfs_cache_pressure: String,
+}
+
+impl KernelConfigCache {
+    fn new() -> Self {
+        Self {
+            swappiness: String::new(),
+            vfs_cache_pressure: String::new(),
+        }
+    }
+}
 
 pub struct MemoryManager {
     fd: OwnedFd, 
-    current_zone: PressureZone,
+    current_state: MemoryState,
+    cache: KernelConfigCache,
 }
 
 impl MemoryManager {
     pub fn new() -> Result<Self, String> {
         ffi::log_info("MemoryManager: Initializing...");
-        Self::apply_tweak(PressureZone::Green, PressureZone::Unknown);
-        let raw_fd = ffi::register_psi_trigger(K_PSI_MEMORY_PATH, 60000, 1000000);
-        if raw_fd < 0 { return Err("Failed to register Memory PSI".to_string()); }
-        let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
-        Ok(Self { fd, current_zone: PressureZone::Green })
-    }
-    fn apply_tweak(new_zone: PressureZone, old_zone: PressureZone) {
-        if new_zone == old_zone { return; }
-        let (swap, cache, label) = match new_zone {
-            PressureZone::Green => ("30", "50", "(Power Save) -> GREEN"),
-            PressureZone::Yellow => ("60", "100", "(Balanced) -> YELLOW"),
-            PressureZone::Red => ("100", "150", "(Performance) -> RED"),
-            _ => return,
+        let mut manager = Self {
+            fd: unsafe { 
+                let raw = ffi::register_psi_trigger(K_PSI_MEMORY_PATH, 60000, 1000000);
+                if raw < 0 { return Err("Failed to register Memory PSI trigger".to_string()); }
+                OwnedFd::from_raw_fd(raw)
+            },
+            current_state: MemoryState::Idle,
+            cache: KernelConfigCache::new(),
         };
-        ffi::log_info(&format!("MemoryManager: {}", label));
-        ffi::apply_tweak(K_SWAPPINESS_PATH, swap);
-        ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, cache);
+        manager.apply_state(MemoryState::Idle, true);
+        Ok(manager)
+    }
+    fn evaluate_next_state(&self, psi: f64) -> MemoryState {
+        match self.current_state {
+            MemoryState::Idle => {
+                if psi > THRESHOLD_GREEN_TO_YELLOW {
+                    MemoryState::Balanced
+                } else {
+                    MemoryState::Idle
+                }
+            },
+            MemoryState::Balanced => {
+                if psi > THRESHOLD_YELLOW_TO_RED {
+                    MemoryState::Pressure
+                } else if psi < THRESHOLD_YELLOW_TO_GREEN {
+                    MemoryState::Idle
+                } else {
+                    MemoryState::Balanced
+                }
+            },
+            MemoryState::Pressure => {
+                if psi < THRESHOLD_RED_TO_YELLOW {
+                    MemoryState::Balanced
+                } else {
+                    MemoryState::Pressure
+                }
+            },
+        }
+    }
+    fn apply_state(&mut self, new_state: MemoryState, force: bool) {
+        let (target_swap, target_cache) = match new_state {
+            MemoryState::Idle => ("30", "50"),
+            MemoryState::Balanced => ("60", "100"),
+            MemoryState::Pressure => ("100", "150"),
+        };
+        if force || self.cache.swappiness != target_swap {
+            ffi::log_debug(&format!("MemoryManager: Set Swappiness -> {}", target_swap));
+            if ffi::apply_tweak(K_SWAPPINESS_PATH, target_swap) {
+                self.cache.swappiness = target_swap.to_string();
+            }
+        }
+        if force || self.cache.vfs_cache_pressure != target_cache {
+            ffi::log_debug(&format!("MemoryManager: Set VFS Cache -> {}", target_cache));
+            if ffi::apply_tweak(K_VFS_CACHE_PRESSURE_PATH, target_cache) {
+                self.cache.vfs_cache_pressure = target_cache.to_string();
+            }
+        }
+        if self.current_state != new_state {
+            ffi::log_info(&format!("Memory State Transition: {:?} -> {:?}", self.current_state, new_state));
+            self.current_state = new_state;
+        }
+    }
+    fn process_logic(&mut self) {
+        let psi_value = ffi::get_memory_pressure();
+        let next_state = self.evaluate_next_state(psi_value);
+        if next_state != self.current_state {
+            self.apply_state(next_state, false);
+        }
     }
 }
 
 impl EventHandler for MemoryManager {
     fn as_raw_fd(&self) -> RawFd { self.fd.as_raw_fd() }
     fn on_event(&mut self) {
-        let psi_value = ffi::get_memory_pressure();
-        let new_zone = if psi_value > 15.0 { PressureZone::Red } else { PressureZone::Yellow };
-        if self.current_zone != new_zone {
-            ffi::log_debug(&format!("MemoryManager: PSI {:.2}%", psi_value));
-            Self::apply_tweak(new_zone, self.current_zone);
-            self.current_zone = new_zone;
+        self.process_logic();
+    }
+    fn on_timeout(&mut self) {
+        self.process_logic();
+    }
+    fn get_timeout_ms(&self) -> i32 {
+        match self.current_state {
+            MemoryState::Idle => -1,
+            _ => MONITORING_INTERVAL_MS,
         }
     }
 }
