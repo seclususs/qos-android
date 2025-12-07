@@ -52,7 +52,8 @@ namespace SystemUtils {
 
     bool setAndroidSetting(const std::string& property, const std::string& value) {
         std::vector<std::string> args = {
-            "/system/bin/settings",
+            "/system/bin/cmd",
+            "settings",
             "put",
             "system",
             property,
@@ -60,6 +61,7 @@ namespace SystemUtils {
         };
 
         std::vector<char*> argv;
+        argv.reserve(args.size() + 1);
         for (const auto& arg : args) {
             argv.push_back(const_cast<char*>(arg.c_str()));
         }
@@ -72,9 +74,10 @@ namespace SystemUtils {
             return false;
         }
 
-        pid_t pid = fork();
+        pid_t pid = vfork();
+
         if (pid == -1) {
-            LOGE("setAndroidSetting: fork() failed (errno: %d - %s)",
+            LOGE("setAndroidSetting: vfork() failed (errno: %d - %s)",
                  errno, strerror(errno));
             close(pipefd[0]);
             close(pipefd[1]);
@@ -84,13 +87,12 @@ namespace SystemUtils {
         if (pid == 0) {
             close(pipefd[0]);
 
-            while ((dup2(pipefd[1], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
-            while ((dup2(pipefd[1], STDERR_FILENO) == -1) && (errno == EINTR)) {}
+            if (dup2(pipefd[1], STDOUT_FILENO) == -1) _exit(127);
+            if (dup2(pipefd[1], STDERR_FILENO) == -1) _exit(127);
 
             close(pipefd[1]);
             execv(argv[0], argv.data());
 
-            fprintf(stderr, "execv failed: %s\n", strerror(errno));
             _exit(127);
 
         } else {
@@ -113,7 +115,6 @@ namespace SystemUtils {
             int exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 
             if (exit_code == 0) {
-                LOGI("Successfully set '%s' to %s", property.c_str(), value.c_str());
                 return true;
             }
 

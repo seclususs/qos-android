@@ -5,7 +5,6 @@
 
 #include "daemon_interface.h"
 #include "system_utils.h"
-#include "fd_wrapper.h"
 #include "logging.h"
 
 #include <string>
@@ -102,16 +101,7 @@ extern "C" double cpp_get_io_pressure(void) {
 extern "C" int cpp_open_touch_device(const char* path) {
     if (!path) return -1;
 
-    FdWrapper fd(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-    if (!fd.isValid()) {
-        LOGE("cpp_open_touch_device: Failed to open %s (errno: %d - %s)",
-             path, errno, strerror(errno));
-        return -1;
-    }
-
-    int raw_fd = fd.get();
-    new FdWrapper(std::move(fd));
-    return raw_fd;
+    return open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 }
 
 extern "C" void cpp_read_touch_events(int fd) {

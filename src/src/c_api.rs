@@ -4,6 +4,7 @@ use crate::{ffi, traits::EventHandler};
 use crate::memory_logic::MemoryManager;
 use crate::refresh_logic::RefreshManager;
 use crate::storage_logic::StorageManager;
+use crate::vm_logic::VmManager;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -48,6 +49,7 @@ fn run_event_loop() -> Result<(), String> {
     managers.push(Box::new(MemoryManager::new()?));
     managers.push(Box::new(StorageManager::new()?));
     managers.push(Box::new(RefreshManager::new()?));
+    managers.push(Box::new(VmManager::new()?));
     for (i, manager) in managers.iter().enumerate() {
         let mut event = libc::epoll_event {
             events: (libc::EPOLLIN | libc::EPOLLPRI | libc::EPOLLERR) as u32,

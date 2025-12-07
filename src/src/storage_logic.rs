@@ -7,11 +7,11 @@ use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 const K_PSI_IO_PATH: &str = "/proc/pressure/io";
 const K_READ_AHEAD_PATH: &str = "/sys/block/mmcblk0/queue/read_ahead_kb";
 
-const IO_UP_TO_BUSY: f64 = 5.0;
-const IO_DOWN_TO_IDLE: f64 = 2.0;
-const IO_UP_TO_CONGESTED: f64 = 25.0;
-const IO_DOWN_TO_BUSY: f64 = 15.0;
-const POLLING_INTERVAL_MS: i32 = 1500;
+const IO_UP_TO_BUSY: f64 = 12.0;
+const IO_DOWN_TO_IDLE: f64 = 4.0;
+const IO_UP_TO_CONGESTED: f64 = 60.0;
+const IO_DOWN_TO_BUSY: f64 = 25.0;
+const POLLING_INTERVAL_MS: i32 = 6000;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum IoState {
@@ -31,7 +31,7 @@ impl StorageManager {
         ffi::log_info("StorageManager: Starting I/O optimization service...");
         let mut manager = Self { 
             fd: unsafe { 
-                let raw = ffi::register_psi_trigger(K_PSI_IO_PATH, 50000, 1000000); 
+                let raw = ffi::register_psi_trigger(K_PSI_IO_PATH, 120000, 1000000);
                 if raw < 0 { return Err("Failed to register Storage PSI".to_string()); }
                 OwnedFd::from_raw_fd(raw) 
             },
@@ -62,9 +62,9 @@ impl StorageManager {
     }
     fn apply_state(&mut self, new_state: IoState, force: bool) {
         let target_val = match new_state {
-            IoState::Idle => "512",
+            IoState::Idle => "384",
             IoState::Busy => "256",
-            IoState::Congested => "128",
+            IoState::Congested => "192",
         };
         if force || self.cached_read_ahead != target_val {
             ffi::log_debug(&format!("StorageManager: Changing ReadAhead -> {}kb (PSI State: {:?})", target_val, new_state));
