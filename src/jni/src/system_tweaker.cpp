@@ -12,29 +12,22 @@
 
 namespace TweakValues {
     // Memory & VM
-    constexpr const char* kPageCluster = "2";
-    constexpr const char* kVmStatInterval = "3";
-    constexpr const char* kDirtyRatio = "10";
-    constexpr const char* kDirtyBackgroundRatio = "3";
-    constexpr const char* kDirtyExpire = "500";
-    constexpr const char* kDirtyWriteback = "1500";
+    constexpr const char* kPageCluster = "1";
+    constexpr const char* kVmStatInterval = "2";
     constexpr const char* kOomDumpTasks = "0";
     constexpr const char* kVmWatermarkScale = "50";
-    constexpr const char* kMinFreeKbytes = "65536";
-    constexpr const char* kVmLaptopMode = "5";
     constexpr const char* kVmExtfragThreshold = "750";
-    constexpr const char* kVmOomKillAlloc = "1";
     
     // Low Memory Killer
-    constexpr const char* kLmkMinfreeLevels = "18432,23040,27648,32256,55296,80640";
+    constexpr const char* kLmkMinfreeLevels = "18432,23040,27648,32256,58880,76800";
     constexpr const char* kLmkReportKills = "false";
 
     // CPU Scheduler
-    constexpr const char* kSchedLatencyNs = "8000000";
+    constexpr const char* kSchedLatencyNs = "9000000";
     constexpr const char* kSchedMinGranularityNs = "1000000";
-    constexpr const char* kSchedMigrationCost = "1000000";
+    constexpr const char* kSchedMigrationCost = "500000";
     constexpr const char* kSchedChildFirst = "1";
-    constexpr const char* kSchedWakeupGranularity = "1500000";
+    constexpr const char* kSchedWakeupGranularity = "2000000";
     constexpr const char* kPerfCpuLimit = "10";
     constexpr const char* kKernelPidMax = "65536";
     constexpr const char* kSchedSchedstats = "0";
@@ -43,12 +36,13 @@ namespace TweakValues {
     // I/O & Storage
     constexpr const char* kIoAddRandom = "0";
     constexpr const char* kIoStats = "0";
-    constexpr const char* kMmcRqAffinity = "2";
+    constexpr const char* kMmcRqAffinity = "1";
     constexpr const char* kFsLeaseBreak = "10";
-    constexpr const char* kMaxUserWatches = "524288";
-    constexpr const char* kFileMax = "2097152";
+    constexpr const char* kMaxUserWatches = "65536";
+    constexpr const char* kFileMax = "524288";
     constexpr const char* kProtectedSymlinks = "1";
     constexpr const char* kProtectedHardlinks = "1";
+    constexpr const char* kIoScheduler = "deadline";
 
     // Network Tweaks
     constexpr const char* kTcpNotsentLowat = "16384";
@@ -81,16 +75,9 @@ namespace SystemPaths {
     // Memory & VM
     constexpr const char* kPageCluster = "/proc/sys/vm/page-cluster";
     constexpr const char* kVmStatInterval = "/proc/sys/vm/stat_interval";
-    constexpr const char* kDirtyRatio = "/proc/sys/vm/dirty_ratio";
-    constexpr const char* kDirtyBackgroundRatio = "/proc/sys/vm/dirty_background_ratio";
-    constexpr const char* kDirtyExpire = "/proc/sys/vm/dirty_expire_centisecs";
-    constexpr const char* kDirtyWriteback = "/proc/sys/vm/dirty_writeback_centisecs";
     constexpr const char* kOomDumpTasks = "/proc/sys/vm/oom_dump_tasks";
     constexpr const char* kVmWatermarkScale = "/proc/sys/vm/watermark_scale_factor";
-    constexpr const char* kMinFreeKbytes = "/proc/sys/vm/min_free_kbytes";
-    constexpr const char* kVmLaptopMode = "/proc/sys/vm/laptop_mode";
     constexpr const char* kVmExtfragThreshold = "/proc/sys/vm/extfrag_threshold";
-    constexpr const char* kVmOomKillAlloc = "/proc/sys/vm/oom_kill_allocating_task";
 
     // CPU Scheduler
     constexpr const char* kSchedLatencyNs = "/proc/sys/kernel/sched_latency_ns";
@@ -112,6 +99,7 @@ namespace SystemPaths {
     constexpr const char* kFileMax = "/proc/sys/fs/file-max";
     constexpr const char* kProtectedSymlinks = "/proc/sys/fs/protected_symlinks";
     constexpr const char* kProtectedHardlinks = "/proc/sys/fs/protected_hardlinks";
+    constexpr const char* kIoScheduler = "/sys/block/mmcblk0/queue/scheduler";
 
     // Network
     constexpr const char* kTcpNotsentLowat = "/proc/sys/net/ipv4/tcp_notsent_lowat";
@@ -131,7 +119,7 @@ namespace SystemPaths {
     constexpr const char* kRpFilter = "/proc/sys/net/ipv4/conf/default/rp_filter";
     constexpr const char* kTcpCongestion = "/proc/sys/net/ipv4/tcp_congestion_control";
 
-    // System
+    // System & Debugging
     constexpr const char* kKernelPrintk = "/proc/sys/kernel/printk";
     constexpr const char* kKernelPrintkMsg = "/proc/sys/kernel/printk_devkmsg";
     constexpr const char* kCorePattern = "/proc/sys/kernel/core_pattern";
@@ -145,16 +133,9 @@ namespace SystemTweaker {
         // Memory & VM
         SystemUtils::applyTweak(SystemPaths::kPageCluster, TweakValues::kPageCluster);
         SystemUtils::applyTweak(SystemPaths::kVmStatInterval, TweakValues::kVmStatInterval);
-        SystemUtils::applyTweak(SystemPaths::kDirtyRatio, TweakValues::kDirtyRatio);
-        SystemUtils::applyTweak(SystemPaths::kDirtyBackgroundRatio, TweakValues::kDirtyBackgroundRatio);
-        SystemUtils::applyTweak(SystemPaths::kDirtyExpire, TweakValues::kDirtyExpire);
-        SystemUtils::applyTweak(SystemPaths::kDirtyWriteback, TweakValues::kDirtyWriteback);
         SystemUtils::applyTweak(SystemPaths::kOomDumpTasks, TweakValues::kOomDumpTasks);
         SystemUtils::applyTweak(SystemPaths::kVmWatermarkScale, TweakValues::kVmWatermarkScale);
-        SystemUtils::applyTweak(SystemPaths::kMinFreeKbytes, TweakValues::kMinFreeKbytes);
-        SystemUtils::applyTweak(SystemPaths::kVmLaptopMode, TweakValues::kVmLaptopMode);
         SystemUtils::applyTweak(SystemPaths::kVmExtfragThreshold, TweakValues::kVmExtfragThreshold);
-        SystemUtils::applyTweak(SystemPaths::kVmOomKillAlloc, TweakValues::kVmOomKillAlloc);
 
         // Low Memory Killer
         SystemUtils::setSystemProp("lmk.minfree_levels", TweakValues::kLmkMinfreeLevels);
@@ -180,6 +161,7 @@ namespace SystemTweaker {
         SystemUtils::applyTweak(SystemPaths::kFileMax, TweakValues::kFileMax);
         SystemUtils::applyTweak(SystemPaths::kProtectedSymlinks, TweakValues::kProtectedSymlinks);
         SystemUtils::applyTweak(SystemPaths::kProtectedHardlinks, TweakValues::kProtectedHardlinks);
+        SystemUtils::applyTweak(SystemPaths::kIoScheduler, TweakValues::kIoScheduler);
 
         // Network
         SystemUtils::applyTweak(SystemPaths::kTcpNotsentLowat, TweakValues::kTcpNotsentLowat);

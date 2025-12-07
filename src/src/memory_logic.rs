@@ -7,11 +7,11 @@ use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 const K_PSI_MEMORY_PATH: &str = "/proc/pressure/memory";
 const K_SWAPPINESS_PATH: &str = "/proc/sys/vm/swappiness";
 const K_VFS_CACHE_PRESSURE_PATH: &str = "/proc/sys/vm/vfs_cache_pressure";
-const THRESHOLD_GREEN_TO_YELLOW: f64 = 3.0;
-const THRESHOLD_YELLOW_TO_GREEN: f64 = 1.5;
-const THRESHOLD_YELLOW_TO_RED: f64 = 15.0;
-const THRESHOLD_RED_TO_YELLOW: f64 = 10.0;
-const MONITORING_INTERVAL_MS: i32 = 2000;
+const THRESHOLD_GREEN_TO_YELLOW: f64 = 8.0;
+const THRESHOLD_YELLOW_TO_GREEN: f64 = 3.0;
+const THRESHOLD_YELLOW_TO_RED: f64 = 35.0;
+const THRESHOLD_RED_TO_YELLOW: f64 = 15.0;
+const MONITORING_INTERVAL_MS: i32 = 6000;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum MemoryState {
@@ -45,7 +45,7 @@ impl MemoryManager {
         ffi::log_info("MemoryManager: Initializing...");
         let mut manager = Self {
             fd: unsafe { 
-                let raw = ffi::register_psi_trigger(K_PSI_MEMORY_PATH, 60000, 1000000);
+                let raw = ffi::register_psi_trigger(K_PSI_MEMORY_PATH, 80000, 1000000);
                 if raw < 0 { return Err("Failed to register Memory PSI trigger".to_string()); }
                 OwnedFd::from_raw_fd(raw)
             },
@@ -84,9 +84,9 @@ impl MemoryManager {
     }
     fn apply_state(&mut self, new_state: MemoryState, force: bool) {
         let (target_swap, target_cache) = match new_state {
-            MemoryState::Idle => ("30", "50"),
-            MemoryState::Balanced => ("60", "100"),
-            MemoryState::Pressure => ("100", "150"),
+            MemoryState::Idle => ("60", "50"),
+            MemoryState::Balanced => ("80", "80"),
+            MemoryState::Pressure => ("100", "120"),
         };
         if force || self.cache.swappiness != target_swap {
             ffi::log_debug(&format!("MemoryManager: Set Swappiness -> {}", target_swap));

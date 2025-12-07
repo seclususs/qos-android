@@ -6,7 +6,7 @@ use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 use std::time::{Duration, Instant};
 
 const K_TOUCH_PATH: &str = "/dev/input/event3";
-const K_IDLE_TIMEOUT: Duration = Duration::from_millis(2000);
+const K_IDLE_TIMEOUT: Duration = Duration::from_millis(6000);
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum DisplayMode { 
