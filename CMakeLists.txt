@@ -16,22 +16,39 @@ endif()
 
 message(STATUS "NDK ABI: ${ANDROID_ABI}")
 message(STATUS "Rust Target: ${RUST_TARGET}")
+message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
+
 set(RUST_CRATE_PATH ${CMAKE_SOURCE_DIR}/src)
-set(RUST_LIB_DIR ${RUST_CRATE_PATH}/target/${RUST_TARGET}/release)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(RUST_BUILD_TYPE_DIR "debug")
+    set(CARGO_FLAGS "")
+    set(RUST_LIB_DIR ${RUST_CRATE_PATH}/target/${RUST_TARGET}/debug)
+else()
+    set(RUST_BUILD_TYPE_DIR "release")
+    set(CARGO_FLAGS "--release")
+    set(RUST_LIB_DIR ${RUST_CRATE_PATH}/target/${RUST_TARGET}/release)
+endif()
+
 set(RUST_LIB_NAME "qos_logic")
 set(RUST_STATIC_LIB ${RUST_LIB_DIR}/lib${RUST_LIB_NAME}.a)
 
 add_custom_command(
     OUTPUT ${RUST_STATIC_LIB}
-    COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
+    COMMAND ${CARGO_EXECUTABLE} build ${CARGO_FLAGS} --target ${RUST_TARGET}
     WORKING_DIRECTORY ${RUST_CRATE_PATH}
     DEPENDS ${RUST_CRATE_PATH}/Cargo.toml
             ${RUST_CRATE_PATH}/src/lib.rs
             ${RUST_CRATE_PATH}/src/c_api.rs
             ${RUST_CRATE_PATH}/src/ffi.rs
+            ${RUST_CRATE_PATH}/src/system_utils.rs
+            ${RUST_CRATE_PATH}/src/tweaker_logic.rs
             ${RUST_CRATE_PATH}/src/memory_logic.rs
             ${RUST_CRATE_PATH}/src/refresh_logic.rs
-    COMMENT "Building Rust static library for ${RUST_TARGET}..."
+            ${RUST_CRATE_PATH}/src/storage_logic.rs
+            ${RUST_CRATE_PATH}/src/vm_logic.rs
+            ${RUST_CRATE_PATH}/src/logger.rs
+    COMMENT "Building Rust static library (${CMAKE_BUILD_TYPE}) for ${RUST_TARGET}..."
 )
 
 add_custom_target(RustLib
@@ -60,6 +77,10 @@ set_target_properties(qos_daemon_cpp PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(qos_daemon_cpp PUBLIC DEBUG)
+endif()
 
 target_include_directories(qos_daemon_cpp
     PUBLIC
