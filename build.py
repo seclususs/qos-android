@@ -195,6 +195,7 @@ def build_architecture(abi, ndk_path, api_level, build_type):
     log_step("Configuring CMake")
     cmake_cmd = [
         "cmake",
+        "-Wno-dev",
         f"-DANDROID_ABI={abi}",
         f"-DANDROID_PLATFORM=android-{api_level}",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_file}",
