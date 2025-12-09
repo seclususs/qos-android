@@ -1,145 +1,278 @@
 /**
- * @brief Defines the Foreign Function Interface (FFI) boundary between C++ and Rust.
+ * @file daemon_interface.h
+ * @brief Quality of Service (QoS) Daemon Foreign Function Interface (FFI) Specification.
+ * @author Seclususs <https://github.com/seclususs>
+ * @copyright Copyright (c) 2025 Seclususs. All rights reserved.
  *
- * This header exposes the C-compatible API used for bidirectional communication.
- * It allows the C++ layer to control the Rust daemon lifecycle and
- * permits Rust logic to invoke system-level C++ utilities.
+ * ======================================================================================
+ * SYSTEM ARCHITECTURE OVERVIEW
+ * ======================================================================================
  *
- * @author Seclususs
- * https://github.com/seclususs
+ * This header file defines the strict ABI (Application Binary Interface) contract between
+ * the Android Native C++ layer (Host) and the Rust Core Logic library (Guest).
+ * The architecture follows a "Host-Guest" model where the C++ runtime manages the
+ * process lifecycle, OS signals, and JNI interaction, while the Rust static library
+ * (`libqos_logic.a`) encapsulates the heuristic algorithms and state machines.
+ *
+ * <h3>Data Flow Diagram</h3>
+ *
+ * <pre>
+ * +----------------------+        FFI Boundary        +------------------------+
+ * |   Android Runtime    |                            |    Rust Core Logic     |
+ * |      (C++ Host)      | <========================> |      (Static Lib)      |
+ * +----------------------+                            +------------------------+
+ * |                      |                            |                        |
+ * |  [Main Thread]       | -- calls start/stop ---->  |  [Lifecycle Manager]   |
+ * |   - Signal Handling  |                            |   - Thread Spawning    |
+ * |   - Service Init     |                            |   - Cleanup            |
+ * |                      |                            |                        |
+ * |  [Logging Shim]      | <--- raw pointers -------  |  [Logger Module]       |
+ * |   - __android_log    |        (const char*)       |   - macros (info!)     |
+ * |                      |                            |                        |
+ * |  [Emergency Stop]    | <--- function call ------  |  [Panic Handler]       |
+ * |   - exit/restart     |      (death signal)        |   - catch_unwind       |
+ * |                      |                            |                        |
+ * |  [Hardware Abstr.]   | <--- syscall wrappers ---  |  [Event Loop]          |
+ * |   - open/read/write  |        (file desc)         |   - epoll_wait         |
+ * |   - ioctl            |                            |   - PSI Monitors       |
+ * |                      |                            |   - Touch Listeners    |
+ * +----------------------+                            +------------------------+
+ * </pre>
+ *
+ * ======================================================================================
+ * MEMORY MANAGEMENT CONTRACT
+ * ======================================================================================
+ *
+ * 1. <b>String Ownership:</b>
+ * - All strings passed from Rust to C++ (e.g., logging messages) are borrowed.
+ * - The C++ layer strictly observes "read-only" access and must not attempt to
+ * free() or modify these pointers.
+ * - Rust guarantees null-termination for all `const char*` arguments.
+ *
+ * 2. <b>File Descriptors (FDs):</b>
+ * - FDs opened by C++ on behalf of Rust (e.g., via `cpp_open_touch_device`)
+ * transfer ownership to the Rust runtime immediately upon return.
+ * - The Rust `OwnedFd` type ensures the FD is closed when the struct drops.
+ *
+ * 3. <b>Stack vs Heap:</b>
+ * - Heavy buffers (like input event reads) should be allocated on the stack
+ * within the C++ implementation to avoid heap fragmentation, as they are ephemeral.
+ *
+ * ======================================================================================
+ * THREAD SAFETY AND CONCURRENCY
+ * ======================================================================================
+ *
+ * - <b>Reentrancy:</b> The logging functions (`cpp_log_*`) are reentrant and thread-safe,
+ * relying on the thread-safety guarantees of the underlying Android logging facility.
+ * - <b>Lifecycle:</b> `rust_start_services` and `rust_stop_services` are NOT thread-safe
+ * relative to each other. They must be called sequentially from the main thread.
+ * - <b>Blocking Operations:</b> Functions exposed to Rust (like `cpp_read_touch_events`)
+ * must remain non-blocking (O_NONBLOCK) to ensure the Rust `epoll` loop maintains
+ * predictable latency.
  */
 
 #ifndef DAEMON_INTERFACE_H
 #define DAEMON_INTERFACE_H
 
-#include <stdbool.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <sys/types.h>
 
+/*
+ * Ensure C linkage to prevent C++ name mangling, allowing the Rust linker
+ * to locate these symbols successfully.
+ */
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief Initializes and spawns the background Rust service threads.
+ * @brief Bootstraps the Rust runtime environment and initializes background services.
  *
- * This function triggers the creation of the main event loop.
+ * @details
+ * This function serves as the primary entry point for the library. It is designed to be
+ * called exactly once during the application startup phase.
  *
- * @note This function returns immediately after spawning the service.
- * @warning Should be called only once during the application startup phase.
+ * <b>Internal Operations:</b>
+ * 1. <b>Thread Spawning:</b> Initializes the Rust runtime and spawns the main `epoll`
+ * event loop thread. This thread is detached from the caller but managed internally via
+ * a global `JoinHandle`.
+ * 2. <b>System Tweaker:</b> Launches a secondary, short-lived thread to apply static
+ * kernel parameters (sysctl) asynchronously, preventing boot-time latency.
+ * 3. <b>State Initialization:</b> Resets the global `SHUTDOWN_REQUESTED` atomic flag.
+ *
+ * @warning
+ * This function initiates detached threads. The caller must ensure the process does not
+ * exit immediately. Typically, the C++ `main()` should enter a `while(running)` loop
+ * or `sigsuspend()` after calling this.
+ *
+ * @note
+ * If called multiple times without an intervening `rust_stop_services()`, the behavior
+ * is undefined and may lead to resource contention or panic in the Rust runtime.
+ *
+ * @see rust_stop_services
  */
 void rust_start_services(void);
 
 /**
- * @brief Signals the Rust services to terminate and joins threads.
+ * @brief Initiates a graceful shutdown sequence for all Rust subsystems.
  *
- * This function sets the internal shutdown flag and blocks the calling thread
- * until the Rust service has exited gracefully.
+ * @details
+ * This function acts as a synchronization barrier. It instructs the Rust event loop
+ * to terminate and waits for all managed threads to join.
  *
- * @post All monitoring resources are released.
+ * <b>Shutdown Sequence:</b>
+ * 1. Atomically sets the `SHUTDOWN_REQUESTED` flag to `true` with Release ordering.
+ * 2. If the event loop is blocked in `epoll_wait`, it will naturally wake up on the
+ * next timeout or event, check the flag, and exit.
+ * 3. The function blocks the calling C++ thread until the Rust main thread handles
+ * have joined successfully.
+ *
+ * <b>Performance Implications:</b>
+ * This is a blocking call. Depending on the `epoll` timeout configured in the Rust
+ * logic (typically 60s max), this might block for a short duration, though normally
+ * it completes instantly.
+ *
+ * @return void
  */
 void rust_stop_services(void);
 
 /**
- * @brief Writes a string value to a specified file path.
+ * @brief Emits an informational log message to the system buffer.
  *
- * Used primarily for writing to sysfs or procfs nodes (e.g., generic kernel tunables).
+ * @details
+ * Maps to the `ANDROID_LOG_INFO` priority. This should be used for high-level
+ * lifecycle events (e.g., "Service Started", "Profile Switched to Balanced").
  *
- * @param path Absolute path to the target file.
- * @param value Null-terminated string value to write.
- * @return true if the write operation completed successfully; false on failure.
- */
-bool cpp_apply_tweak(const char* path, const char* value);
-
-/**
- * @brief Sets an Android system property.
+ * @param[in] message
+ * A null-terminated UTF-8 string. The pointer is valid only for the duration of the call.
  *
- * Wraps the native property setting mechanism (equivalent to `setprop`).
- *
- * @param key Property key (e.g., "persist.sys.my_prop").
- * @param value Property value.
- */
-void cpp_set_system_prop(const char* key, const char* value);
-
-/**
- * @brief Modifies an entry in the Android Settings database.
- *
- * Executes the system `settings` command to update global/system settings.
- *
- * @param property The specific setting key to update.
- * @param value The new value for the setting.
- * @return true if the settings command returned a success exit code; false otherwise.
- */
-bool cpp_set_android_setting(const char* property, const char* value);
-
-/**
- * @brief Logs an informational message to the Android system log.
- *
- * @param message Null-terminated string to log.
+ * @note
+ * In production builds, `INFO` logs are generally preserved. Avoid putting high-frequency
+ * loop data here to prevent log spam and buffer rotation.
  */
 void cpp_log_info(const char* message);
 
 /**
- * @brief Logs a debug message to the Android system log.
+ * @brief Emits a debug log message for development and diagnostics.
  *
- * @note These logs may be stripped in release builds depending on compilation flags.
- * @param message Null-terminated string to log.
+ * @details
+ * Maps to the `ANDROID_LOG_DEBUG` priority.
+ *
+ * <b>Conditional Compilation:</b>
+ * Depending on the `logging.h` preprocessor definitions (e.g., `#ifdef NDEBUG`),
+ * implementation of this function may be compiled out to a no-op instruction to
+ * reduce binary size and runtime overhead.
+ *
+ * @param[in] message
+ * A null-terminated C-string containing diagnostic data (e.g., variable states, raw sensor values).
  */
 void cpp_log_debug(const char* message);
 
 /**
- * @brief Logs an error message to the Android system log.
+ * @brief Emits an error log message indicating a failure condition.
  *
- * @param message Null-terminated string to log.
+ * @details
+ * Maps to the `ANDROID_LOG_ERROR` priority. This is the highest severity used by the daemon.
+ *
+ * <b>Usage Guidelines:</b>
+ * - Call this when a syscall fails (e.g., `open()` returns -1).
+ * - Call this when the heuristic logic encounters an impossible state.
+ * - These logs should always be visible in release builds for triage.
+ *
+ * @param[in] message
+ * A null-terminated C-string describing the error context.
  */
 void cpp_log_error(const char* message);
 
 /**
- * @brief Retrieves the current Memory Pressure Stall Information (PSI).
+ * @brief Reports a critical, unrecoverable failure from Rust to the C++ runtime.
  *
- * Reads the "some" pressure average over the last 10 seconds (avg10).
+ * @details
+ * This function acts as a "Dead Man's Switch". If the Rust thread panics (crashes)
+ * or encounters a fatal state despite `catch_unwind`, it calls this function to
+ * notify the host process.
  *
- * @return The pressure value (0.0 to 100.0), or -1.0 if retrieval fails.
+ * <b>Behavior:</b>
+ * The implementation should typically terminate the process (exit/abort) to allow
+ * the Android init system (or watchdog) to restart the daemon cleanly.
+ *
+ * @param[in] context
+ * A short string describing why the death signal was sent (e.g., "Panic in Event Loop").
  */
-double cpp_get_memory_pressure(void);
+void cpp_notify_service_death(const char* context);
 
 /**
- * @brief Retrieves the current I/O Pressure Stall Information (PSI).
+ * @brief Opens a character device node with specific flags for non-blocking I/O.
  *
- * Reads the "some" pressure average over the last 10 seconds (avg10).
+ * @details
+ * This is a direct wrapper around the POSIX `open()` syscall, but it enforces
+ * specific flags required by the Rust `epoll` architecture.
  *
- * @return The pressure value (0.0 to 100.0), or -1.0 if retrieval fails.
- */
-double cpp_get_io_pressure(void);
-
-/**
- * @brief Opens a touch input device for event reading.
+ * <b>Enforced Flags:</b>
+ * - `O_RDONLY`: Read-only access.
+ * - `O_NONBLOCK`: Essential for Edge-Triggered or Level-Triggered epoll usage without freezing the thread.
+ * - `O_CLOEXEC`: Prevents file descriptor leakage to child processes.
  *
- * Opens the device in non-blocking mode suitable for event polling.
+ * @param[in] path
+ * Absolute path to the device node (e.g., `/dev/input/event0`).
  *
- * @param path Path to the input device (e.g., "/dev/input/eventX").
- * @return A valid file descriptor on success, or -1 on failure.
+ * @return
+ * - On Success: A non-negative file descriptor (int).
+ * - On Failure: Returns -1. The specific `errno` is logged via `cpp_log_error` internally.
  */
 int cpp_open_touch_device(const char* path);
 
 /**
- * @brief Consumes all pending events from the file descriptor.
+ * @brief Drains the input event buffer for a specific file descriptor.
  *
- * Intended to drain the event buffer to prevent stale data reads.
+ * @details
+ * When the `epoll` loop detects activity (`EPOLLIN`) on a touch device, this function
+ * is invoked to consume the data.
  *
- * @param fd Valid file descriptor for the input device.
+ * <b>Mechanism:</b>
+ * It performs a `read()` in a loop until it receives `EAGAIN` or reads 0 bytes.
+ * This effectively "clears" the interrupt state of the device driver.
+ *
+ * <b>Data Handling:</b>
+ * The actual content of the `input_event` struct is discarded. The daemon's logic uses
+ * the <i>existence</i> of an event as a signal for user activity, rather than analyzing
+ * the specific X/Y coordinates or keycodes.
+ *
+ * @param[in] fd
+ * The valid file descriptor previously opened via `cpp_open_touch_device`.
  */
 void cpp_read_touch_events(int fd);
 
 /**
- * @brief Registers a PSI trigger for a specific resource.
+ * @brief Configures and registers a Pressure Stall Information (PSI) trigger.
  *
- * Writes a trigger command to the specified PSI path and returns the
- * file descriptor associated with the resource.
+ * @details
+ * The Linux PSI subsystem allows userspace to monitor resource contention (CPU, IO, Memory).
+ * This function handles the complex handshake required to register a trigger with the kernel.
  *
- * @param path Path to the PSI file (e.g., /proc/pressure/io).
- * @param threshold_us Stall threshold in microseconds.
- * @param window_us Window size in microseconds.
- * @return File descriptor for the trigger resource, or -1 on failure.
+ * <b>Protocol Sequence:</b>
+ * 1. Opens the PSI file (e.g., `/proc/pressure/memory`) with Read/Write permissions.
+ * 2. Constructs a protocol string: `"some <threshold> <window>"`.
+ * 3. Writes this string to the FD.
+ * 4. Checks for write errors (which usually indicate kernel incompatibility).
+ *
+ * @param[in] path
+ * Path to the PSI interface. Valid values typically include:
+ * - `/proc/pressure/memory`
+ * - `/proc/pressure/io`
+ * - `/proc/pressure/cpu`
+ *
+ * @param[in] threshold_us
+ * The stall threshold in microseconds. If the system stalls for longer than this
+ * value within the specified window, the FD becomes readable.
+ *
+ * @param[in] window_us
+ * The sliding window size in microseconds.
+ *
+ * @return
+ * - On Success: A valid file descriptor representing the registered trigger.
+ * - On Failure: Returns -1. Commonly occurs if the kernel was compiled without `CONFIG_PSI=y`.
  */
 int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us);
 

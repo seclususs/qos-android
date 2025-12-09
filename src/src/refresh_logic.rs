@@ -1,18 +1,16 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::ffi;
+use crate::system_utils;
 use crate::traits::EventHandler;
 use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 use std::time::{Duration, Instant};
 
 const K_TOUCH_PATH: &str = "/dev/input/event3";
-const K_IDLE_TIMEOUT: Duration = Duration::from_millis(6000);
+const K_IDLE_TIMEOUT: Duration = Duration::from_millis(7000);
 
 #[derive(PartialEq, Clone, Copy, Debug)]
-enum DisplayMode { 
-    LowPower,
-    Smooth
-}
+enum DisplayMode { LowPower, Smooth }
 
 pub struct RefreshManager {
     fd: OwnedFd,
@@ -23,7 +21,7 @@ pub struct RefreshManager {
 
 impl RefreshManager {
     pub fn new() -> Result<Self, String> {
-        ffi::log_info("RefreshManager: Initializing Display Service...");
+        info!("RefreshManager: Initializing Display Service...");
         let raw_fd = ffi::open_touch_device(K_TOUCH_PATH);
         if raw_fd < 0 { return Err(format!("Failed to open input device: {}", K_TOUCH_PATH)); }
         let mut manager = Self { 
@@ -42,9 +40,9 @@ impl RefreshManager {
         };
         if force || self.cached_prop_val != val {
             if force {
-                ffi::log_info(&format!("RefreshManager: Force Mode -> {:?}", mode));
+                debug!("RefreshManager: Force Mode -> {:?}", mode);
             }
-            ffi::set_android_setting("min_refresh_rate", val);
+            system_utils::set_android_setting("system", "min_refresh_rate", val);
             self.cached_prop_val = val.to_string();
         }
         self.current_mode = mode;
@@ -63,11 +61,7 @@ impl EventHandler for RefreshManager {
     fn get_timeout_ms(&self) -> i32 {
         if self.current_mode == DisplayMode::Smooth {
             let elapsed = self.last_interaction.elapsed();
-            if elapsed >= K_IDLE_TIMEOUT {
-                0
-            } else {
-                (K_IDLE_TIMEOUT - elapsed).as_millis() as i32
-            }
+            if elapsed >= K_IDLE_TIMEOUT { 0 } else { (K_IDLE_TIMEOUT - elapsed).as_millis() as i32 }
         } else {
             -1
         }
@@ -75,7 +69,7 @@ impl EventHandler for RefreshManager {
     fn on_timeout(&mut self) {
         if self.current_mode == DisplayMode::Smooth {
             if self.last_interaction.elapsed() >= K_IDLE_TIMEOUT {
-                ffi::log_info("RefreshManager: Idle detected -> Dropping to 60Hz");
+                debug!("RefreshManager: Idle detected -> Dropping to 60Hz");
                 self.apply_mode(DisplayMode::LowPower, false);
             }
         }
