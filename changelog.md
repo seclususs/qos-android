@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3
+- Optimized parameters for better balance
+- Significantly reduced background CPU usage
+- Adjusted touch boost timeout logic
+- Migrated core logic to Rust for maximum stability
+
+---
+
 ## v1.2
 - Refactor to context-aware FSM with hysteresis
 - Improved stability
