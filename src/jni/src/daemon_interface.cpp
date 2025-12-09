@@ -4,98 +4,34 @@
  */
 
 #include "daemon_interface.h"
-#include "system_utils.h"
 #include "logging.h"
 
-#include <string>
-#include <fstream>
 #include <unistd.h>
-#include <cerrno>
-#include <cstring>
-#include <linux/input.h>
 #include <fcntl.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include <cstdio>
+#include <cstring>
+#include <cerrno>
+#include <cstdlib>
 
-extern "C" bool cpp_apply_tweak(const char* path, const char* value) {
-    if (!path || !value) return false;
-    return SystemUtils::applyTweak(path, value);
+extern "C" void cpp_log_info(const char* message) {
+    if (message) LOGI("%s", message);
 }
 
-extern "C" void cpp_set_system_prop(const char* key, const char* value) {
-    if (!key || !value) return;
-    SystemUtils::setSystemProp(key, value);
+extern "C" void cpp_log_debug(const char* message) {
+    if (message) LOGD("%s", message);
 }
 
-extern "C" bool cpp_set_android_setting(const char* property, const char* value) {
-    if (!property || !value) return false;
-    return SystemUtils::setAndroidSetting(property, value);
+extern "C" void cpp_log_error(const char* message) {
+    if (message) LOGE("%s", message);
 }
 
-extern "C" double cpp_get_memory_pressure(void) {
-    static int mem_fd = -1;
-    const char* kPsiMemory = "/proc/pressure/memory";
+extern "C" void cpp_notify_service_death(const char* context) {
+    const char* reason = context ? context : "Unknown Reason";
     
-    if (mem_fd < 0) {
-        mem_fd = open(kPsiMemory, O_RDONLY | O_CLOEXEC);
-        if (mem_fd < 0) {
-            LOGE("cpp_get_memory_pressure: Failed to open %s", kPsiMemory);
-            return -1.0;
-        }
-    }
-
-    char buffer[128];
-    ssize_t bytes_read = pread(mem_fd, buffer, sizeof(buffer) - 1, 0);
-
-    if (bytes_read > 0) {
-        buffer[bytes_read] = '\0';
-        char* avg10_ptr = strstr(buffer, "avg10=");
-        if (avg10_ptr) {
-            char* end_ptr;
-            double val = strtod(avg10_ptr + 6, &end_ptr);
-            if (avg10_ptr + 6 != end_ptr) {
-                return val;
-            }
-        }
-    } else {
-        close(mem_fd);
-        mem_fd = -1; 
-    }
-
-    return -1.0;
-}
-
-extern "C" double cpp_get_io_pressure(void) {
-    static int io_fd = -1;
-    const char* kPsiIo = "/proc/pressure/io";
-
-    if (io_fd < 0) {
-        io_fd = open(kPsiIo, O_RDONLY | O_CLOEXEC);
-        if (io_fd < 0) {
-            LOGE("cpp_get_io_pressure: Failed to open %s", kPsiIo);
-            return -1.0;
-        }
-    }
-
-    char buffer[128];
-    ssize_t bytes_read = pread(io_fd, buffer, sizeof(buffer) - 1, 0);
-
-    if (bytes_read > 0) {
-        buffer[bytes_read] = '\0';
-        char* avg10_ptr = strstr(buffer, "avg10=");
-        if (avg10_ptr) {
-            char* end_ptr;
-            double val = strtod(avg10_ptr + 6, &end_ptr);
-            if (avg10_ptr + 6 != end_ptr) {
-                return val;
-            }
-        }
-    } else {
-        close(io_fd);
-        io_fd = -1;
-    }
-
-    return -1.0;
+    LOGE("!!! FATAL: RUST SERVICE DIED !!!");
+    LOGE("Reason: %s", reason);
+    LOGE("Triggering emergency exit to force service restart...");
+    std::exit(EXIT_FAILURE);
 }
 
 extern "C" int cpp_open_touch_device(const char* path) {
@@ -107,7 +43,7 @@ extern "C" int cpp_open_touch_device(const char* path) {
 extern "C" void cpp_read_touch_events(int fd) {
     if (fd < 0) return;
 
-    char buffer[sizeof(struct input_event) * 64];
+    char buffer[1024]; 
     while (read(fd, buffer, sizeof(buffer)) > 0);
 }
 
@@ -116,7 +52,7 @@ extern "C" int cpp_register_psi_trigger(const char* path, int threshold_us, int 
 
     int fd = open(path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
     if (fd < 0) {
-        LOGE("Failed to open PSI file for trigger: %s", path);
+        LOGE("Failed to open PSI file for trigger: %s (errno: %d)", path, errno);
         return -1;
     }
 
@@ -130,16 +66,4 @@ extern "C" int cpp_register_psi_trigger(const char* path, int threshold_us, int 
     }
     
     return fd;
-}
-
-extern "C" void cpp_log_info(const char* message) {
-    if (message) LOGI("%s", message);
-}
-
-extern "C" void cpp_log_debug(const char* message) {
-    if (message) LOGD("%s", message);
-}
-
-extern "C" void cpp_log_error(const char* message) {
-    if (message) LOGE("%s", message);
 }

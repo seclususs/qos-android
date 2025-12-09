@@ -4,7 +4,6 @@
  */
 
 #include "logging.h"
-#include "system_tweaker.h"
 #include "daemon_interface.h"
 
 #include <atomic>
@@ -38,17 +37,11 @@ int main() {
     LOGI("=== %s Starting ===", kAppName);
     LOGI("PID: %d", getpid());
 
-    std::thread([] {
-        std::this_thread::sleep_for(std::chrono::minutes(1));
-        SystemTweaker::applyAll();
-    }).detach();
-
     LOGI("Starting Rust services...");
     rust_start_services();
 
-    LOGI("All services started successfully. Use 'logcat -s %s' to view the logs.", LOG_TAG);
-    LOGI("To stop the service, use: kill -TERM %d", getpid());
-
+    LOGI("All services started successfully.", LOG_TAG);
+    
     while (!g_shutdown_requested.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(1s);
     }
