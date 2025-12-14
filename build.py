@@ -103,10 +103,13 @@ def clean_specific_build(build_dir):
             log_error(f"Failed to clean directory {build_dir}: {e}")
 
 
-def clean_rust_target(rust_target):
+def clean_rust_target(rust_target, build_type):
     crate_path = Path("src")
     if crate_path.exists():
-        cmd = ["cargo", "clean", "--target", rust_target, "--release"]
+        cmd = ["cargo", "clean", "--target", rust_target]
+        if build_type == "Release":
+            cmd.append("--release")
+            
         run_command(cmd, cwd=crate_path)
 
 
@@ -185,10 +188,18 @@ def build_architecture(abi, ndk_path, api_level, build_type):
     
     log_step("Cleaning previous artifacts")
     clean_specific_build(build_dir)
-    clean_rust_target(rust_target)
+    clean_rust_target(rust_target, build_type)
 
     log_step("Checking Rust environment")
-    run_command(["rustup", "target", "add", rust_target])
+    try:
+        subprocess.run(
+            ["rustup", "target", "add", rust_target], 
+            check=True, 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL
+        )
+    except subprocess.CalledProcessError:
+        log_error(f"Failed to add rust target: {rust_target}")
 
     build_dir.mkdir(parents=True, exist_ok=True)
 
