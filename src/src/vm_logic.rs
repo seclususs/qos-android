@@ -3,12 +3,11 @@
 use crate::ffi;
 use crate::system_utils;
 use crate::traits::EventHandler;
+use crate::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 
 const K_DIRTY_RATIO: &str = "/proc/sys/vm/dirty_ratio";
 const K_DIRTY_BG_RATIO: &str = "/proc/sys/vm/dirty_background_ratio";
-const K_WRITEBACK_CENTISECS: &str = "/proc/sys/vm/dirty_writeback_centisecs";
-const K_DIRTY_EXPIRE_CENTISECS: &str = "/proc/sys/vm/dirty_expire_centisecs";
 const K_PSI_MEMORY_PATH: &str = "/proc/pressure/memory";
 
 const THRESHOLD_UP_TO_BALANCED: f64 = 10.0;
@@ -23,16 +22,11 @@ enum VmState { Idle, Balanced, Pressure }
 struct VmConfigCache {
     dirty_ratio: String,
     dirty_bg_ratio: String,
-    writeback: String,
-    expire: String,
 }
 
 impl VmConfigCache {
     fn new() -> Self {
-        Self {
-            dirty_ratio: String::new(), dirty_bg_ratio: String::new(),
-            writeback: String::new(), expire: String::new(),
-        }
+        Self { dirty_ratio: String::new(), dirty_bg_ratio: String::new() }
     }
 }
 
@@ -43,12 +37,12 @@ pub struct VmManager {
 }
 
 impl VmManager {
-    pub fn new() -> Result<Self, String> {
-        info!("VmManager: Initializing..."); 
+    pub fn new() -> Result<Self, QosError> {
+        log::info!("VmManager: Initializing..."); 
         let mut manager = Self {
             fd: unsafe {
                 let raw = ffi::register_psi_trigger(K_PSI_MEMORY_PATH, 100000, 1000000);
-                if raw < 0 { return Err("Failed to register VM PSI trigger".to_string()); }
+                if raw < 0 { return Err(QosError::FfiError("Failed to register VM PSI trigger".to_string())); }
                 OwnedFd::from_raw_fd(raw)
             },
             current_state: VmState::Idle,
@@ -77,41 +71,37 @@ impl VmManager {
         }
     }
     fn apply_state(&mut self, new_state: VmState, force: bool) {
-        let (ratio, bg_ratio, interval) = match new_state {
-            VmState::Idle => ("30", "10", "4500"),
-            VmState::Balanced => ("20", "10", "3000"),
-            VmState::Pressure => ("10", "5", "2000"),
+        let (ratio, bg_ratio) = match new_state {
+            VmState::Idle => ("20", "10"),
+            VmState::Balanced => ("15", "10"),
+            VmState::Pressure => ("10", "5"),
         };
         if force || self.cache.dirty_ratio != ratio {
-            if system_utils::write_to_file(K_DIRTY_RATIO, ratio) {
-                self.cache.dirty_ratio = ratio.to_string();
+            match system_utils::write_to_file(K_DIRTY_RATIO, ratio) {
+                Ok(_) => self.cache.dirty_ratio = ratio.to_string(),
+                Err(e) => log::error!("VmManager: Failed to write dirty_ratio: {}", e),
             }
         }
         if force || self.cache.dirty_bg_ratio != bg_ratio {
-            if system_utils::write_to_file(K_DIRTY_BG_RATIO, bg_ratio) {
-                self.cache.dirty_bg_ratio = bg_ratio.to_string();
-            }
-        }
-        if force || self.cache.writeback != interval {
-            if system_utils::write_to_file(K_WRITEBACK_CENTISECS, interval) {
-                self.cache.writeback = interval.to_string();
-            }
-        }
-        if force || self.cache.expire != interval {
-            if system_utils::write_to_file(K_DIRTY_EXPIRE_CENTISECS, interval) {
-                self.cache.expire = interval.to_string();
+            match system_utils::write_to_file(K_DIRTY_BG_RATIO, bg_ratio) {
+                Ok(_) => self.cache.dirty_bg_ratio = bg_ratio.to_string(),
+                Err(e) => log::error!("VmManager: Failed to write dirty_bg_ratio: {}", e),
             }
         }
         if self.current_state != new_state {
-            debug!("VM State Transition: {:?} -> {:?}", self.current_state, new_state);
+            log::info!("VM State Transition: {:?} -> {:?}", self.current_state, new_state);
             self.current_state = new_state;
         }
     }
     fn process_logic(&mut self) {
-        let psi = system_utils::parse_psi_avg10(K_PSI_MEMORY_PATH);
-        let next_state = self.evaluate_next_state(psi);
-        if next_state != self.current_state {
-            self.apply_state(next_state, false);
+        match system_utils::parse_psi_avg10(K_PSI_MEMORY_PATH) {
+            Ok(psi) => {
+                let next_state = self.evaluate_next_state(psi);
+                if next_state != self.current_state {
+                    self.apply_state(next_state, false);
+                }
+            },
+            Err(e) => log::warn!("VmManager: PSI read failed: {}", e),
         }
     }
 }

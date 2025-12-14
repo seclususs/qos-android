@@ -3,6 +3,7 @@
 use crate::ffi;
 use crate::system_utils;
 use crate::traits::EventHandler;
+use crate::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 
 const K_PSI_MEMORY_PATH: &str = "/proc/pressure/memory";
@@ -16,11 +17,7 @@ const THRESHOLD_RED_TO_YELLOW: f64 = 15.0;
 const MONITORING_INTERVAL_MS: i32 = 60000;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-enum MemoryState {
-    Idle,
-    Balanced,
-    Pressure,
-}
+enum MemoryState { Idle, Balanced, Pressure }
 
 struct KernelConfigCache {
     swappiness: String,
@@ -29,10 +26,7 @@ struct KernelConfigCache {
 
 impl KernelConfigCache {
     fn new() -> Self {
-        Self {
-            swappiness: String::new(),
-            vfs_cache_pressure: String::new(),
-        }
+        Self { swappiness: String::new(), vfs_cache_pressure: String::new() }
     }
 }
 
@@ -43,12 +37,14 @@ pub struct MemoryManager {
 }
 
 impl MemoryManager {
-    pub fn new() -> Result<Self, String> {
-        info!("MemoryManager: Initializing...");
+    pub fn new() -> Result<Self, QosError> {
+        log::info!("MemoryManager: Initializing...");
         let mut manager = Self {
             fd: unsafe {
                 let raw = ffi::register_psi_trigger(K_PSI_MEMORY_PATH, 80000, 1000000);
-                if raw < 0 { return Err("Failed to register Memory PSI trigger".to_string()); }
+                if raw < 0 { 
+                    return Err(QosError::FfiError("Failed to register Memory PSI trigger".to_string())); 
+                }
                 OwnedFd::from_raw_fd(raw)
             },
             current_state: MemoryState::Idle,
@@ -74,32 +70,44 @@ impl MemoryManager {
     }
     fn apply_state(&mut self, new_state: MemoryState, force: bool) {
         let (target_swap, target_cache) = match new_state {
-            MemoryState::Idle => ("30", "50"),
-            MemoryState::Balanced => ("40", "80"),
-            MemoryState::Pressure => ("70", "120"),
+            MemoryState::Idle => ("30", "100"),
+            MemoryState::Balanced => ("40", "150"),
+            MemoryState::Pressure => ("60", "200"),
         };
         if force || self.cache.swappiness != target_swap {
-            if system_utils::write_to_file(K_SWAPPINESS_PATH, target_swap) {
-                debug!("MemoryManager: Set Swappiness -> {}", target_swap);
-                self.cache.swappiness = target_swap.to_string();
+            match system_utils::write_to_file(K_SWAPPINESS_PATH, target_swap) {
+                Ok(_) => {
+                    log::debug!("MemoryManager: Set Swappiness -> {}", target_swap);
+                    self.cache.swappiness = target_swap.to_string();
+                },
+                Err(e) => log::error!("MemoryManager: Failed to set swappiness: {}", e),
             }
         }
         if force || self.cache.vfs_cache_pressure != target_cache {
-            if system_utils::write_to_file(K_VFS_CACHE_PRESSURE_PATH, target_cache) {
-                debug!("MemoryManager: Set VFS Cache -> {}", target_cache);
-                self.cache.vfs_cache_pressure = target_cache.to_string();
+            match system_utils::write_to_file(K_VFS_CACHE_PRESSURE_PATH, target_cache) {
+                Ok(_) => {
+                    log::debug!("MemoryManager: Set VFS Cache -> {}", target_cache);
+                    self.cache.vfs_cache_pressure = target_cache.to_string();
+                },
+                Err(e) => log::error!("MemoryManager: Failed to set vfs_cache_pressure: {}", e),
             }
         }
         if self.current_state != new_state {
-            debug!("Memory State Transition: {:?} -> {:?}", self.current_state, new_state);
+            log::info!("Memory State Transition: {:?} -> {:?}", self.current_state, new_state);
             self.current_state = new_state;
         }
     }
     fn process_logic(&mut self) {
-        let psi_value = system_utils::parse_psi_avg10(K_PSI_MEMORY_PATH);
-        let next_state = self.evaluate_next_state(psi_value);
-        if next_state != self.current_state {
-            self.apply_state(next_state, false);
+        match system_utils::parse_psi_avg10(K_PSI_MEMORY_PATH) {
+            Ok(psi_value) => {
+                let next_state = self.evaluate_next_state(psi_value);
+                if next_state != self.current_state {
+                    self.apply_state(next_state, false);
+                }
+            },
+            Err(e) => {
+                log::warn!("MemoryManager: Skipping cycle due to PSI read error: {}", e);
+            }
         }
     }
 }

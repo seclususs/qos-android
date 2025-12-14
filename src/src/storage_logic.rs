@@ -3,6 +3,7 @@
 use crate::ffi;
 use crate::system_utils;
 use crate::traits::EventHandler;
+use crate::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 
 const K_PSI_IO_PATH: &str = "/proc/pressure/io";
@@ -24,12 +25,12 @@ pub struct StorageManager {
 }
 
 impl StorageManager {
-    pub fn new() -> Result<Self, String> {
-        info!("StorageManager: Starting I/O optimization service...");
+    pub fn new() -> Result<Self, QosError> {
+        log::info!("StorageManager: Starting I/O optimization service...");
         let mut manager = Self { 
             fd: unsafe { 
                 let raw = ffi::register_psi_trigger(K_PSI_IO_PATH, 120000, 1000000);
-                if raw < 0 { return Err("Failed to register Storage PSI".to_string()); }
+                if raw < 0 { return Err(QosError::FfiError("Failed to register Storage PSI".to_string())); }
                 OwnedFd::from_raw_fd(raw) 
             },
             current_state: IoState::Idle,
@@ -55,23 +56,32 @@ impl StorageManager {
     }
     fn apply_state(&mut self, new_state: IoState, force: bool) {
         let target_val = match new_state {
-            IoState::Idle => "384",
-            IoState::Busy => "256",
-            IoState::Congested => "192",
+            IoState::Idle => "256",
+            IoState::Busy => "192",
+            IoState::Congested => "128",
         };
         if force || self.cached_read_ahead != target_val {
-            debug!("StorageManager: Set ReadAhead -> {}kb", target_val);
-            if system_utils::write_to_file(K_READ_AHEAD_PATH, target_val) {
-                self.cached_read_ahead = target_val.to_string();
+            log::debug!("StorageManager: Set ReadAhead -> {}kb", target_val);
+            match system_utils::write_to_file(K_READ_AHEAD_PATH, target_val) {
+                Ok(_) => {
+                    self.cached_read_ahead = target_val.to_string();
+                },
+                Err(e) => {
+                    log::error!("StorageManager: Failed to set ReadAhead: {}", e);
+                }
             }
         }
         self.current_state = new_state;
     }
     fn update(&mut self) {
-        let psi = system_utils::parse_psi_avg10(K_PSI_IO_PATH);
-        let next = self.evaluate_state(psi);
-        if next != self.current_state {
-            self.apply_state(next, false);
+        match system_utils::parse_psi_avg10(K_PSI_IO_PATH) {
+            Ok(psi) => {
+                let next = self.evaluate_state(psi);
+                if next != self.current_state {
+                    self.apply_state(next, false);
+                }
+            },
+            Err(e) => log::warn!("StorageManager: PSI read failed: {}", e),
         }
     }
 }

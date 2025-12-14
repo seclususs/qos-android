@@ -12,8 +12,6 @@
 #include <chrono>
 #include <unistd.h>
 
-using namespace std::chrono_literals;
-
 namespace {
     std::atomic<bool> g_shutdown_requested{false};
     constexpr const char* kAppName = "QoS";
@@ -25,6 +23,17 @@ void signalHandler(int signum) {
 }
 
 int main() {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGHUP);
+    
+    if (sigprocmask(SIG_BLOCK, &mask, nullptr) < 0) {
+        LOGE("Failed to set signal mask");
+        return 1;
+    }
+
     struct sigaction sa;
     sa.sa_handler = signalHandler;
     sigemptyset(&sa.sa_mask);
@@ -40,10 +49,13 @@ int main() {
     LOGI("Starting Rust services...");
     rust_start_services();
 
-    LOGI("All services started successfully.", LOG_TAG);
+    LOGI("All services started successfully. Waiting for signals...", LOG_TAG);
     
+    sigset_t suspend_mask;
+    sigemptyset(&suspend_mask);
+
     while (!g_shutdown_requested.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(1s);
+        sigsuspend(&suspend_mask);
     }
 
     LOGI("=== Shutdown request received, cleaning up... ===");

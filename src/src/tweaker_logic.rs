@@ -6,27 +6,41 @@ pub struct SystemTweaker;
 
 impl SystemTweaker {
     pub fn apply_all() {
-        info!("Rust: Applying static system tweaks...");
-        system_utils::write_to_file("/proc/sys/vm/page-cluster", "1");
-        system_utils::write_to_file("/proc/sys/vm/stat_interval", "2");
-        system_utils::write_to_file("/proc/sys/vm/oom_dump_tasks", "0");
-        system_utils::write_to_file("/proc/sys/vm/watermark_scale_factor", "50");
-        system_utils::write_to_file("/proc/sys/vm/extfrag_threshold", "750");
-        system_utils::set_system_prop("lmk.minfree_levels", "18432,23040,27648,32256,58880,76800");
+        log::info!("Rust: Applying static system tweaks...");
+        let single_tweaks = [
+            ("/proc/sys/vm/page-cluster", "1"),
+            ("/proc/sys/vm/stat_interval", "2"),
+            ("/proc/sys/vm/oom_dump_tasks", "0"),
+            ("/proc/sys/vm/watermark_scale_factor", "15"),
+            ("/proc/sys/vm/extfrag_threshold", "550"),
+            ("/proc/sys/kernel/printk", "0 0 0 0"),
+            ("/proc/sys/kernel/printk_devkmsg", "off"),
+            ("/proc/sys/kernel/core_pattern", "/dev/null"),
+            ("/proc/sys/kernel/dmesg_restrict", "1"),
+        ];
+        for (path, val) in single_tweaks {
+            if let Err(e) = system_utils::write_to_file(path, val) {
+                log::warn!("Failed to tweak {}: {}", path, e);
+            }
+        }
         system_utils::set_system_prop("persist.sys.lmk.reportkills", "false");
+        system_utils::set_system_prop("persist.service.adb.enable", "0");
+        system_utils::set_system_prop("persist.service.debuggable", "0");
         let sched_tweaks = [
             ("/proc/sys/kernel/sched_latency_ns", "9000000"),
-            ("/proc/sys/kernel/sched_min_granularity_ns", "4000000"),
+            ("/proc/sys/kernel/sched_min_granularity_ns", "7000000"),
             ("/proc/sys/kernel/sched_migration_cost_ns", "500000"),
             ("/proc/sys/kernel/sched_child_runs_first", "1"),
-            ("/proc/sys/kernel/sched_wakeup_granularity_ns", "2000000"),
-            ("/proc/sys/kernel/perf_cpu_time_max_percent", "10"),
+            ("/proc/sys/kernel/sched_wakeup_granularity_ns", "3000000"),
+            ("/proc/sys/kernel/perf_cpu_time_max_percent", "15"),
             ("/proc/sys/kernel/pid_max", "65536"),
             ("/proc/sys/kernel/sched_schedstats", "0"),
             ("/proc/sys/kernel/perf_event_paranoid", "2"),
         ];
         for (path, val) in sched_tweaks {
-            system_utils::write_to_file(path, val);
+            if let Err(e) = system_utils::write_to_file(path, val) {
+                log::warn!("Failed to tweak scheduler {}: {}", path, e);
+            }
         }
         let io_tweaks = [
             ("/sys/block/mmcblk0/queue/add_random", "0"),
@@ -40,7 +54,9 @@ impl SystemTweaker {
             ("/sys/block/mmcblk0/queue/scheduler", "deadline"),
         ];
         for (path, val) in io_tweaks {
-            system_utils::write_to_file(path, val);
+            if let Err(e) = system_utils::write_to_file(path, val) {
+                log::warn!("Failed to tweak IO {}: {}", path, e);
+            }
         }
         let net_tweaks = [
             ("/proc/sys/net/ipv4/tcp_notsent_lowat", "16384"),
@@ -61,14 +77,10 @@ impl SystemTweaker {
             ("/proc/sys/net/ipv4/tcp_congestion_control", "westwood"),
         ];
         for (path, val) in net_tweaks {
-            system_utils::write_to_file(path, val);
+            if let Err(e) = system_utils::write_to_file(path, val) {
+                log::warn!("Failed to tweak NET {}: {}", path, e);
+            }
         }
-        system_utils::set_system_prop("persist.service.adb.enable", "0");
-        system_utils::set_system_prop("persist.service.debuggable", "0");
-        system_utils::write_to_file("/proc/sys/kernel/printk", "0 0 0 0");
-        system_utils::write_to_file("/proc/sys/kernel/printk_devkmsg", "off");
-        system_utils::write_to_file("/proc/sys/kernel/core_pattern", "/dev/null");
-        system_utils::write_to_file("/proc/sys/kernel/dmesg_restrict", "1");
-        info!("Rust: Static tweaks applied successfully.");
+        log::info!("Rust: Static tweaks process finished.");
     }
 }
