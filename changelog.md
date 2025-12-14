@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.4
+- Tuned kernel parameters
+- Dependency updates
+- Security hardening
+
+---
+
 ## v1.3
 - Optimized parameters for better balance
 - Significantly reduced background CPU usage
