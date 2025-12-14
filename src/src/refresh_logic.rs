@@ -3,11 +3,12 @@
 use crate::ffi;
 use crate::system_utils;
 use crate::traits::EventHandler;
+use crate::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, OwnedFd, FromRawFd};
 use std::time::{Duration, Instant};
 
 const K_TOUCH_PATH: &str = "/dev/input/event3";
-const K_IDLE_TIMEOUT: Duration = Duration::from_millis(7000);
+const K_IDLE_TIMEOUT: Duration = Duration::from_millis(5000);
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum DisplayMode { LowPower, Smooth }
@@ -20,10 +21,15 @@ pub struct RefreshManager {
 }
 
 impl RefreshManager {
-    pub fn new() -> Result<Self, String> {
-        info!("RefreshManager: Initializing Display Service...");
+    pub fn new() -> Result<Self, QosError> {
+        log::info!("RefreshManager: Initializing Display Service...");
         let raw_fd = ffi::open_touch_device(K_TOUCH_PATH);
-        if raw_fd < 0 { return Err(format!("Failed to open input device: {}", K_TOUCH_PATH)); }
+        if raw_fd < 0 { 
+            return Err(QosError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound, 
+                format!("Failed to open input device: {}", K_TOUCH_PATH)
+            ))); 
+        }
         let mut manager = Self { 
             fd: unsafe { OwnedFd::from_raw_fd(raw_fd) },
             current_mode: DisplayMode::LowPower,
@@ -40,7 +46,7 @@ impl RefreshManager {
         };
         if force || self.cached_prop_val != val {
             if force {
-                debug!("RefreshManager: Force Mode -> {:?}", mode);
+                log::debug!("RefreshManager: Force Mode -> {:?}", mode);
             }
             system_utils::set_android_setting("system", "min_refresh_rate", val);
             self.cached_prop_val = val.to_string();
@@ -69,7 +75,7 @@ impl EventHandler for RefreshManager {
     fn on_timeout(&mut self) {
         if self.current_mode == DisplayMode::Smooth {
             if self.last_interaction.elapsed() >= K_IDLE_TIMEOUT {
-                debug!("RefreshManager: Idle detected -> Dropping to 60Hz");
+                log::debug!("RefreshManager: Idle detected -> Dropping to 60Hz");
                 self.apply_mode(DisplayMode::LowPower, false);
             }
         }

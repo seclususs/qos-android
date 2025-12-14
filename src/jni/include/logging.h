@@ -16,30 +16,29 @@
 #define LOG_TAG "QoS"
 
 /**
- * @brief Feature flag to suppress INFO and ERROR logs.
+ * @brief ERROR log.
  *
- * Define this to compile out standard logging calls.
+ * Writes to ANDROID_LOG_ERROR. Critical errors are always preserved for
+ * production diagnostics and cannot be disabled.
  */
-#define DISABLE_INFO_ERROR_LOGS
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-#ifdef DISABLE_INFO_ERROR_LOGS
-    /** @brief INFO log (Disabled). */
+#if defined(NDEBUG) && !defined(ENABLE_VERBOSE_LOGS)
+
+    /** @brief INFO log (Disabled in Release). Compiles to no-op. */
     #define LOGI(...) do {} while (0)
-    /** @brief ERROR log (Disabled). */
-    #define LOGE(...) do {} while (0)
-#else
-    /** @brief INFO log (Enabled). Writes to ANDROID_LOG_INFO. */
-    #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-    /** @brief ERROR log (Enabled). Writes to ANDROID_LOG_ERROR. */
-    #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#endif
 
-#ifdef DEBUG
-    /** @brief DEBUG log (Enabled). Writes to ANDROID_LOG_DEBUG only if DEBUG is defined. */
-    #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
-#else
-    /** @brief DEBUG log (Disabled). Stripped from the binary. */
+    /** @brief DEBUG log (Disabled in Release). Compiles to no-op. */
     #define LOGD(...) do {} while (0)
+
+#else
+
+    /** @brief INFO log. Writes to ANDROID_LOG_INFO. */
+    #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+    /** @brief DEBUG log. Writes to ANDROID_LOG_DEBUG. */
+    #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+
 #endif
 
 #endif // LOGGING_H

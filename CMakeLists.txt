@@ -16,21 +16,19 @@ endif()
 
 message(STATUS "NDK ABI: ${ANDROID_ABI}")
 message(STATUS "Rust Target: ${RUST_TARGET}")
-message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 
 set(RUST_CRATE_PATH ${CMAKE_SOURCE_DIR}/src)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(RUST_BUILD_TYPE_DIR "debug")
     set(CARGO_FLAGS "")
-    set(RUST_LIB_DIR ${RUST_CRATE_PATH}/target/${RUST_TARGET}/debug)
 else()
     set(RUST_BUILD_TYPE_DIR "release")
     set(CARGO_FLAGS "--release")
-    set(RUST_LIB_DIR ${RUST_CRATE_PATH}/target/${RUST_TARGET}/release)
 endif()
 
 set(RUST_LIB_NAME "qos_logic")
+set(RUST_LIB_DIR ${RUST_CRATE_PATH}/target/${RUST_TARGET}/${RUST_BUILD_TYPE_DIR})
 set(RUST_STATIC_LIB ${RUST_LIB_DIR}/lib${RUST_LIB_NAME}.a)
 
 add_custom_command(
@@ -48,28 +46,27 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/storage_logic.rs
             ${RUST_CRATE_PATH}/src/vm_logic.rs
             ${RUST_CRATE_PATH}/src/logger.rs
+            ${RUST_CRATE_PATH}/src/traits.rs
+            ${RUST_CRATE_PATH}/src/error.rs
     COMMENT "Building Rust static library (${CMAKE_BUILD_TYPE}) for ${RUST_TARGET}..."
 )
 
-add_custom_target(RustLib
-    DEPENDS ${RUST_STATIC_LIB}
-)
+add_custom_target(RustLib DEPENDS ${RUST_STATIC_LIB})
 
 set(JNI_DIR ${CMAKE_SOURCE_DIR}/src/jni)
 set(JNI_INCLUDE_DIR ${JNI_DIR}/include)
 set(JNI_SRC_DIR ${JNI_DIR}/src)
 
-file(GLOB CPP_HEADERS
-    "${JNI_INCLUDE_DIR}/*.h"
-)
+file(GLOB CPP_HEADERS "${JNI_INCLUDE_DIR}/*.h")
 
-file(GLOB CPP_SOURCES
-    "${JNI_SRC_DIR}/*.cpp"
-)
+file(GLOB ALL_CPP_SOURCES "${JNI_SRC_DIR}/*.cpp")
+
+set(LIB_CPP_SOURCES ${ALL_CPP_SOURCES})
+list(REMOVE_ITEM LIB_CPP_SOURCES "${JNI_SRC_DIR}/main.cpp")
 
 add_library(qos_daemon_cpp
     STATIC
-    ${CPP_SOURCES}
+    ${LIB_CPP_SOURCES}
     ${CPP_HEADERS}
 )
 
@@ -78,14 +75,11 @@ set_target_properties(qos_daemon_cpp PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
+target_include_directories(qos_daemon_cpp PUBLIC ${JNI_INCLUDE_DIR})
+
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(qos_daemon_cpp PUBLIC DEBUG)
 endif()
-
-target_include_directories(qos_daemon_cpp
-    PUBLIC
-    ${JNI_INCLUDE_DIR}
-)
 
 add_executable(qos_daemon
     ${JNI_SRC_DIR}/main.cpp
@@ -103,11 +97,4 @@ target_link_libraries(qos_daemon
     dl
 )
 
-target_include_directories(qos_daemon
-    PRIVATE
-    ${JNI_INCLUDE_DIR}
-)
-
-install(TARGETS qos_daemon
-    DESTINATION bin
-)
+install(TARGETS qos_daemon DESTINATION bin)

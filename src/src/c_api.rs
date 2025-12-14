@@ -7,6 +7,7 @@ use crate::storage_logic::StorageManager;
 use crate::vm_logic::VmManager;
 use crate::tweaker_logic::SystemTweaker;
 use crate::ffi;
+use crate::logger;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -19,24 +20,42 @@ static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static MAIN_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
 const MAX_EVENTS: usize = 16;
+const TWEAKER_DELAY_SECONDS: usize = 60;
+const SERVICE_START_DELAY_SECONDS: usize = 60;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_start_services() {
+    logger::init();
     let result = panic::catch_unwind(|| {
-        info!("Rust: Service entry point reached.");
+        log::info!("Rust: Service entry point reached.");
         thread::spawn(|| {
-            thread::sleep(Duration::from_secs(45));
+            log::info!("Rust: Tweaker thread waiting for boot completion ({}s)...", TWEAKER_DELAY_SECONDS);
+            for _ in 0..TWEAKER_DELAY_SECONDS {
+                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                    log::info!("Rust: Shutdown requested during tweaker delay. Aborting tweaks.");
+                    return;
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
             if let Err(e) = panic::catch_unwind(|| {
                 SystemTweaker::apply_all();
             }) {
-                error!("Rust: SystemTweaker panicked: {:?}", e);
+                log::error!("Rust: SystemTweaker panicked: {:?}", e);
             }
         });
         SHUTDOWN_REQUESTED.store(false, Ordering::Release);
         let handle = thread::spawn(|| {
+            log::info!("Rust: Main service waiting for boot completion ({}s)...", SERVICE_START_DELAY_SECONDS);
+            for _ in 0..SERVICE_START_DELAY_SECONDS {
+                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                    log::info!("Rust: Shutdown requested during startup delay. Aborting main loop.");
+                    return;
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
             let loop_result = panic::catch_unwind(|| {
                 if let Err(e) = run_event_loop() {
-                    error!("Event loop returned error: {}", e);
+                    log::error!("Event loop returned error: {}", e);
                     return false;
                 }
                 true
@@ -44,12 +63,12 @@ pub unsafe extern "C" fn rust_start_services() {
             match loop_result {
                 Ok(success) => {
                     if !success {
-                        error!("Rust: Event loop failed logic. Requesting restart.");
+                        log::error!("Rust: Event loop failed logic. Requesting restart.");
                         ffi::notify_service_death("Event Loop Failed");
                     }
                 },
                 Err(cause) => {
-                    error!("Rust: Event loop PANICKED! {:?}", cause);
+                    log::error!("Rust: Event loop PANICKED! {:?}", cause);
                     ffi::notify_service_death("Event Loop Panic");
                 }
             }
@@ -57,13 +76,13 @@ pub unsafe extern "C" fn rust_start_services() {
         match MAIN_THREAD.lock() {
             Ok(mut guard) => *guard = Some(handle),
             Err(poisoned) => {
-                error!("Rust: MAIN_THREAD mutex is poisoned. Recovering...");
+                log::error!("Rust: MAIN_THREAD mutex is poisoned. Recovering...");
                 *poisoned.into_inner() = Some(handle);
             }
         }
     });
     if let Err(cause) = result {
-        error!("Rust: Critical Panic during startup: {:?}", cause);
+        log::error!("Rust: Critical Panic during startup: {:?}", cause);
         ffi::notify_service_death("Startup Panic");
     }
 }
@@ -71,30 +90,30 @@ pub unsafe extern "C" fn rust_start_services() {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_stop_services() {
     let result = panic::catch_unwind(|| {
-        info!("Rust services stopping...");
+        log::info!("Rust services stopping...");
         SHUTDOWN_REQUESTED.store(true, Ordering::Release);
         let handle_opt = match MAIN_THREAD.lock() {
             Ok(mut guard) => guard.take(),
-            Err(poisoned) => {
-                error!("Rust: MAIN_THREAD mutex poisoned during stop.");
-                poisoned.into_inner().take()
-            }
+            Err(poisoned) => poisoned.into_inner().take()
         };
         if let Some(handle) = handle_opt {
             if let Err(e) = handle.join() {
-                error!("Main thread panicked during join: {:?}", e);
+                log::error!("Main thread panicked during join: {:?}", e);
             }
         }
-        info!("Rust services stopped.");
+        log::info!("Rust services stopped.");
     });
     if let Err(cause) = result {
-        error!("Rust: Critical Panic in rust_stop_services: {:?}", cause);
+        log::error!("Rust: Critical Panic in rust_stop_services: {:?}", cause);
     }
 }
 
-fn run_event_loop() -> Result<(), String> {
+fn run_event_loop() -> Result<(), crate::error::QosError> {
+    use crate::error::QosError;
     let epoll_raw = unsafe { libc::epoll_create1(libc::EPOLL_CLOEXEC) };
-    if epoll_raw < 0 { return Err("Failed to create epoll".to_string()); }
+    if epoll_raw < 0 { 
+        return Err(QosError::SystemCheckFailed("Failed to create epoll".to_string())); 
+    }
     let epoll_fd = unsafe { OwnedFd::from_raw_fd(epoll_raw) };
     let mut managers: Vec<Box<dyn EventHandler>> = Vec::new();
     managers.push(Box::new(MemoryManager::new()?));
@@ -108,12 +127,12 @@ fn run_event_loop() -> Result<(), String> {
         };
         unsafe {
             if libc::epoll_ctl(epoll_fd.as_raw_fd(), libc::EPOLL_CTL_ADD, manager.as_raw_fd(), &mut event) < 0 {
-                return Err(format!("Failed to register manager index {}", i));
+                return Err(QosError::SystemCheckFailed(format!("Failed to register manager index {}", i)));
             }
         }
     }
     let mut events: [libc::epoll_event; MAX_EVENTS] = [libc::epoll_event { events: 0, u64: 0 }; MAX_EVENTS];
-    info!("Event Loop Started.");
+    log::info!("Event Loop Started.");
     while !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
         let timeout = managers.iter()
             .map(|m| m.get_timeout_ms())
@@ -125,7 +144,7 @@ fn run_event_loop() -> Result<(), String> {
         };
         if nfds < 0 {
             if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
-                error!("Epoll wait error");
+                log::error!("Epoll wait error");
                 thread::sleep(Duration::from_secs(1));
             }
             continue;
@@ -141,7 +160,7 @@ fn run_event_loop() -> Result<(), String> {
                     manager.on_event();
                 }));
                 if let Err(_) = res {
-                    error!("Panic in manager {} on_event", index);
+                    log::error!("Panic in manager {} on_event", index);
                 }
             }
         }
