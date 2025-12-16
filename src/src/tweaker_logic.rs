@@ -9,7 +9,7 @@ impl SystemTweaker {
         log::info!("Rust: Applying static system tweaks...");
         let single_tweaks = [
             ("/proc/sys/vm/page-cluster", "1"),
-            ("/proc/sys/vm/stat_interval", "2"),
+            ("/proc/sys/vm/stat_interval", "3"),
             ("/proc/sys/vm/oom_dump_tasks", "0"),
             ("/proc/sys/vm/watermark_scale_factor", "15"),
             ("/proc/sys/vm/extfrag_threshold", "550"),
@@ -29,7 +29,7 @@ impl SystemTweaker {
         let sched_tweaks = [
             ("/proc/sys/kernel/sched_latency_ns", "9000000"),
             ("/proc/sys/kernel/sched_min_granularity_ns", "7000000"),
-            ("/proc/sys/kernel/sched_migration_cost_ns", "500000"),
+            ("/proc/sys/kernel/sched_migration_cost_ns", "600000"),
             ("/proc/sys/kernel/sched_child_runs_first", "1"),
             ("/proc/sys/kernel/sched_wakeup_granularity_ns", "3000000"),
             ("/proc/sys/kernel/perf_cpu_time_max_percent", "15"),
