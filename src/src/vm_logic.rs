@@ -72,9 +72,9 @@ impl VmManager {
     }
     fn apply_state(&mut self, new_state: VmState, force: bool) {
         let (ratio, bg_ratio) = match new_state {
-            VmState::Idle => ("20", "10"),
-            VmState::Balanced => ("15", "10"),
-            VmState::Pressure => ("10", "5"),
+            VmState::Idle => ("25", "12"),
+            VmState::Balanced => ("20", "10"),
+            VmState::Pressure => ("15", "8"),
         };
         if force || self.cache.dirty_ratio != ratio {
             match system_utils::write_to_file(K_DIRTY_RATIO, ratio) {
