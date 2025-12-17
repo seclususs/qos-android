@@ -1,17 +1,17 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use std::fs::{self, File};
-use std::io::Read;
-use std::process::Command;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
-use crate::error::QosError;
+use crate::common::error::QosError;
+use crate::bindings::ffi;
 
-const ALLOWED_PREFIXES: [&str; 3] = ["/proc/", "/sys/", "/dev/input/"];
+const ALLOWED_PREFIXES: [&str; 2] = ["/proc/", "/sys/"];
 
 fn validate_path_secure(path_str: &str) -> Result<(), QosError> {
     let path = Path::new(path_str);
     let canonical_path = fs::canonicalize(path)
-        .map_err(|_| QosError::InvalidPath(format!("Path not found: {}", path_str)))?;
+        .map_err(|e| QosError::InvalidPath(format!("Path resolution failed for {}: {}", path_str, e)))?;
     let canonical_str = canonical_path.to_str()
         .ok_or_else(|| QosError::InvalidPath("Non-UTF8 path".to_string()))?;
     if ALLOWED_PREFIXES.iter().any(|&prefix| canonical_str.starts_with(prefix)) {
@@ -24,8 +24,37 @@ fn validate_path_secure(path_str: &str) -> Result<(), QosError> {
 fn validate_value(value: &str) -> bool {
     value.chars().all(|c| 
         c.is_alphanumeric() || 
-        c == '.' || c == ',' || c == '-' || c == '_' || c == '=' || c == ' '
+        c == '.' || c == '-' || c == '_' || c == '=' || c == ' '
     )
+}
+
+pub fn open_file_for_write(path: &str) -> Result<File, QosError> {
+    validate_path_secure(path)?;
+    fs::OpenOptions::new()
+        .write(true) 
+        .open(path)
+        .map_err(|e| QosError::IoError(e))
+}
+
+pub fn open_file_for_read(path: &str) -> Result<File, QosError> {
+    validate_path_secure(path)?;
+    fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(|e| QosError::IoError(e))
+}
+
+pub fn write_to_stream(file: &mut File, value: &str) -> Result<(), QosError> {
+    if !validate_value(value) {
+        return Err(QosError::InvalidInput(format!("Invalid characters in value: '{}'", value)));
+    }
+    let _ = file.seek(SeekFrom::Start(0));
+    let content = format!("{}\n", value);
+    file.write_all(content.as_bytes()).map_err(|e| {
+        log::warn!("Write to stream failed: {}", e);
+        QosError::IoError(e)
+    })?;
+    Ok(())
 }
 
 pub fn write_to_file(path: &str, value: &str) -> Result<(), QosError> {
@@ -33,34 +62,17 @@ pub fn write_to_file(path: &str, value: &str) -> Result<(), QosError> {
     if !validate_value(value) {
         return Err(QosError::SystemCheckFailed(format!("Invalid characters in value for {}: '{}'", path, value)));
     }
-    fs::write(path, value).map_err(|e| {
+    let content = format!("{}\n", value);
+    fs::write(path, content).map_err(|e| {
         log::debug!("Write failed '{}' -> {}: {}", value, path, e);
         QosError::IoError(e)
     })
 }
 
-pub fn parse_psi_avg10(path: &str) -> Result<f64, QosError> {
-    let mut file = File::open(path)?;
-    let mut buffer = [0u8; 128];
-    let bytes_read = file.read(&mut buffer)?;
-    let content = String::from_utf8_lossy(&buffer[..bytes_read]);
-    for part in content.split_whitespace() {
-        if let Some(val_str) = part.strip_prefix("avg10=") {
-            return val_str.parse::<f64>()
-                .map_err(|_| QosError::PsiParseError(format!("Invalid float: {}", val_str)));
-        }
-    }
-    Err(QosError::PsiParseError("avg10 key not found".to_string()))
-}
-
 pub fn set_system_prop(key: &str, value: &str) {
     if !key.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '-') { return; }
     if !validate_value(value) { return; }
-    let _ = Command::new("setprop").arg(key).arg(value).status();
-}
-
-pub fn set_android_setting(table: &str, key: &str, value: &str) {
-    if !["system", "global", "secure"].contains(&table) { return; }
-    if !validate_value(key) || !validate_value(value) { return; }
-    let _ = Command::new("cmd").args(["settings", "put", table, key, value]).status();
+    if let Err(e) = ffi::set_system_property(key, value) {
+        log::warn!("Failed to set system prop: {} = {}. Error: {}", key, value, e);
+    }
 }

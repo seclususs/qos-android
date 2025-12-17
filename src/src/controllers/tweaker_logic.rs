@@ -1,86 +1,81 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::system_utils;
+use crate::common::fs::{write_to_file, set_system_prop};
+use std::sync::OnceLock;
+
+struct StaticTweak {
+    path: &'static str,
+    value: &'static str,
+}
+
+static STATIC_TWEAKS: OnceLock<Vec<StaticTweak>> = OnceLock::new();
 
 pub struct SystemTweaker;
 
 impl SystemTweaker {
     pub fn apply_all() {
-        log::info!("Rust: Applying static system tweaks...");
-        let single_tweaks = [
-            ("/proc/sys/vm/page-cluster", "1"),
-            ("/proc/sys/vm/stat_interval", "3"),
-            ("/proc/sys/vm/oom_dump_tasks", "0"),
-            ("/proc/sys/vm/watermark_scale_factor", "15"),
-            ("/proc/sys/vm/extfrag_threshold", "550"),
-            ("/proc/sys/kernel/printk", "0 0 0 0"),
-            ("/proc/sys/kernel/printk_devkmsg", "off"),
-            ("/proc/sys/kernel/core_pattern", "/dev/null"),
-            ("/proc/sys/kernel/dmesg_restrict", "1"),
-        ];
-        for (path, val) in single_tweaks {
-            if let Err(e) = system_utils::write_to_file(path, val) {
-                log::warn!("Failed to tweak {}: {}", path, e);
+        log::info!("Rust: Preparing system tweaks...");
+        let tweaks = STATIC_TWEAKS.get_or_init(|| {
+            vec![
+                StaticTweak { path: "/proc/sys/vm/page-cluster", value: "1" },
+                StaticTweak { path: "/proc/sys/vm/stat_interval", value: "3" },
+                StaticTweak { path: "/proc/sys/vm/oom_dump_tasks", value: "0" },
+                StaticTweak { path: "/proc/sys/vm/watermark_scale_factor", value: "15" },
+                StaticTweak { path: "/proc/sys/vm/extfrag_threshold", value: "550" },
+                StaticTweak { path: "/proc/sys/kernel/printk", value: "0 0 0 0" },
+                StaticTweak { path: "/proc/sys/kernel/printk_devkmsg", value: "off" },
+                StaticTweak { path: "/proc/sys/kernel/core_pattern", value: "/dev/null" },
+                StaticTweak { path: "/proc/sys/kernel/dmesg_restrict", value: "1" },
+                StaticTweak { path: "/proc/sys/kernel/sched_latency_ns", value: "9000000" },
+                StaticTweak { path: "/proc/sys/kernel/sched_min_granularity_ns", value: "7000000" },
+                StaticTweak { path: "/proc/sys/kernel/sched_migration_cost_ns", value: "600000" },
+                StaticTweak { path: "/proc/sys/kernel/sched_child_runs_first", value: "1" },
+                StaticTweak { path: "/proc/sys/kernel/sched_wakeup_granularity_ns", value: "3000000" },
+                StaticTweak { path: "/proc/sys/kernel/perf_cpu_time_max_percent", value: "15" },
+                StaticTweak { path: "/proc/sys/kernel/pid_max", value: "65536" },
+                StaticTweak { path: "/proc/sys/kernel/sched_schedstats", value: "0" },
+                StaticTweak { path: "/proc/sys/kernel/perf_event_paranoid", value: "2" },
+                StaticTweak { path: "/sys/block/mmcblk0/queue/add_random", value: "0" },
+                StaticTweak { path: "/sys/block/mmcblk0/queue/iostats", value: "0" },
+                StaticTweak { path: "/sys/block/mmcblk0/queue/rq_affinity", value: "1" },
+                StaticTweak { path: "/proc/sys/fs/lease-break-time", value: "10" },
+                StaticTweak { path: "/proc/sys/fs/inotify/max_user_watches", value: "65536" },
+                StaticTweak { path: "/proc/sys/fs/file-max", value: "524288" },
+                StaticTweak { path: "/proc/sys/fs/protected_symlinks", value: "1" },
+                StaticTweak { path: "/proc/sys/fs/protected_hardlinks", value: "1" },
+                StaticTweak { path: "/sys/block/mmcblk0/queue/scheduler", value: "deadline" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_notsent_lowat", value: "16384" },
+                StaticTweak { path: "/proc/sys/net/core/netdev_max_backlog", value: "2000" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_slow_start_after_idle", value: "0" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_tw_reuse", value: "1" },
+                StaticTweak { path: "/proc/sys/net/core/netdev_budget", value: "300" },
+                StaticTweak { path: "/proc/sys/net/ipv4/ip_dynaddr", value: "1" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_keepalive_time", value: "1800" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_max_syn_backlog", value: "2048" },
+                StaticTweak { path: "/proc/sys/kernel/random/urandom_min_reseed_secs", value: "60" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_timestamps", value: "0" },
+                StaticTweak { path: "/proc/sys/net/core/somaxconn", value: "2048" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_fin_timeout", value: "15" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_retries2", value: "5" },
+                StaticTweak { path: "/proc/sys/net/ipv6/conf/all/use_tempaddr", value: "2" },
+                StaticTweak { path: "/proc/sys/net/ipv4/conf/default/rp_filter", value: "1" },
+                StaticTweak { path: "/proc/sys/net/ipv4/tcp_congestion_control", value: "westwood" },
+            ]
+        });
+        let mut success_count = 0;
+        let total_count = tweaks.len();
+        for tweak in tweaks.iter() {
+            match write_to_file(tweak.path, tweak.value) {
+                Ok(_) => success_count += 1,
+                Err(e) => {
+                    log::debug!("Failed to apply tweak {}: {}", tweak.path, e);
+                }
             }
         }
-        system_utils::set_system_prop("persist.sys.lmk.reportkills", "false");
-        system_utils::set_system_prop("persist.service.adb.enable", "0");
-        system_utils::set_system_prop("persist.service.debuggable", "0");
-        let sched_tweaks = [
-            ("/proc/sys/kernel/sched_latency_ns", "9000000"),
-            ("/proc/sys/kernel/sched_min_granularity_ns", "7000000"),
-            ("/proc/sys/kernel/sched_migration_cost_ns", "600000"),
-            ("/proc/sys/kernel/sched_child_runs_first", "1"),
-            ("/proc/sys/kernel/sched_wakeup_granularity_ns", "3000000"),
-            ("/proc/sys/kernel/perf_cpu_time_max_percent", "15"),
-            ("/proc/sys/kernel/pid_max", "65536"),
-            ("/proc/sys/kernel/sched_schedstats", "0"),
-            ("/proc/sys/kernel/perf_event_paranoid", "2"),
-        ];
-        for (path, val) in sched_tweaks {
-            if let Err(e) = system_utils::write_to_file(path, val) {
-                log::warn!("Failed to tweak scheduler {}: {}", path, e);
-            }
-        }
-        let io_tweaks = [
-            ("/sys/block/mmcblk0/queue/add_random", "0"),
-            ("/sys/block/mmcblk0/queue/iostats", "0"),
-            ("/sys/block/mmcblk0/queue/rq_affinity", "1"),
-            ("/proc/sys/fs/lease-break-time", "10"),
-            ("/proc/sys/fs/inotify/max_user_watches", "65536"),
-            ("/proc/sys/fs/file-max", "524288"),
-            ("/proc/sys/fs/protected_symlinks", "1"),
-            ("/proc/sys/fs/protected_hardlinks", "1"),
-            ("/sys/block/mmcblk0/queue/scheduler", "deadline"),
-        ];
-        for (path, val) in io_tweaks {
-            if let Err(e) = system_utils::write_to_file(path, val) {
-                log::warn!("Failed to tweak IO {}: {}", path, e);
-            }
-        }
-        let net_tweaks = [
-            ("/proc/sys/net/ipv4/tcp_notsent_lowat", "16384"),
-            ("/proc/sys/net/core/netdev_max_backlog", "2000"),
-            ("/proc/sys/net/ipv4/tcp_slow_start_after_idle", "0"),
-            ("/proc/sys/net/ipv4/tcp_tw_reuse", "1"),
-            ("/proc/sys/net/core/netdev_budget", "300"),
-            ("/proc/sys/net/ipv4/ip_dynaddr", "1"),
-            ("/proc/sys/net/ipv4/tcp_keepalive_time", "1800"),
-            ("/proc/sys/net/ipv4/tcp_max_syn_backlog", "2048"),
-            ("/proc/sys/kernel/random/urandom_min_reseed_secs", "60"),
-            ("/proc/sys/net/ipv4/tcp_timestamps", "0"),
-            ("/proc/sys/net/core/somaxconn", "2048"),
-            ("/proc/sys/net/ipv4/tcp_fin_timeout", "15"),
-            ("/proc/sys/net/ipv4/tcp_retries2", "5"),
-            ("/proc/sys/net/ipv6/conf/all/use_tempaddr", "2"),
-            ("/proc/sys/net/ipv4/conf/default/rp_filter", "1"),
-            ("/proc/sys/net/ipv4/tcp_congestion_control", "westwood"),
-        ];
-        for (path, val) in net_tweaks {
-            if let Err(e) = system_utils::write_to_file(path, val) {
-                log::warn!("Failed to tweak NET {}: {}", path, e);
-            }
-        }
-        log::info!("Rust: Static tweaks process finished.");
+        log::info!("Rust: Applied {}/{} tweaks successfully.", success_count, total_count);
+        set_system_prop("persist.sys.lmk.reportkills", "false");
+        set_system_prop("persist.service.adb.enable", "0");
+        set_system_prop("persist.service.debuggable", "0");
+        log::info!("Rust: Tweaks process finished.");
     }
 }
