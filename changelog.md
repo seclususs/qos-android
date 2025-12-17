@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.5
+- Implemented self-healing architecture with auto-recovery
+- Migrated to synchronous signal handling (signalfd)
+- Offloaded display operations to async worker threads
+- Optimized I/O with persistent file descriptors
+- Enhanced security with strict path validation
+- Added boot completion safety check
+
+---
+
 ## v1.4
 - Tuned kernel parameters
 - Dependency updates
