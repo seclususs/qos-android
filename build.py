@@ -122,8 +122,17 @@ def clean_all_builds():
             log_success("Folder 'build/' removed.")
         except Exception as e:
             log_error(f"Failed to remove build folder: {e}")
-    else:
-        log_info("Nothing to clean.")
+            
+    target_path = Path("target")
+    if target_path.exists():
+        try:
+            shutil.rmtree(target_path)
+            log_success("Folder 'target/' (Rust) removed.")
+        except Exception as e:
+            log_error(f"Failed to remove target folder: {e}")
+
+    if not build_path.exists() and not target_path.exists():
+        log_info("Workspace cleaned.")
 
 
 def get_abi_selection():
@@ -186,10 +195,9 @@ def build_architecture(abi, ndk_path, api_level, build_type):
     log_kv("Build Type", build_type)
     log_kv("Rust Target", rust_target)
     
-    log_step("Cleaning previous artifacts")
+    log_step("Cleaning previous artifacts (CMake)")
     clean_specific_build(build_dir)
-    clean_rust_target(rust_target, build_type)
-
+    
     log_step("Checking Rust environment")
     try:
         subprocess.run(
