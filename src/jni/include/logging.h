@@ -2,7 +2,8 @@
  * @brief Android Logcat integration macros.
  *
  * @author Seclususs
- * https://github.com/seclususs
+ * @see [GitHub Repository](https://github.com/seclususs/qos-android)
+ * 
  */
 
 #ifndef LOGGING_H

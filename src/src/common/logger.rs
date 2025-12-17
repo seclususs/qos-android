@@ -1,3 +1,5 @@
+//! Author: [Seclususs](https://github.com/seclususs)
+
 use android_logger::Config;
 use log::LevelFilter;
 
