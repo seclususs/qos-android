@@ -7,6 +7,7 @@ use crate::controllers::signal_logic::SignalController;
 use crate::controllers::storage_logic::StorageController;
 use crate::controllers::tweaker_logic::SystemTweaker;
 use crate::controllers::display_logic::DisplayController;
+use crate::controllers::cpu_logic::CpuController;
 use crate::bindings::ffi;
 use crate::common::logger;
 use crate::common::error::QosError;
@@ -29,7 +30,7 @@ const STABILIZATION_DELAY: Duration = Duration::from_secs(60);
 
 fn get_service_flags(name: &str) -> epoll::EventFlags {
     match name {
-        "Memory" | "Storage" => epoll::EventFlags::PRI | epoll::EventFlags::ERR,
+        "Memory" | "Storage" | "CPU" => epoll::EventFlags::PRI | epoll::EventFlags::ERR,
         _ => epoll::EventFlags::IN | epoll::EventFlags::PRI | epoll::EventFlags::ERR,
     }
 }
@@ -248,6 +249,7 @@ fn run_event_loop(signal_fd: RawFd) -> Result<(), QosError> {
     services.push(sig_service);
     services.push(RecoverableService::new("Memory", || Ok(Box::new(MemoryController::new()?))));
     services.push(RecoverableService::new("Storage", || Ok(Box::new(StorageController::new()?))));
+    services.push(RecoverableService::new("CPU", || Ok(Box::new(CpuController::new()?))));
     if DISPLAY_SERVICE_ENABLED.load(Ordering::Acquire) {
         log::info!("Rust: Enabling DisplayController.");
         services.push(RecoverableService::new("Display", || Ok(Box::new(DisplayController::new()?))));
