@@ -2,26 +2,27 @@
 
 use crate::common::error::QosError;
 use crate::common::fs::open_file_for_read;
-use std::io::Read;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 
 const BUFFER_SIZE: usize = 512;
 
 pub struct PsiMonitor {
-    path: String,
+    file: File,
     buffer: [u8; BUFFER_SIZE],
 }
 
 impl PsiMonitor {
     pub fn new(path: &str) -> Result<Self, QosError> {
-        let _ = open_file_for_read(path)?;
+        let file = open_file_for_read(path)?;
         Ok(Self {
-            path: path.to_string(),
+            file,
             buffer: [0u8; BUFFER_SIZE],
         })
     }
     pub fn read_avg10(&mut self) -> Result<f64, QosError> {
-        let mut file = open_file_for_read(&self.path)?;
-        let bytes_read = match file.read(&mut self.buffer) {
+        self.file.seek(SeekFrom::Start(0)).map_err(QosError::IoError)?;
+        let bytes_read = match self.file.read(&mut self.buffer) {
             Ok(n) => n,
             Err(e) => return Err(QosError::IoError(e)),
         };
