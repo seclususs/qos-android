@@ -4,10 +4,17 @@ set_perm_recursive "$MODPATH" 0 0 0755 0644
 
 ui_print "[*] Extracting..."
 unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' -d "$MODPATH" >&2
+unzip -o "$ZIPFILE" 'config.ini' -d "$MODPATH" >&2
 
 ui_print "[*] Setting permissions..."
 set_perm "$MODPATH/service.sh" 0 0 0755
 set_perm "$MODPATH/system/bin/qos_daemon" 0 0 0755
+set_perm "$MODPATH/config.ini" 0 0 0644
+
+if [ -f "/data/adb/modules/sys_qos/config.ini" ]; then
+  ui_print "[*] Preserving user config..."
+  cp -f "/data/adb/modules/sys_qos/config.ini" "$MODPATH/config.ini"
+fi
 
 [ -f "$MODPATH/common/install.sh" ] && . "$MODPATH"/common/install.sh
 [ -d "$MODPATH/common" ] && rm -rf "$MODPATH"/common/*.sh
@@ -22,4 +29,4 @@ done
 find "$MODPATH" -empty -type d -delete
 [ -e /data/system/package_cache ] && rm -rf /data/system/package_cache/*
 
-ui_print "Successfully..."
+ui_print "Successfully installed."
