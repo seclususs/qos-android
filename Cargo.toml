@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "src"
+    "core"
 ]
 resolver = "2"
 
