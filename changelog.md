@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6
+- Refactored to Continuous Dynamic Control (Linear Interpolation)
+- Implemented active CPU Scheduler Controller with burst detection
+- Added global state awareness for cross-controller optimization
+- Optimized PSI monitoring with persistent file descriptors
+- Added support for user configuration file (`config.ini`)
+
+---
+
 ## v1.5
 - Implemented self-healing architecture with auto-recovery
 - Migrated to synchronous signal handling (signalfd)
