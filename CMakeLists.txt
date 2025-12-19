@@ -33,7 +33,7 @@ endif()
 message(STATUS "NDK ABI: ${ANDROID_ABI}")
 message(STATUS "Rust Target: ${RUST_TARGET}")
 
-set(RUST_CRATE_PATH ${CMAKE_SOURCE_DIR}/src)
+set(RUST_CRATE_PATH ${CMAKE_SOURCE_DIR}/core)
 set(RUST_WORKSPACE_TARGET_DIR ${CMAKE_SOURCE_DIR}/target)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -70,12 +70,13 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/controllers/storage_logic.rs
             ${RUST_CRATE_PATH}/src/controllers/tweaker_logic.rs
             ${RUST_CRATE_PATH}/src/controllers/display_logic.rs
+            ${RUST_CRATE_PATH}/src/controllers/cpu_logic.rs
     COMMENT "Building Rust static library (${CMAKE_BUILD_TYPE}) for ${RUST_TARGET}..."
 )
 
 add_custom_target(RustLib DEPENDS ${RUST_STATIC_LIB})
 
-set(JNI_DIR ${CMAKE_SOURCE_DIR}/src/jni)
+set(JNI_DIR ${CMAKE_SOURCE_DIR}/core/jni)
 set(JNI_INCLUDE_DIR ${JNI_DIR}/include)
 set(JNI_SRC_DIR ${JNI_DIR}/src)
 
