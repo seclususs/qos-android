@@ -18,15 +18,11 @@ impl SystemTweaker {
         let tweaks = STATIC_TWEAKS.get_or_init(|| {
             vec![
                 StaticTweak { path: "/proc/sys/vm/page-cluster", value: "1" },
-                StaticTweak { path: "/proc/sys/vm/stat_interval", value: "3" },
                 StaticTweak { path: "/proc/sys/vm/oom_dump_tasks", value: "0" },
-                StaticTweak { path: "/proc/sys/vm/watermark_scale_factor", value: "15" },
-                StaticTweak { path: "/proc/sys/vm/extfrag_threshold", value: "550" },
                 StaticTweak { path: "/proc/sys/kernel/printk", value: "0 0 0 0" },
                 StaticTweak { path: "/proc/sys/kernel/printk_devkmsg", value: "off" },
                 StaticTweak { path: "/proc/sys/kernel/core_pattern", value: "/dev/null" },
                 StaticTweak { path: "/proc/sys/kernel/dmesg_restrict", value: "1" },
-                StaticTweak { path: "/proc/sys/kernel/sched_migration_cost_ns", value: "600000" },
                 StaticTweak { path: "/proc/sys/kernel/sched_child_runs_first", value: "1" },
                 StaticTweak { path: "/proc/sys/kernel/perf_cpu_time_max_percent", value: "15" },
                 StaticTweak { path: "/proc/sys/kernel/pid_max", value: "65536" },

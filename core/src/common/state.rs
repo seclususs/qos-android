@@ -42,6 +42,22 @@ pub fn update_io_pressure(psi: f64) {
     }
 }
 
+pub fn get_cpu_pressure() -> f64 {
+    if let Ok(guard) = SYSTEM_PRESSURE.read() {
+        guard.cpu_psi
+    } else {
+        0.0
+    }
+}
+
+pub fn get_memory_pressure() -> f64 {
+    if let Ok(guard) = SYSTEM_PRESSURE.read() {
+        guard.memory_psi
+    } else {
+        0.0
+    }
+}
+
 pub fn get_io_pressure() -> f64 {
     if let Ok(guard) = SYSTEM_PRESSURE.read() {
         guard.io_psi
