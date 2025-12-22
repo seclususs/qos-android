@@ -69,7 +69,6 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/controllers/signal_logic.rs
             ${RUST_CRATE_PATH}/src/controllers/storage_logic.rs
             ${RUST_CRATE_PATH}/src/controllers/tweaker_logic.rs
-            ${RUST_CRATE_PATH}/src/controllers/display_logic.rs
             ${RUST_CRATE_PATH}/src/controllers/cpu_logic.rs
     COMMENT "Building Rust static library (${CMAKE_BUILD_TYPE}) for ${RUST_TARGET}..."
 )
