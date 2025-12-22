@@ -13,23 +13,29 @@ use std::io::Read;
 const K_PSI_IO_PATH: &str = "/proc/pressure/io";
 const K_READ_AHEAD_PATH: &str = "/sys/block/mmcblk0/queue/read_ahead_kb";
 const K_NR_REQUESTS_PATH: &str = "/sys/block/mmcblk0/queue/nr_requests";
+const K_FIFO_BATCH_PATH: &str = "/sys/block/mmcblk0/queue/iosched/fifo_batch";
 const MAX_READ_AHEAD: u64 = 256;
 const MIN_READ_AHEAD: u64 = 128;
 const MAX_NR_REQUESTS: u64 = 256;
 const MIN_NR_REQUESTS: u64 = 128;
+const MIN_FIFO_BATCH: u64 = 8;
+const MAX_FIFO_BATCH: u64 = 16;
 const IO_PSI_CEILING: f64 = 60.0;
 const DECAY_FACTOR: f64 = 0.1;
-const POLLING_INTERVAL_MS: u64 = 3000;
+const POLLING_INTERVAL_MS: u64 = 2000;
 
 pub struct StorageController {
     fd: File,
     read_ahead_file: File,
     nr_requests_file: File,
+    fifo_batch_file: Option<File>,
     psi_monitor: PsiMonitor,
     current_read_ahead: f64,
     current_nr_requests: f64,
+    current_fifo_batch: f64,
     cached_read_ahead: u64,
     cached_nr_requests: u64,
+    cached_fifo_batch: u64,
 }
 
 impl StorageController {
@@ -40,30 +46,37 @@ impl StorageController {
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let read_ahead_file = fs::open_file_for_write(K_READ_AHEAD_PATH)?;
         let nr_requests_file = fs::open_file_for_write(K_NR_REQUESTS_PATH)?;
+        let fifo_batch_file = fs::open_file_for_write(K_FIFO_BATCH_PATH).ok();
         let psi_monitor = PsiMonitor::new(K_PSI_IO_PATH)?;
         let mut controller = Self { 
             fd,
             read_ahead_file,
             nr_requests_file,
+            fifo_batch_file,
             psi_monitor,
             current_read_ahead: MAX_READ_AHEAD as f64,
             current_nr_requests: MAX_NR_REQUESTS as f64,
+            current_fifo_batch: MAX_FIFO_BATCH as f64,
             cached_read_ahead: 0,
             cached_nr_requests: 0,
+            cached_fifo_batch: 0,
         };
         controller.apply_values(true);
         Ok(controller)
     }
-    fn lerp(&self, input: f64, min: u64, max: u64) -> f64 {
-        let ratio = (input / IO_PSI_CEILING).clamp(0.0, 1.0);
-        let diff = max as f64 - min as f64;
-        (max as f64) - (diff * ratio)
+    fn cubic_lerp(&self, psi: f64, max_scale: f64, start_val: u64, end_val: u64) -> f64 {
+        let t = (psi / max_scale).clamp(0.0, 1.0);
+        let t_cubic = t * t * t;
+        let start = start_val as f64;
+        let end = end_val as f64;
+        start + (end - start) * t_cubic
     }
     fn update_dynamics(&mut self, psi: f64) {
         update_io_pressure(psi);
         let cpu_psi = get_cpu_pressure();
-        let mut target_ra = self.lerp(psi, MIN_READ_AHEAD, MAX_READ_AHEAD);
-        let mut target_nr = self.lerp(psi, MIN_NR_REQUESTS, MAX_NR_REQUESTS);
+        let mut target_ra = self.cubic_lerp(psi, IO_PSI_CEILING, MAX_READ_AHEAD, MIN_READ_AHEAD);
+        let mut target_nr = self.cubic_lerp(psi, IO_PSI_CEILING, MAX_NR_REQUESTS, MIN_NR_REQUESTS);
+        let target_fifo = self.cubic_lerp(psi, IO_PSI_CEILING, MAX_FIFO_BATCH, MIN_FIFO_BATCH);
         const IO_CONGESTION: f64 = 10.0;
         if psi > IO_CONGESTION {
             if cpu_psi > 20.0 {
@@ -79,6 +92,7 @@ impl StorageController {
         };
         apply_smooth(&mut self.current_read_ahead, target_ra);
         apply_smooth(&mut self.current_nr_requests, target_nr);
+        apply_smooth(&mut self.current_fifo_batch, target_fifo);
         self.apply_values(false);
     }
     fn apply_values(&mut self, force: bool) {
@@ -94,6 +108,15 @@ impl StorageController {
             let s = nr_u64.to_string();
             if let Ok(_) = write_to_stream(&mut self.nr_requests_file, &s) {
                 self.cached_nr_requests = nr_u64;
+            }
+        }
+        if let Some(ref mut f) = self.fifo_batch_file {
+            let fifo_u64 = self.current_fifo_batch.round() as u64;
+            if force || self.cached_fifo_batch != fifo_u64 {
+                let s = fifo_u64.to_string();
+                if write_to_stream(f, &s).is_ok() {
+                    self.cached_fifo_batch = fifo_u64;
+                }
             }
         }
     }

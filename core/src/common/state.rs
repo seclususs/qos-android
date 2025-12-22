@@ -4,7 +4,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::RwLock;
 
 pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
-pub static DISPLAY_SERVICE_ENABLED: AtomicBool = AtomicBool::new(false);
+pub static CPU_SERVICE_ENABLED: AtomicBool = AtomicBool::new(true);
+pub static MEMORY_SERVICE_ENABLED: AtomicBool = AtomicBool::new(true);
+pub static STORAGE_SERVICE_ENABLED: AtomicBool = AtomicBool::new(true);
+pub static TWEAKS_ENABLED: AtomicBool = AtomicBool::new(true);
 
 pub struct GlobalPressure {
     pub cpu_psi: f64,

@@ -3,6 +3,7 @@
  *
  * @author Seclususs
  * @see [GitHub Repository](https://github.com/seclususs/qos-android)
+ * 
  * */
 
 #include "logging.h"
@@ -17,6 +18,7 @@
 #include <sys/system_properties.h>
 #include <fstream>
 #include <string>
+#include <map>
 
 namespace {
     constexpr const char* kAppName = "QoS";
@@ -25,22 +27,27 @@ namespace {
 }
 
 /**
- * @brief Reads the display_enabled status from config.ini.
- *
- * Defaults to FALSE (Disabled) if the file is missing or the key is not set.
+ * @brief Parses config.ini and returns a map of key-value pairs.
  */
-bool get_display_config_state() {
+std::map<std::string, bool> load_config() {
+    std::map<std::string, bool> config;
+    
+    // Default values
+    config["cpu_enabled"] = true;
+    config["memory_enabled"] = true;
+    config["storage_enabled"] = true;
+    config["tweaks_enabled"] = true;
+
     std::ifstream file(kConfigPath);
     if (!file.is_open()) {
-        LOGI("Config file not found at %s.", kConfigPath);
-        return false; // Default: Nonaktif
+        LOGI("Config file not found at %s. Using defaults.", kConfigPath);
+        return config;
     }
 
     std::string line;
     while (std::getline(file, line)) {
-        // Parser: Trim spaces and check for key
         // 1. Remove leading whitespace
-        line.erase(0, line.find_first_not_of(" \t"));
+        line.erase(0, line.find_first_not_of(" \t\r"));
         
         // 2. Skip comments and empty lines
         if (line.empty() || line[0] == '#' || line[0] == ';') continue;
@@ -51,27 +58,21 @@ bool get_display_config_state() {
             std::string key = line.substr(0, delim_pos);
             std::string val = line.substr(delim_pos + 1);
 
-            // 4. Trim trailing space from key
-            size_t key_end = key.find_last_not_of(" \t");
+            // 4. Trim key
+            size_t key_end = key.find_last_not_of(" \t\r");
             if (key_end != std::string::npos) key = key.substr(0, key_end + 1);
 
-            if (key == "display_enabled") {
-                // 5. Trim leading/trailing space from val
-                val.erase(0, val.find_first_not_of(" \t"));
-                size_t val_end = val.find_last_not_of(" \t");
-                if (val_end != std::string::npos) val = val.substr(0, val_end + 1);
+            // 5. Trim value
+            val.erase(0, val.find_first_not_of(" \t\r"));
+            size_t val_end = val.find_last_not_of(" \t\r");
+            if (val_end != std::string::npos) val = val.substr(0, val_end + 1);
 
-                // Check for truthy values
-                if (val == "true" || val == "1" || val == "on" || val == "enable") {
-                    return true;
-                }
-                return false;
-            }
+            // Check boolean
+            bool bool_val = (val == "true" || val == "1" || val == "on" || val == "enable");
+            config[key] = bool_val;
         }
     }
-    
-    // Key not found in file
-    return false;
+    return config;
 }
 
 int main() {
@@ -79,9 +80,6 @@ int main() {
     LOGI("PID: %d", getpid());
 
     // 1. Setup Signal Masking
-    // We block signals in the main thread so they can be queued and consumed
-    // via a file descriptor (signalfd). This converts asynchronous signals
-    // into synchronous IO events for the Rust event loop.
     sigset_t mask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGINT);
@@ -94,8 +92,6 @@ int main() {
     }
 
     // 2. Create Signal File Descriptor
-    // SFD_CLOEXEC: Prevent fd leak to child processes.
-    // SFD_NONBLOCK: Essential for integration with epoll in Rust.
     int sfd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
     if (sfd < 0) {
         LOGE("Failed to create signalfd. Fatal.");
@@ -103,22 +99,27 @@ int main() {
     }
 
     // 3. Configure Services from config.ini
-    bool enable_display = get_display_config_state();
-    LOGI("Configuring Display Service: %s (Source: %s)", 
-         enable_display ? "ENABLED" : "DISABLED", kConfigPath);
+    auto config = load_config();
     
-    rust_set_display_service_enabled(enable_display);
+    LOGI("--- Configuration Loaded ---");
+    LOGI("CPU     : %s", config["cpu_enabled"] ? "ENABLED" : "DISABLED");
+    LOGI("Memory  : %s", config["memory_enabled"] ? "ENABLED" : "DISABLED");
+    LOGI("Storage : %s", config["storage_enabled"] ? "ENABLED" : "DISABLED");
+    LOGI("Tweaks  : %s", config["tweaks_enabled"] ? "ENABLED" : "DISABLED");
+    LOGI("--------------------------");
+
+    rust_set_cpu_service_enabled(config["cpu_enabled"]);
+    rust_set_memory_service_enabled(config["memory_enabled"]);
+    rust_set_storage_service_enabled(config["storage_enabled"]);
+    rust_set_tweaks_enabled(config["tweaks_enabled"]);
 
     // 4. Handover to Rust
     LOGI("Signalfd created (fd: %d). Passing control to Rust...", sfd);
-    
-    // This spawns the Rust threads. It does NOT block indefinitely here.
     rust_start_services(sfd); 
 
     LOGI("Services initialized. Waiting for Rust to finish...");
     
     // 5. Join and Shutdown
-    // Block main thread until the Rust logic decides to shut down (e.g., on SIGTERM).
     rust_join_threads();
 
     LOGI("=== %s Shutdown Complete ===", kAppName);
