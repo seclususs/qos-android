@@ -23,16 +23,50 @@ extern "C" {
 // -----------------------------------------------------------------------------
 
 /**
- * @brief Updates the global state of the display service in the Rust layer.
- * @param enabled True to enable display optimization logic, false to bypass.
+ * @brief Controls the lifecycle of the CPU Congestion Controller.
+ *
+ * Updates the atomic state in the Rust layer to enable or disable 
+ * dynamic CPU scheduling adjustments based on Pressure Stall Information (PSI).
+ *
+ * @param enabled Set to true to activate the controller, false to pause/disable it.
  */
-void rust_set_display_service_enabled(bool enabled);
+void rust_set_cpu_service_enabled(bool enabled);
+
+/**
+ * @brief Controls the lifecycle of the Memory Management Controller.
+ *
+ * Updates the atomic state in the Rust layer to enable or disable 
+ * dynamic virtual memory tuning (swappiness, cache pressure, etc.).
+ *
+ * @param enabled Set to true to activate the controller, false to pause/disable it.
+ */
+void rust_set_memory_service_enabled(bool enabled);
+
+/**
+ * @brief Controls the lifecycle of the Storage I/O Controller.
+ *
+ * Updates the atomic state in the Rust layer to enable or disable 
+ * dynamic I/O scheduler tuning (read-ahead, request queues) based on I/O pressure.
+ *
+ * @param enabled Set to true to activate the controller, false to pause/disable it.
+ */
+void rust_set_storage_service_enabled(bool enabled);
+
+/**
+ * @brief Toggles the application of static System Tweaks.
+ *
+ * Updates the atomic configuration in the Rust layer. If enabled, static
+ * sysctl and property tweaks will be applied upon service startup.
+ *
+ * @param enabled Set to true to apply tweaks on start, false to skip.
+ */
+void rust_set_tweaks_enabled(bool enabled);
 
 /**
  * @brief Initializes and starts the Rust event loop.
  *
  * This function passes control to the Rust runtime. It typically spawns
- * worker threads and prepares the reactor.
+ * worker threads and prepares the reactor for event handling.
  *
  * @param signal_fd A file descriptor created via signalfd() to handle Unix signals.
  * @return 0 on success, non-zero error code on failure.

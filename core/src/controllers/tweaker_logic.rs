@@ -17,14 +17,12 @@ impl SystemTweaker {
         log::info!("Rust: Preparing system tweaks...");
         let tweaks = STATIC_TWEAKS.get_or_init(|| {
             vec![
-                StaticTweak { path: "/proc/sys/vm/page-cluster", value: "1" },
                 StaticTweak { path: "/proc/sys/vm/oom_dump_tasks", value: "0" },
                 StaticTweak { path: "/proc/sys/kernel/printk", value: "0 0 0 0" },
                 StaticTweak { path: "/proc/sys/kernel/printk_devkmsg", value: "off" },
                 StaticTweak { path: "/proc/sys/kernel/core_pattern", value: "/dev/null" },
                 StaticTweak { path: "/proc/sys/kernel/dmesg_restrict", value: "1" },
                 StaticTweak { path: "/proc/sys/kernel/sched_child_runs_first", value: "1" },
-                StaticTweak { path: "/proc/sys/kernel/perf_cpu_time_max_percent", value: "15" },
                 StaticTweak { path: "/proc/sys/kernel/pid_max", value: "65536" },
                 StaticTweak { path: "/proc/sys/kernel/sched_schedstats", value: "0" },
                 StaticTweak { path: "/proc/sys/kernel/perf_event_paranoid", value: "2" },

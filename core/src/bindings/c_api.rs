@@ -1,12 +1,17 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::common::traits::{EventHandler, LoopAction};
-use crate::common::state::{SHUTDOWN_REQUESTED, DISPLAY_SERVICE_ENABLED};
+use crate::common::state::{
+    SHUTDOWN_REQUESTED, 
+    CPU_SERVICE_ENABLED,
+    MEMORY_SERVICE_ENABLED,
+    STORAGE_SERVICE_ENABLED,
+    TWEAKS_ENABLED
+};
 use crate::controllers::memory_logic::MemoryController;
 use crate::controllers::signal_logic::SignalController;
 use crate::controllers::storage_logic::StorageController;
 use crate::controllers::tweaker_logic::SystemTweaker;
-use crate::controllers::display_logic::DisplayController;
 use crate::controllers::cpu_logic::CpuController;
 use crate::bindings::ffi;
 use crate::common::logger;
@@ -138,9 +143,27 @@ fn wait_for_boot_completion(tag: &str) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_set_display_service_enabled(enabled: bool) {
-    DISPLAY_SERVICE_ENABLED.store(enabled, Ordering::Release);
-    log::info!("Rust: Display service enabled state set to: {}", enabled);
+pub extern "C" fn rust_set_cpu_service_enabled(enabled: bool) {
+    CPU_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    log::info!("Rust: CPU service enabled state set to: {}", enabled);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_set_memory_service_enabled(enabled: bool) {
+    MEMORY_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    log::info!("Rust: Memory service enabled state set to: {}", enabled);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_set_storage_service_enabled(enabled: bool) {
+    STORAGE_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    log::info!("Rust: Storage service enabled state set to: {}", enabled);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_set_tweaks_enabled(enabled: bool) {
+    TWEAKS_ENABLED.store(enabled, Ordering::Release);
+    log::info!("Rust: Tweaks enabled state set to: {}", enabled);
 }
 
 #[unsafe(no_mangle)]
@@ -164,6 +187,10 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
     let result = std::panic::catch_unwind(move || {
         log::info!("Rust: Service entry point reached. Signal FD: {}", signal_fd);
         thread::spawn(|| {
+            if !TWEAKS_ENABLED.load(Ordering::Acquire) {
+                log::info!("Rust: System Tweaks are DISABLED by config. Skipping.");
+                return;
+            }
             wait_for_boot_completion("Tweaker");
             if SHUTDOWN_REQUESTED.load(Ordering::Acquire) { return; }
             SystemTweaker::apply_all();
@@ -247,14 +274,23 @@ fn run_event_loop(signal_fd: RawFd) -> Result<(), QosError> {
     let mut sig_service = RecoverableService::new("Signal", move || Ok(Box::new(SignalController::new(signal_fd))));
     sig_service.cooldown_start = None;
     services.push(sig_service);
-    services.push(RecoverableService::new("Memory", || Ok(Box::new(MemoryController::new()?))));
-    services.push(RecoverableService::new("Storage", || Ok(Box::new(StorageController::new()?))));
-    services.push(RecoverableService::new("CPU", || Ok(Box::new(CpuController::new()?))));
-    if DISPLAY_SERVICE_ENABLED.load(Ordering::Acquire) {
-        log::info!("Rust: Enabling DisplayController.");
-        services.push(RecoverableService::new("Display", || Ok(Box::new(DisplayController::new()?))));
+    if MEMORY_SERVICE_ENABLED.load(Ordering::Acquire) {
+        log::info!("Rust: Enabling MemoryController.");
+        services.push(RecoverableService::new("Memory", || Ok(Box::new(MemoryController::new()?))));
     } else {
-        log::info!("Rust: DisplayController service disabled.");
+        log::info!("Rust: MemoryController service DISABLED by config.");
+    }
+    if STORAGE_SERVICE_ENABLED.load(Ordering::Acquire) {
+        log::info!("Rust: Enabling StorageController.");
+        services.push(RecoverableService::new("Storage", || Ok(Box::new(StorageController::new()?))));
+    } else {
+        log::info!("Rust: StorageController service DISABLED by config.");
+    }
+    if CPU_SERVICE_ENABLED.load(Ordering::Acquire) {
+        log::info!("Rust: Enabling CpuController.");
+        services.push(RecoverableService::new("CPU", || Ok(Box::new(CpuController::new()?))));
+    } else {
+        log::info!("Rust: CpuController service DISABLED by config.");
     }
     let mut events: [libc::epoll_event; MAX_EVENTS] = [libc::epoll_event { events: 0, u64: 0 }; MAX_EVENTS];
     while !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
