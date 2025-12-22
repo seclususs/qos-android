@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.7
+- Introduced non-linear control curves (sigmoid, parabolic, logistic, exponential)
+- Added adaptive EMA filtering to suppress PSI noise and parameter jitter
+- Applied inverse sigmoid and parabolic curves for stable CPU scheduler control
+- Introduced derived granularity for consistent, latency-aware preemption
+- Improved memory pressure handling with logistic growth and exponential decay
+- Implemented adaptive I/O congestion control and optimized queue batching
+- Added new dynamically controlled parameters
+- Introduced configurable subsystem control
+
+---
+
 ## v1.6
 - Refactored to Continuous Dynamic Control (Linear Interpolation)
 - Implemented active CPU Scheduler Controller with burst detection
