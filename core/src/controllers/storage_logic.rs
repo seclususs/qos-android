@@ -3,7 +3,7 @@
 use crate::bindings::ffi;
 use crate::common::fs::{self, write_to_stream};
 use crate::common::psi::PsiMonitor;
-use crate::common::state::{update_io_pressure, get_cpu_pressure};
+use crate::common::state::update_io_pressure;
 use crate::common::traits::{EventHandler, LoopAction};
 use crate::common::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
@@ -20,8 +20,6 @@ const MAX_NR_REQUESTS: u64 = 256;
 const MIN_NR_REQUESTS: u64 = 128;
 const MIN_FIFO_BATCH: u64 = 8;
 const MAX_FIFO_BATCH: u64 = 16;
-const IO_PSI_CEILING: f64 = 60.0;
-const DECAY_FACTOR: f64 = 0.1;
 const POLLING_INTERVAL_MS: u64 = 2000;
 
 pub struct StorageController {
@@ -30,6 +28,8 @@ pub struct StorageController {
     nr_requests_file: File,
     fifo_batch_file: Option<File>,
     psi_monitor: PsiMonitor,
+    last_psi_raw: f64,
+    smoothed_psi: f64,
     current_read_ahead: f64,
     current_nr_requests: f64,
     current_fifo_batch: f64,
@@ -54,6 +54,8 @@ impl StorageController {
             nr_requests_file,
             fifo_batch_file,
             psi_monitor,
+            last_psi_raw: 0.0,
+            smoothed_psi: 0.0,
             current_read_ahead: MAX_READ_AHEAD as f64,
             current_nr_requests: MAX_NR_REQUESTS as f64,
             current_fifo_batch: MAX_FIFO_BATCH as f64,
@@ -64,35 +66,40 @@ impl StorageController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn cubic_lerp(&self, psi: f64, max_scale: f64, start_val: u64, end_val: u64) -> f64 {
-        let t = (psi / max_scale).clamp(0.0, 1.0);
-        let t_cubic = t * t * t;
-        let start = start_val as f64;
-        let end = end_val as f64;
-        start + (end - start) * t_cubic
+    fn get_adaptive_smoothed_psi(&mut self, raw_psi: f64) -> f64 {
+        let delta = raw_psi - self.last_psi_raw;
+        let alpha = if delta > 2.0 { 0.7 } else { 0.2 }; 
+        self.smoothed_psi = alpha * raw_psi + (1.0 - alpha) * self.smoothed_psi;
+        self.last_psi_raw = raw_psi;
+        self.smoothed_psi
     }
-    fn update_dynamics(&mut self, psi: f64) {
+    fn inverse_sigmoid(&self, psi: f64, min: f64, max: f64, midpoint: f64, steepness: f64) -> f64 {
+        let denominator = 1.0 + (steepness * (psi - midpoint)).exp();
+        min + ((max - min) / denominator)
+    }
+    fn update_dynamics_congestion(&mut self, raw_psi: f64) {
+        let psi = self.get_adaptive_smoothed_psi(raw_psi);
         update_io_pressure(psi);
-        let cpu_psi = get_cpu_pressure();
-        let mut target_ra = self.cubic_lerp(psi, IO_PSI_CEILING, MAX_READ_AHEAD, MIN_READ_AHEAD);
-        let mut target_nr = self.cubic_lerp(psi, IO_PSI_CEILING, MAX_NR_REQUESTS, MIN_NR_REQUESTS);
-        let target_fifo = self.cubic_lerp(psi, IO_PSI_CEILING, MAX_FIFO_BATCH, MIN_FIFO_BATCH);
-        const IO_CONGESTION: f64 = 10.0;
-        if psi > IO_CONGESTION {
-            if cpu_psi > 20.0 {
-                target_ra = MIN_READ_AHEAD as f64;
-                target_nr = MIN_NR_REQUESTS as f64;
-            } else if cpu_psi < 10.0 {
-                target_ra = MAX_READ_AHEAD as f64;
-                target_nr = MAX_NR_REQUESTS as f64;
-            }
-        }
-        let apply_smooth = |current: &mut f64, target: f64| {
-            *current += (target - *current) * DECAY_FACTOR;
+        let target_ra = if psi < 10.0 {
+            MAX_READ_AHEAD as f64
+        } else if psi > 30.0 {
+            MIN_READ_AHEAD as f64
+        } else {
+            let t = (psi - 10.0) / 20.0; 
+            MAX_READ_AHEAD as f64 - (t * (MAX_READ_AHEAD - MIN_READ_AHEAD) as f64)
         };
-        apply_smooth(&mut self.current_read_ahead, target_ra);
-        apply_smooth(&mut self.current_nr_requests, target_nr);
-        apply_smooth(&mut self.current_fifo_batch, target_fifo);
+        let t_nr = (psi / 60.0).clamp(0.0, 1.0);
+        let target_nr = MAX_NR_REQUESTS as f64 - (t_nr * (MAX_NR_REQUESTS - MIN_NR_REQUESTS) as f64);
+        let target_fifo = self.inverse_sigmoid(
+            psi,
+            MIN_FIFO_BATCH as f64,
+            MAX_FIFO_BATCH as f64,
+            20.0,
+            0.15
+        );
+        self.current_read_ahead = target_ra;
+        self.current_nr_requests = target_nr;
+        self.current_fifo_batch = target_fifo;
         self.apply_values(false);
     }
     fn apply_values(&mut self, force: bool) {
@@ -128,13 +135,13 @@ impl EventHandler for StorageController {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
         if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics(psi);
+            self.update_dynamics_congestion(psi);
         }
         Ok(LoopAction::Continue)
     }
     fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
         if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics(psi);
+            self.update_dynamics_congestion(psi);
         }
         Ok(LoopAction::Continue)
     }

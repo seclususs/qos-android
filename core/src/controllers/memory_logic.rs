@@ -3,7 +3,7 @@
 use crate::bindings::ffi;
 use crate::common::fs::{self, write_to_stream};
 use crate::common::psi::PsiMonitor;
-use crate::common::state::{update_memory_pressure, get_io_pressure};
+use crate::common::state::update_memory_pressure;
 use crate::common::traits::{EventHandler, LoopAction};
 use crate::common::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
@@ -40,9 +40,7 @@ const MAX_EXTFRAG_THRESHOLD: u64 = 600;
 const MIN_DIRTY_WRITEBACK: u64 = 300;
 const MAX_DIRTY_WRITEBACK: u64 = 1000;
 const MIN_PAGE_CLUSTER: u64 = 0;
-const MAX_PAGE_CLUSTER: u64 = 2;
-const PSI_MEMORY_CEILING: f64 = 35.0;
-const DECAY_FACTOR: f64 = 0.1;
+const MAX_PAGE_CLUSTER: u64 = 1;
 const POLLING_INTERVAL_MS: u64 = 2000;
 
 struct KernelConfigCache {
@@ -71,6 +69,8 @@ pub struct MemoryController {
     dirty_writeback_file: Option<File>,
     page_cluster_file: Option<File>,
     psi_monitor: PsiMonitor,
+    last_psi_raw: f64,
+    smoothed_psi: f64,
     current_swappiness: f64,
     current_vfs: f64,
     current_dirty: f64,
@@ -114,6 +114,8 @@ impl MemoryController {
             dirty_writeback_file,
             page_cluster_file,
             psi_monitor,
+            last_psi_raw: 0.0,
+            smoothed_psi: 0.0,
             current_swappiness: MIN_SWAPPINESS as f64,
             current_vfs: MIN_VFS as f64,
             current_dirty: MAX_DIRTY as f64,
@@ -140,50 +142,53 @@ impl MemoryController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn cubic_lerp(&self, psi: f64, max_scale: f64, start_val: u64, end_val: u64) -> f64 {
-        let t = (psi / max_scale).clamp(0.0, 1.0);
-        let t_cubic = t * t * t;
-        let start = start_val as f64;
-        let end = end_val as f64;
-        start + (end - start) * t_cubic
+    fn get_adaptive_smoothed_psi(&mut self, raw_psi: f64) -> f64 {
+        let delta = raw_psi - self.last_psi_raw;
+        let alpha = if delta > 2.0 { 0.7 } else { 0.15 }; 
+        self.smoothed_psi = alpha * raw_psi + (1.0 - alpha) * self.smoothed_psi;
+        self.last_psi_raw = raw_psi;
+        self.smoothed_psi
     }
-    fn update_dynamics(&mut self, mem_psi: f64) {
-        update_memory_pressure(mem_psi);
-        let io_psi = get_io_pressure();
-        let mut target_swap = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MIN_SWAPPINESS, MAX_SWAPPINESS);
-        let mut target_vfs = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MIN_VFS, MAX_VFS);
-        let mut target_dirty = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MAX_DIRTY, MIN_DIRTY);
-        let mut target_dirty_bg = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MAX_DIRTY_BG, MIN_DIRTY_BG);
-        let target_dirty_expire = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MAX_DIRTY_EXPIRE, MIN_DIRTY_EXPIRE);
-        let target_stat = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MIN_STAT_INTERVAL, MAX_STAT_INTERVAL);
-        let target_watermark = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MIN_WATERMARK_SCALE, MAX_WATERMARK_SCALE);
-        let target_extfrag = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MAX_EXTFRAG_THRESHOLD, MIN_EXTFRAG_THRESHOLD);
-        let target_dirty_wb = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MAX_DIRTY_WRITEBACK, MIN_DIRTY_WRITEBACK);
-        let target_page_cluster = self.cubic_lerp(mem_psi, PSI_MEMORY_CEILING, MAX_PAGE_CLUSTER, MIN_PAGE_CLUSTER);
-        const PSI_MEM_RISING: f64 = 10.0;
-        if mem_psi > PSI_MEM_RISING {
-            if io_psi < 15.0 {
-                target_swap = MAX_SWAPPINESS as f64;
-                target_vfs = MAX_VFS as f64;
-                target_dirty = MIN_DIRTY as f64;
-            } else if io_psi > 25.0 {
-                target_swap = MIN_SWAPPINESS as f64;
-                target_dirty_bg = 12.0;
-            }
-        }
-        let apply_smooth = |current: &mut f64, target: f64| {
-            *current += (target - *current) * DECAY_FACTOR;
+    fn logistic_growth(&self, psi: f64, min: f64, max: f64, midpoint: f64, steepness: f64) -> f64 {
+        let denominator = 1.0 + (-steepness * (psi - midpoint)).exp();
+        min + ((max - min) / denominator)
+    }
+    fn exponential_decay(&self, psi: f64, min: f64, max: f64, lambda: f64) -> f64 {
+        min + (max - min) * (-lambda * psi).exp()
+    }
+    fn inverse_sigmoid(&self, psi: f64, min: f64, max: f64, midpoint: f64, steepness: f64) -> f64 {
+        let denominator = 1.0 + (steepness * (psi - midpoint)).exp();
+        min + ((max - min) / denominator)
+    }
+    fn update_dynamics_logistic(&mut self, raw_psi: f64) {
+        let psi = self.get_adaptive_smoothed_psi(raw_psi);
+        update_memory_pressure(psi);
+        let target_swap = self.logistic_growth(psi, MIN_SWAPPINESS as f64, MAX_SWAPPINESS as f64, 30.0, 0.15);
+        let vfs_calc = 100.0 + (psi * 2.0);
+        let target_vfs = vfs_calc.clamp(MIN_VFS as f64, MAX_VFS as f64);
+        let target_dirty = self.exponential_decay(psi, MIN_DIRTY as f64, MAX_DIRTY as f64, 0.05);
+        let target_dirty_bg = self.exponential_decay(psi, MIN_DIRTY_BG as f64, MAX_DIRTY_BG as f64, 0.05);
+        let t = (psi / 50.0).clamp(0.0, 1.0);
+        let target_dirty_expire = MAX_DIRTY_EXPIRE as f64 - (t * (MAX_DIRTY_EXPIRE - MIN_DIRTY_EXPIRE) as f64);
+        let target_dirty_wb = MAX_DIRTY_WRITEBACK as f64 - (t * (MAX_DIRTY_WRITEBACK - MIN_DIRTY_WRITEBACK) as f64);
+        let target_stat = MIN_STAT_INTERVAL as f64 + (t * (MAX_STAT_INTERVAL - MIN_STAT_INTERVAL) as f64);
+        let target_watermark = self.logistic_growth(psi, MIN_WATERMARK_SCALE as f64, MAX_WATERMARK_SCALE as f64, 25.0, 0.2);
+        let target_extfrag = self.inverse_sigmoid(psi, MIN_EXTFRAG_THRESHOLD as f64, MAX_EXTFRAG_THRESHOLD as f64, 30.0, 0.1);
+        let target_page_cluster = if psi > 40.0 {
+            MIN_PAGE_CLUSTER as f64
+        } else {
+            MAX_PAGE_CLUSTER as f64 
         };
-        apply_smooth(&mut self.current_swappiness, target_swap);
-        apply_smooth(&mut self.current_vfs, target_vfs);
-        apply_smooth(&mut self.current_dirty, target_dirty);
-        apply_smooth(&mut self.current_dirty_bg, target_dirty_bg);
-        apply_smooth(&mut self.current_dirty_expire, target_dirty_expire);
-        apply_smooth(&mut self.current_stat_interval, target_stat);
-        apply_smooth(&mut self.current_watermark_scale, target_watermark);
-        apply_smooth(&mut self.current_extfrag_threshold, target_extfrag);
-        apply_smooth(&mut self.current_dirty_writeback, target_dirty_wb);
-        apply_smooth(&mut self.current_page_cluster, target_page_cluster);
+        self.current_swappiness = target_swap;
+        self.current_vfs = target_vfs;
+        self.current_dirty = target_dirty;
+        self.current_dirty_bg = target_dirty_bg;
+        self.current_dirty_expire = target_dirty_expire;
+        self.current_stat_interval = target_stat;
+        self.current_watermark_scale = target_watermark;
+        self.current_extfrag_threshold = target_extfrag;
+        self.current_dirty_writeback = target_dirty_wb;
+        self.current_page_cluster = target_page_cluster;
         self.apply_values(false);
     }
     fn apply_values(&mut self, force: bool) {
@@ -198,63 +203,69 @@ impl MemoryController {
         let dwb_u64 = self.current_dirty_writeback.round() as u64;
         let pc_u64 = self.current_page_cluster.round() as u64;
         if force || self.cache.swappiness != swap_u64 {
-            let s = swap_u64.to_string();
-            if write_to_stream(&mut self.swap_file, &s).is_ok() {
+            if write_to_stream(&mut self.swap_file, &swap_u64.to_string()).is_ok() {
                 self.cache.swappiness = swap_u64;
             }
         }
         if force || self.cache.vfs_cache_pressure != vfs_u64 {
-            let s = vfs_u64.to_string();
-            if write_to_stream(&mut self.vfs_file, &s).is_ok() {
+            if write_to_stream(&mut self.vfs_file, &vfs_u64.to_string()).is_ok() {
                 self.cache.vfs_cache_pressure = vfs_u64;
             }
         }
         if let Some(ref mut f) = self.dirty_ratio_file {
             if force || self.cache.dirty_ratio != dirty_u64 {
-                let s = dirty_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.dirty_ratio = dirty_u64; }
+                if write_to_stream(f, &dirty_u64.to_string()).is_ok() {
+                    self.cache.dirty_ratio = dirty_u64;
+                }
             }
         }
         if let Some(ref mut f) = self.dirty_bg_file {
             if force || self.cache.dirty_bg_ratio != dbg_u64 {
-                let s = dbg_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.dirty_bg_ratio = dbg_u64; }
+                if write_to_stream(f, &dbg_u64.to_string()).is_ok() {
+                    self.cache.dirty_bg_ratio = dbg_u64;
+                }
             }
         }
         if let Some(ref mut f) = self.dirty_expire_file {
             if force || self.cache.dirty_expire_centisecs != expire_u64 {
-                let s = expire_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.dirty_expire_centisecs = expire_u64; }
+                if write_to_stream(f, &expire_u64.to_string()).is_ok() {
+                    self.cache.dirty_expire_centisecs = expire_u64;
+                }
             }
         }
         if let Some(ref mut f) = self.stat_interval_file {
             if force || self.cache.stat_interval != stat_u64 {
-                let s = stat_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.stat_interval = stat_u64; }
+                if write_to_stream(f, &stat_u64.to_string()).is_ok() {
+                    self.cache.stat_interval = stat_u64;
+                }
             }
         }
         if let Some(ref mut f) = self.watermark_scale_file {
             if force || self.cache.watermark_scale_factor != wm_u64 {
-                let s = wm_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.watermark_scale_factor = wm_u64; }
+                if write_to_stream(f, &wm_u64.to_string()).is_ok() {
+                    self.cache.watermark_scale_factor = wm_u64;
+                }
             }
         }
         if let Some(ref mut f) = self.extfrag_file {
             if force || self.cache.extfrag_threshold != ext_u64 {
-                let s = ext_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.extfrag_threshold = ext_u64; }
+                if write_to_stream(f, &ext_u64.to_string()).is_ok() {
+                    self.cache.extfrag_threshold = ext_u64;
+                }
             }
         }
         if let Some(ref mut f) = self.dirty_writeback_file {
             if force || self.cache.dirty_writeback_centisecs != dwb_u64 {
-                let s = dwb_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.dirty_writeback_centisecs = dwb_u64; }
+                if write_to_stream(f, &dwb_u64.to_string()).is_ok() {
+                    self.cache.dirty_writeback_centisecs = dwb_u64;
+                }
             }
         }
         if let Some(ref mut f) = self.page_cluster_file {
             if force || self.cache.page_cluster != pc_u64 {
-                let s = pc_u64.to_string();
-                if write_to_stream(f, &s).is_ok() { self.cache.page_cluster = pc_u64; }
+                if write_to_stream(f, &pc_u64.to_string()).is_ok() {
+                    self.cache.page_cluster = pc_u64;
+                }
             }
         }
     }
@@ -266,13 +277,13 @@ impl EventHandler for MemoryController {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
         if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics(psi);
+            self.update_dynamics_logistic(psi);
         }
         Ok(LoopAction::Continue)
     }
     fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
         if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics(psi);
+            self.update_dynamics_logistic(psi);
         }
         Ok(LoopAction::Continue)
     }
