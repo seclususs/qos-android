@@ -17,15 +17,15 @@ const K_SCHED_WAKEUP_GRANULARITY_NS: &str = "/proc/sys/kernel/sched_wakeup_granu
 const K_SCHED_MIGRATION_COST_NS: &str = "/proc/sys/kernel/sched_migration_cost_ns";
 const K_PERF_CPU_TIME_MAX_PERCENT: &str = "/proc/sys/kernel/perf_cpu_time_max_percent";
 const MIN_LATENCY_NS: u64 = 8_000_000;
-const MAX_LATENCY_NS: u64 = 9_000_000;
+const MAX_LATENCY_NS: u64 = 10_000_000;
 const MIN_GRANULARITY_NS: u64 = 6_000_000;
-const MAX_GRANULARITY_NS: u64 = 7_000_000;
+const MAX_GRANULARITY_NS: u64 = 8_000_000;
 const MIN_WAKEUP_NS: u64 = 2_000_000;
-const MAX_WAKEUP_NS: u64 = 3_000_000;
-const MIN_MIGRATION_COST: u64 = 500_000;
-const MAX_MIGRATION_COST: u64 = 600_000;
-const MIN_PERF_CPU_PERCENT: u64 = 1;
-const MAX_PERF_CPU_PERCENT: u64 = 15;
+const MAX_WAKEUP_NS: u64 = 4_000_000;
+const MIN_MIGRATION_COST: u64 = 200_000;
+const MAX_MIGRATION_COST: u64 = 400_000;
+const MIN_PERF_CPU_PERCENT: u64 = 5;
+const MAX_PERF_CPU_PERCENT: u64 = 25;
 const POLLING_INTERVAL_MS: u64 = 2000;
 
 struct KernelConfigCache {
@@ -44,21 +44,20 @@ pub struct CpuController {
     migration_file: Option<File>,
     perf_cpu_file: Option<File>,
     psi_monitor: PsiMonitor,
-    last_psi_raw: f64,
-    smoothed_psi: f64,
     current_latency: f64,
     current_min_gran: f64,
     current_wakeup: f64,
     current_migration: f64,
     current_perf_percent: f64,
+    prev_impulse_smooth: f64,
     cache: KernelConfigCache,
 }
 
 impl CpuController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("CpuController: Initializing...");
-        let raw_fd = ffi::register_psi_trigger(K_PSI_CPU_PATH, 300000, 1000000)
-            .map_err(|e| QosError::FfiError(format!("Failed to register CPU PSI trigger: {}", e)))?;
+        let raw_fd = ffi::register_psi_trigger(K_PSI_CPU_PATH, 100000, 1000000)
+            .map_err(|e| QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let latency_file = fs::open_file_for_write(K_SCHED_LATENCY_NS)?;
         let min_gran_file = fs::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?;
@@ -74,16 +73,15 @@ impl CpuController {
             migration_file,
             perf_cpu_file,
             psi_monitor,
-            last_psi_raw: 0.0,
-            smoothed_psi: 0.0,
             current_latency: MIN_LATENCY_NS as f64, 
             current_min_gran: MIN_GRANULARITY_NS as f64,
-            current_wakeup: MAX_WAKEUP_NS as f64,
+            current_wakeup: MIN_WAKEUP_NS as f64,
             current_migration: MIN_MIGRATION_COST as f64,
             current_perf_percent: MAX_PERF_CPU_PERCENT as f64,
+            prev_impulse_smooth: 0.0,
             cache: KernelConfigCache { 
-                latency: 0, 
-                min_granularity: 0, 
+                latency: 0,
+                min_granularity: 0,
                 wakeup_granularity: 0,
                 migration_cost: 0,
                 perf_cpu_max_percent: 0,
@@ -92,51 +90,67 @@ impl CpuController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn get_adaptive_smoothed_psi(&mut self, raw_psi: f64) -> f64 {
-        let delta = raw_psi - self.last_psi_raw;
-        let alpha = if delta > 1.0 { 0.8 } else { 0.2 };
-        self.smoothed_psi = alpha * raw_psi + (1.0 - alpha) * self.smoothed_psi;
-        self.last_psi_raw = raw_psi;
-        self.smoothed_psi
+    fn calculate_trend_gain(&self, avg10: f64, avg60: f64) -> f64 {
+        let delta = avg10 - avg60;
+        1.0 + 0.5 * delta.tanh()
     }
-    fn inverse_sigmoid(&self, psi: f64, min: f64, max: f64, midpoint: f64, steepness: f64) -> f64 {
-        let denominator = 1.0 + (steepness * (psi - midpoint)).exp();
-        min + ((max - min) / denominator)
+    fn calculate_thermal_floor(&self, avg300: f64) -> f64 {
+        let fatigue = (avg300 / 100.0).clamp(0.0, 1.0);
+        MIN_LATENCY_NS as f64 + (MAX_LATENCY_NS - MIN_LATENCY_NS) as f64 * fatigue
     }
-    fn parabolic_migration(&self, psi: f64) -> f64 {
-        let min_val = MIN_MIGRATION_COST as f64;
-        let max_val = MAX_MIGRATION_COST as f64;
-        if psi < 25.0 {
-            let start = (min_val + max_val) / 2.0; 
-            let t = (psi / 25.0).clamp(0.0, 1.0);
-            start - (start - min_val) * t
+    fn calculate_perf_limit(&self, avg10: f64) -> f64 {
+        let critical_threshold = 50.0;
+        let saturation = (avg10 / critical_threshold).clamp(0.0, 1.0);
+        let min_limit = MIN_PERF_CPU_PERCENT as f64;
+        let max_limit = MAX_PERF_CPU_PERCENT as f64;
+        let limit = min_limit + (max_limit - min_limit) * (1.0 - saturation);
+        limit.clamp(min_limit, max_limit)
+    }
+    fn update_dynamics(&mut self) -> Result<(), QosError> {
+        let data = self.psi_monitor.read_state()?;
+        let some = data.some;
+        let raw_p = some.current.max(some.avg10);
+        let k_trend = self.calculate_trend_gain(some.avg10, some.avg60);
+        let p_eff = raw_p * k_trend;
+        update_cpu_pressure(p_eff);
+        let delta_raw = some.current - some.avg10;
+        let alpha_smooth = 0.7;
+        let delta_smooth = alpha_smooth * delta_raw + (1.0 - alpha_smooth) * self.prev_impulse_smooth;
+        self.prev_impulse_smooth = delta_smooth;
+        let threshold_burst = 5.0;
+        let target_migration = if delta_smooth > threshold_burst {
+            MIN_MIGRATION_COST as f64
         } else {
-            let t = ((psi - 25.0) / 35.0).clamp(0.0, 1.0);
-            min_val + (max_val - min_val) * t
-        }
-    }
-    fn update_dynamics_hybrid(&mut self, raw_psi: f64) {
-        let psi = self.get_adaptive_smoothed_psi(raw_psi);
-        update_cpu_pressure(psi);
-        let target_latency = self.inverse_sigmoid(psi, MIN_LATENCY_NS as f64, MAX_LATENCY_NS as f64, 25.0, 0.15);
-        let t_factor = (target_latency - MIN_LATENCY_NS as f64) / (MAX_LATENCY_NS as f64 - MIN_LATENCY_NS as f64);
-        let target_min_gran = MIN_GRANULARITY_NS as f64 + t_factor * (MAX_GRANULARITY_NS as f64 - MIN_GRANULARITY_NS as f64);
-        let target_wakeup = self.inverse_sigmoid(psi, MIN_WAKEUP_NS as f64, MAX_WAKEUP_NS as f64, 20.0, 0.25);
-        let target_migration = self.parabolic_migration(psi);
-        let target_perf = self.inverse_sigmoid(psi, MIN_PERF_CPU_PERCENT as f64, MAX_PERF_CPU_PERCENT as f64, 30.0, 0.3);
+            let x = (p_eff / 100.0).clamp(0.0, 1.0);
+            let raw_mig = MIN_MIGRATION_COST as f64 + (MAX_MIGRATION_COST - MIN_MIGRATION_COST) as f64 * (x * x);
+            raw_mig.clamp(MIN_MIGRATION_COST as f64, MAX_MIGRATION_COST as f64)
+        };
+        let thermal_floor = self.calculate_thermal_floor(some.avg300);
+        let k_sig = 0.15;
+        let p_mid = 25.0;
+        let denom = 1.0 + (k_sig * (p_eff - p_mid)).exp();
+        let raw_latency = thermal_floor + ((MAX_LATENCY_NS as f64 - thermal_floor) / denom);
+        let target_latency = raw_latency.clamp(thermal_floor, MAX_LATENCY_NS as f64);
+        let raw_gran = target_latency * 0.75;
+        let target_min_gran = raw_gran.clamp(MIN_GRANULARITY_NS as f64, MAX_GRANULARITY_NS as f64);
+        let decay = (-0.05 * p_eff).exp();
+        let raw_wake = MIN_WAKEUP_NS as f64 + (MAX_WAKEUP_NS - MIN_WAKEUP_NS) as f64 * decay;
+        let target_wakeup = raw_wake.clamp(MIN_WAKEUP_NS as f64, MAX_WAKEUP_NS as f64);
+        let target_perf = self.calculate_perf_limit(some.avg10);
         self.current_latency = target_latency;
         self.current_min_gran = target_min_gran;
         self.current_wakeup = target_wakeup;
         self.current_migration = target_migration;
         self.current_perf_percent = target_perf;
         self.apply_values(false);
+        Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let lat_u64 = self.current_latency as u64;
-        let gran_u64 = self.current_min_gran as u64;
-        let wake_u64 = self.current_wakeup as u64;
-        let mig_u64 = self.current_migration as u64;
-        let perf_u64 = self.current_perf_percent as u64;
+        let lat_u64 = self.current_latency.round() as u64;
+        let gran_u64 = self.current_min_gran.round() as u64;
+        let wake_u64 = self.current_wakeup.round() as u64;
+        let mig_u64 = self.current_migration.round() as u64;
+        let perf_u64 = self.current_perf_percent.round() as u64;
         if force || self.cache.latency.abs_diff(lat_u64) > 100_000 {
             if write_to_stream(&mut self.latency_file, &lat_u64.to_string()).is_ok() {
                 self.cache.latency = lat_u64;
@@ -174,14 +188,14 @@ impl EventHandler for CpuController {
     fn on_event(&mut self) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
-        if let Ok(psi) = self.psi_monitor.read_avg10() {
-            update_cpu_pressure(psi);
+        if let Err(e) = self.update_dynamics() {
+            log::warn!("Cpu Logic Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
     fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
-        if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics_hybrid(psi);
+        if let Err(e) = self.update_dynamics() {
+            log::warn!("Cpu Timeout Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
