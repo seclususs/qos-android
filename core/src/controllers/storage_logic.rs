@@ -3,7 +3,7 @@
 use crate::bindings::ffi;
 use crate::common::fs::{self, write_to_stream};
 use crate::common::psi::PsiMonitor;
-use crate::common::state::update_io_pressure;
+use crate::common::state::{update_io_pressure, update_io_saturation};
 use crate::common::traits::{EventHandler, LoopAction};
 use crate::common::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
@@ -17,10 +17,11 @@ const K_FIFO_BATCH_PATH: &str = "/sys/block/mmcblk0/queue/iosched/fifo_batch";
 const MAX_READ_AHEAD: u64 = 256;
 const MIN_READ_AHEAD: u64 = 128;
 const MAX_NR_REQUESTS: u64 = 256;
-const MIN_NR_REQUESTS: u64 = 128;
+const MIN_NR_REQUESTS: u64 = 128; 
 const MIN_FIFO_BATCH: u64 = 8;
 const MAX_FIFO_BATCH: u64 = 16;
 const POLLING_INTERVAL_MS: u64 = 2000;
+const EPSILON: f64 = 0.01;
 
 pub struct StorageController {
     fd: File,
@@ -28,8 +29,6 @@ pub struct StorageController {
     nr_requests_file: File,
     fifo_batch_file: Option<File>,
     psi_monitor: PsiMonitor,
-    last_psi_raw: f64,
-    smoothed_psi: f64,
     current_read_ahead: f64,
     current_nr_requests: f64,
     current_fifo_batch: f64,
@@ -41,8 +40,8 @@ pub struct StorageController {
 impl StorageController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("StorageController: Initializing...");
-        let raw_fd = ffi::register_psi_trigger(K_PSI_IO_PATH, 120000, 1000000)
-            .map_err(|e| QosError::FfiError(format!("Failed to register Storage PSI: {}", e)))?;
+        let raw_fd = ffi::register_psi_trigger(K_PSI_IO_PATH, 100000, 1000000)
+            .map_err(|e| QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let read_ahead_file = fs::open_file_for_write(K_READ_AHEAD_PATH)?;
         let nr_requests_file = fs::open_file_for_write(K_NR_REQUESTS_PATH)?;
@@ -54,8 +53,6 @@ impl StorageController {
             nr_requests_file,
             fifo_batch_file,
             psi_monitor,
-            last_psi_raw: 0.0,
-            smoothed_psi: 0.0,
             current_read_ahead: MAX_READ_AHEAD as f64,
             current_nr_requests: MAX_NR_REQUESTS as f64,
             current_fifo_batch: MAX_FIFO_BATCH as f64,
@@ -66,62 +63,55 @@ impl StorageController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn get_adaptive_smoothed_psi(&mut self, raw_psi: f64) -> f64 {
-        let delta = raw_psi - self.last_psi_raw;
-        let alpha = if delta > 2.0 { 0.7 } else { 0.2 }; 
-        self.smoothed_psi = alpha * raw_psi + (1.0 - alpha) * self.smoothed_psi;
-        self.last_psi_raw = raw_psi;
-        self.smoothed_psi
-    }
-    fn inverse_sigmoid(&self, psi: f64, min: f64, max: f64, midpoint: f64, steepness: f64) -> f64 {
-        let denominator = 1.0 + (steepness * (psi - midpoint)).exp();
-        min + ((max - min) / denominator)
-    }
-    fn update_dynamics_congestion(&mut self, raw_psi: f64) {
-        let psi = self.get_adaptive_smoothed_psi(raw_psi);
-        update_io_pressure(psi);
-        let target_ra = if psi < 10.0 {
+    fn calculate_read_ahead(&self, p_curr: f64) -> f64 {
+        if p_curr < 10.0 {
             MAX_READ_AHEAD as f64
-        } else if psi > 30.0 {
-            MIN_READ_AHEAD as f64
         } else {
-            let t = (psi - 10.0) / 20.0; 
-            MAX_READ_AHEAD as f64 - (t * (MAX_READ_AHEAD - MIN_READ_AHEAD) as f64)
-        };
-        let t_nr = (psi / 60.0).clamp(0.0, 1.0);
-        let target_nr = MAX_NR_REQUESTS as f64 - (t_nr * (MAX_NR_REQUESTS - MIN_NR_REQUESTS) as f64);
-        let target_fifo = self.inverse_sigmoid(
-            psi,
-            MIN_FIFO_BATCH as f64,
-            MAX_FIFO_BATCH as f64,
-            20.0,
-            0.15
-        );
+            let normalized_p = (p_curr - 10.0).max(EPSILON);
+            let scaling = 20.0 / normalized_p; 
+            let result = MIN_READ_AHEAD as f64 + (scaling * (MAX_READ_AHEAD - MIN_READ_AHEAD) as f64);
+            result.clamp(MIN_READ_AHEAD as f64, MAX_READ_AHEAD as f64)
+        }
+    }
+    fn update_fluid_dynamics(&mut self) -> Result<(), QosError> {
+        let data = self.psi_monitor.read_state()?;
+        let some = data.some;
+        let full = data.full;
+        update_io_pressure(some.avg10);
+        let i_sat_raw = full.avg10 / (some.avg10 + EPSILON);
+        let i_sat = i_sat_raw.clamp(0.0, 1.0);
+        update_io_saturation(i_sat);
+        let beta = 3.0;
+        let sat_factor = i_sat.powf(beta);
+        let target_nr = (MAX_NR_REQUESTS as f64 * (1.0 - sat_factor)) + 
+                        (MIN_NR_REQUESTS as f64 * sat_factor);
+        let target_fifo = (MAX_FIFO_BATCH as f64 * (1.0 - sat_factor)) + 
+                          (MIN_FIFO_BATCH as f64 * sat_factor);
+        let tactical_p = some.current.max(full.current * 2.0);
+        let target_ra = self.calculate_read_ahead(tactical_p);
         self.current_read_ahead = target_ra;
-        self.current_nr_requests = target_nr;
-        self.current_fifo_batch = target_fifo;
+        self.current_nr_requests = target_nr.clamp(MIN_NR_REQUESTS as f64, MAX_NR_REQUESTS as f64);
+        self.current_fifo_batch = target_fifo.clamp(MIN_FIFO_BATCH as f64, MAX_FIFO_BATCH as f64);
         self.apply_values(false);
+        Ok(())
     }
     fn apply_values(&mut self, force: bool) {
         let ra_u64 = self.current_read_ahead.round() as u64;
+        let nr_u64 = self.current_nr_requests.round() as u64;
+        let fifo_u64 = self.current_fifo_batch.round() as u64;
         if force || self.cached_read_ahead != ra_u64 {
-            let s = ra_u64.to_string();
-            if let Ok(_) = write_to_stream(&mut self.read_ahead_file, &s) {
+            if write_to_stream(&mut self.read_ahead_file, &ra_u64.to_string()).is_ok() {
                 self.cached_read_ahead = ra_u64;
             }
         }
-        let nr_u64 = self.current_nr_requests.round() as u64;
         if force || self.cached_nr_requests != nr_u64 {
-            let s = nr_u64.to_string();
-            if let Ok(_) = write_to_stream(&mut self.nr_requests_file, &s) {
+            if write_to_stream(&mut self.nr_requests_file, &nr_u64.to_string()).is_ok() {
                 self.cached_nr_requests = nr_u64;
             }
         }
         if let Some(ref mut f) = self.fifo_batch_file {
-            let fifo_u64 = self.current_fifo_batch.round() as u64;
             if force || self.cached_fifo_batch != fifo_u64 {
-                let s = fifo_u64.to_string();
-                if write_to_stream(f, &s).is_ok() {
+                if write_to_stream(f, &fifo_u64.to_string()).is_ok() {
                     self.cached_fifo_batch = fifo_u64;
                 }
             }
@@ -134,14 +124,14 @@ impl EventHandler for StorageController {
     fn on_event(&mut self) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
-        if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics_congestion(psi);
+        if let Err(e) = self.update_fluid_dynamics() {
+            log::warn!("Storage Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
     fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
-        if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics_congestion(psi);
+        if let Err(e) = self.update_fluid_dynamics() {
+            log::warn!("Storage Timeout Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }

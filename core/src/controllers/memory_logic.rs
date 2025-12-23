@@ -3,7 +3,7 @@
 use crate::bindings::ffi;
 use crate::common::fs::{self, write_to_stream};
 use crate::common::psi::PsiMonitor;
-use crate::common::state::update_memory_pressure;
+use crate::common::state::{update_memory_pressure, get_io_pressure, get_cpu_pressure, get_io_saturation};
 use crate::common::traits::{EventHandler, LoopAction};
 use crate::common::error::QosError;
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
@@ -21,20 +21,20 @@ const K_WATERMARK_SCALE_FACTOR: &str = "/proc/sys/vm/watermark_scale_factor";
 const K_EXTFRAG_THRESHOLD: &str = "/proc/sys/vm/extfrag_threshold";
 const K_DIRTY_WRITEBACK_CENTISECS: &str = "/proc/sys/vm/dirty_writeback_centisecs";
 const K_PAGE_CLUSTER: &str = "/proc/sys/vm/page-cluster";
-const MIN_SWAPPINESS: u64 = 30;
+const MIN_SWAPPINESS: u64 = 20;
 const MAX_SWAPPINESS: u64 = 60;
-const MIN_VFS: u64 = 100;
+const MIN_VFS: u64 = 80;
 const MAX_VFS: u64 = 200;
-const MAX_DIRTY: u64 = 25;
-const MIN_DIRTY: u64 = 15;
-const MAX_DIRTY_BG: u64 = 12;
-const MIN_DIRTY_BG: u64 = 8;
+const MIN_DIRTY: u64 = 10;
+const MAX_DIRTY: u64 = 15;
+const MIN_DIRTY_BG: u64 = 3;
+const MAX_DIRTY_BG: u64 = 8;
 const MIN_DIRTY_EXPIRE: u64 = 1500;
 const MAX_DIRTY_EXPIRE: u64 = 3000;
 const MIN_STAT_INTERVAL: u64 = 1;
 const MAX_STAT_INTERVAL: u64 = 5;
 const MIN_WATERMARK_SCALE: u64 = 8;
-const MAX_WATERMARK_SCALE: u64 = 20;
+const MAX_WATERMARK_SCALE: u64 = 15;
 const MIN_EXTFRAG_THRESHOLD: u64 = 400;
 const MAX_EXTFRAG_THRESHOLD: u64 = 600;
 const MIN_DIRTY_WRITEBACK: u64 = 300;
@@ -69,8 +69,6 @@ pub struct MemoryController {
     dirty_writeback_file: Option<File>,
     page_cluster_file: Option<File>,
     psi_monitor: PsiMonitor,
-    last_psi_raw: f64,
-    smoothed_psi: f64,
     current_swappiness: f64,
     current_vfs: f64,
     current_dirty: f64,
@@ -88,7 +86,7 @@ impl MemoryController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("MemoryController: Initializing...");
         let raw_fd = ffi::register_psi_trigger(K_PSI_MEMORY_PATH, 80000, 1000000)
-            .map_err(|e| QosError::FfiError(format!("Failed to register Memory PSI trigger: {}", e)))?;
+            .map_err(|e| QosError::FfiError(format!("Memory PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let swap_file = fs::open_file_for_write(K_SWAPPINESS_PATH)?;
         let vfs_file = fs::open_file_for_write(K_VFS_CACHE_PRESSURE_PATH)?;
@@ -102,20 +100,8 @@ impl MemoryController {
         let page_cluster_file = fs::open_file_for_write(K_PAGE_CLUSTER).ok();
         let psi_monitor = PsiMonitor::new(K_PSI_MEMORY_PATH)?;
         let mut controller = Self {
-            fd,
-            swap_file,
-            vfs_file,
-            dirty_ratio_file,
-            dirty_bg_file,
-            dirty_expire_file,
-            stat_interval_file,
-            watermark_scale_file,
-            extfrag_file,
-            dirty_writeback_file,
-            page_cluster_file,
-            psi_monitor,
-            last_psi_raw: 0.0,
-            smoothed_psi: 0.0,
+            fd, swap_file, vfs_file, dirty_ratio_file, dirty_bg_file, dirty_expire_file,
+            stat_interval_file, watermark_scale_file, extfrag_file, dirty_writeback_file, page_cluster_file, psi_monitor,
             current_swappiness: MIN_SWAPPINESS as f64,
             current_vfs: MIN_VFS as f64,
             current_dirty: MAX_DIRTY as f64,
@@ -127,69 +113,97 @@ impl MemoryController {
             current_dirty_writeback: MAX_DIRTY_WRITEBACK as f64,
             current_page_cluster: MAX_PAGE_CLUSTER as f64,
             cache: KernelConfigCache { 
-                swappiness: 0, 
-                vfs_cache_pressure: 0, 
-                dirty_ratio: 0, 
-                dirty_bg_ratio: 0,
-                dirty_expire_centisecs: 0,
-                stat_interval: 0,
-                watermark_scale_factor: 0,
-                extfrag_threshold: 0,
-                dirty_writeback_centisecs: 0,
-                page_cluster: 0,
+                swappiness: 0, vfs_cache_pressure: 0, dirty_ratio: 0, dirty_bg_ratio: 0,
+                dirty_expire_centisecs: 0, stat_interval: 0, watermark_scale_factor: 0,
+                extfrag_threshold: 0, dirty_writeback_centisecs: 0, page_cluster: 0,
             },
         };
         controller.apply_values(true);
         Ok(controller)
     }
-    fn get_adaptive_smoothed_psi(&mut self, raw_psi: f64) -> f64 {
-        let delta = raw_psi - self.last_psi_raw;
-        let alpha = if delta > 2.0 { 0.7 } else { 0.15 }; 
-        self.smoothed_psi = alpha * raw_psi + (1.0 - alpha) * self.smoothed_psi;
-        self.last_psi_raw = raw_psi;
-        self.smoothed_psi
+    fn calculate_swappiness(&self, p_curr: f64, p_avg60: f64) -> f64 {
+        let anchor_p = p_curr.max(p_avg60);
+        let k = 0.15;
+        let midpoint = 30.0;
+        let denom = 1.0 + (-k * (anchor_p - midpoint)).exp();
+        let res = MIN_SWAPPINESS as f64 + ((MAX_SWAPPINESS - MIN_SWAPPINESS) as f64 / denom);
+        res.clamp(MIN_SWAPPINESS as f64, MAX_SWAPPINESS as f64)
     }
-    fn logistic_growth(&self, psi: f64, min: f64, max: f64, midpoint: f64, steepness: f64) -> f64 {
-        let denominator = 1.0 + (-steepness * (psi - midpoint)).exp();
-        min + ((max - min) / denominator)
+    fn calculate_dirty_expire(&self, p_eff: f64) -> f64 {
+        let lambda = 0.1;
+        let decay = (-lambda * p_eff).exp();
+        let res = MIN_DIRTY_EXPIRE as f64 + (MAX_DIRTY_EXPIRE - MIN_DIRTY_EXPIRE) as f64 * decay;
+        res.clamp(MIN_DIRTY_EXPIRE as f64, MAX_DIRTY_EXPIRE as f64)
     }
-    fn exponential_decay(&self, psi: f64, min: f64, max: f64, lambda: f64) -> f64 {
-        min + (max - min) * (-lambda * psi).exp()
+    fn calculate_stat_interval(&self, p_cpu: f64) -> f64 {
+        let t = (p_cpu / 100.0).clamp(0.0, 1.0);
+        let interval = MIN_STAT_INTERVAL as f64 + (MAX_STAT_INTERVAL - MIN_STAT_INTERVAL) as f64 * t;
+        interval.clamp(MIN_STAT_INTERVAL as f64, MAX_STAT_INTERVAL as f64)
     }
-    fn inverse_sigmoid(&self, psi: f64, min: f64, max: f64, midpoint: f64, steepness: f64) -> f64 {
-        let denominator = 1.0 + (steepness * (psi - midpoint)).exp();
-        min + ((max - min) / denominator)
+    fn calculate_watermark_scale(&self, p_mem: f64) -> f64 {
+        let k = 0.1;
+        let mid = 30.0;
+        let denom = 1.0 + (-k * (p_mem - mid)).exp();
+        let res = MIN_WATERMARK_SCALE as f64 + ((MAX_WATERMARK_SCALE - MIN_WATERMARK_SCALE) as f64 / denom);
+        res.clamp(MIN_WATERMARK_SCALE as f64, MAX_WATERMARK_SCALE as f64)
     }
-    fn update_dynamics_logistic(&mut self, raw_psi: f64) {
-        let psi = self.get_adaptive_smoothed_psi(raw_psi);
-        update_memory_pressure(psi);
-        let target_swap = self.logistic_growth(psi, MIN_SWAPPINESS as f64, MAX_SWAPPINESS as f64, 30.0, 0.15);
-        let vfs_calc = 100.0 + (psi * 2.0);
-        let target_vfs = vfs_calc.clamp(MIN_VFS as f64, MAX_VFS as f64);
-        let target_dirty = self.exponential_decay(psi, MIN_DIRTY as f64, MAX_DIRTY as f64, 0.05);
-        let target_dirty_bg = self.exponential_decay(psi, MIN_DIRTY_BG as f64, MAX_DIRTY_BG as f64, 0.05);
-        let t = (psi / 50.0).clamp(0.0, 1.0);
-        let target_dirty_expire = MAX_DIRTY_EXPIRE as f64 - (t * (MAX_DIRTY_EXPIRE - MIN_DIRTY_EXPIRE) as f64);
-        let target_dirty_wb = MAX_DIRTY_WRITEBACK as f64 - (t * (MAX_DIRTY_WRITEBACK - MIN_DIRTY_WRITEBACK) as f64);
-        let target_stat = MIN_STAT_INTERVAL as f64 + (t * (MAX_STAT_INTERVAL - MIN_STAT_INTERVAL) as f64);
-        let target_watermark = self.logistic_growth(psi, MIN_WATERMARK_SCALE as f64, MAX_WATERMARK_SCALE as f64, 25.0, 0.2);
-        let target_extfrag = self.inverse_sigmoid(psi, MIN_EXTFRAG_THRESHOLD as f64, MAX_EXTFRAG_THRESHOLD as f64, 30.0, 0.1);
-        let target_page_cluster = if psi > 40.0 {
+    fn calculate_extfrag_threshold(&self, p_cpu: f64) -> f64 {
+        if p_cpu > 40.0 {
+            MAX_EXTFRAG_THRESHOLD as f64
+        } else {
+            MIN_EXTFRAG_THRESHOLD as f64
+        }
+    }
+    fn update_thermodynamics(&mut self) -> Result<(), QosError> {
+        let data = self.psi_monitor.read_state()?;
+        let some = data.some;
+        let p_mem = some.current.max(some.avg10).max(data.full.avg10 * 2.0);
+        update_memory_pressure(p_mem);
+        let p_cpu = get_cpu_pressure();
+        let i_sat = get_io_saturation();
+        let p_io = get_io_pressure();
+        let p_combined = (p_mem + p_io).min(100.0);
+        let s_base = self.calculate_swappiness(p_mem, some.avg60);
+        let alpha_cpu = 2.0;
+        let cpu_penalty = 1.0 - (p_cpu / 100.0).powf(alpha_cpu);
+        let storage_penalty = 1.0 - i_sat.powf(3.0);
+        let s_final = s_base * cpu_penalty * storage_penalty;
+        let target_swap = s_final.clamp(MIN_SWAPPINESS as f64, MAX_SWAPPINESS as f64);
+        let target_vfs = if p_mem < 30.0 {
+            100.0
+        } else if p_mem > 70.0 {
+            200.0
+        } else {
+            100.0 + (p_mem - 30.0) * 2.5
+        };
+        let decay = (-0.05 * p_mem).exp();
+        let target_dirty = MIN_DIRTY as f64 + (MAX_DIRTY - MIN_DIRTY) as f64 * decay;
+        let target_dirty_bg = MIN_DIRTY_BG as f64 + (MAX_DIRTY_BG - MIN_DIRTY_BG) as f64 * decay;
+        let target_expire = self.calculate_dirty_expire(p_combined);
+        let t_wb = (target_expire - MIN_DIRTY_EXPIRE as f64) / (MAX_DIRTY_EXPIRE - MIN_DIRTY_EXPIRE) as f64;
+        let target_wb = MIN_DIRTY_WRITEBACK as f64 + (MAX_DIRTY_WRITEBACK - MIN_DIRTY_WRITEBACK) as f64 * t_wb;
+        let target_stat = self.calculate_stat_interval(p_cpu);
+        let target_wm = self.calculate_watermark_scale(p_mem);
+        let target_ext = self.calculate_extfrag_threshold(p_cpu);
+        let target_pc = if data.full.avg10 > 10.0 {
             MIN_PAGE_CLUSTER as f64
         } else {
-            MAX_PAGE_CLUSTER as f64 
+            MAX_PAGE_CLUSTER as f64
         };
-        self.current_swappiness = target_swap;
-        self.current_vfs = target_vfs;
-        self.current_dirty = target_dirty;
-        self.current_dirty_bg = target_dirty_bg;
-        self.current_dirty_expire = target_dirty_expire;
-        self.current_stat_interval = target_stat;
-        self.current_watermark_scale = target_watermark;
-        self.current_extfrag_threshold = target_extfrag;
-        self.current_dirty_writeback = target_dirty_wb;
-        self.current_page_cluster = target_page_cluster;
+        let decay_factor = if some.avg60 > 40.0 {0.01 } else { 0.1 };
+        let smoothing = if target_swap < self.current_swappiness { 0.8 } else { decay_factor };
+        self.current_swappiness = smoothing * target_swap + (1.0 - smoothing) * self.current_swappiness;
+        self.current_vfs = target_vfs.clamp(MIN_VFS as f64, MAX_VFS as f64);
+        self.current_dirty = target_dirty.clamp(MIN_DIRTY as f64, MAX_DIRTY as f64);
+        self.current_dirty_bg = target_dirty_bg.clamp(MIN_DIRTY_BG as f64, MAX_DIRTY_BG as f64);
+        self.current_dirty_expire = target_expire.clamp(MIN_DIRTY_EXPIRE as f64, MAX_DIRTY_EXPIRE as f64);
+        self.current_dirty_writeback = target_wb.clamp(MIN_DIRTY_WRITEBACK as f64, MAX_DIRTY_WRITEBACK as f64);
+        self.current_stat_interval = target_stat.clamp(MIN_STAT_INTERVAL as f64, MAX_STAT_INTERVAL as f64);
+        self.current_watermark_scale = target_wm.clamp(MIN_WATERMARK_SCALE as f64, MAX_WATERMARK_SCALE as f64);
+        self.current_extfrag_threshold = target_ext.clamp(MIN_EXTFRAG_THRESHOLD as f64, MAX_EXTFRAG_THRESHOLD as f64);
+        self.current_page_cluster = target_pc;
         self.apply_values(false);
+        Ok(())
     }
     fn apply_values(&mut self, force: bool) {
         let swap_u64 = self.current_swappiness.round() as u64;
@@ -276,14 +290,14 @@ impl EventHandler for MemoryController {
     fn on_event(&mut self) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
-        if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics_logistic(psi);
+        if let Err(e) = self.update_thermodynamics() {
+            log::warn!("Mem Logic Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
     fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
-        if let Ok(psi) = self.psi_monitor.read_avg10() {
-            self.update_dynamics_logistic(psi);
+        if let Err(e) = self.update_thermodynamics() {
+            log::warn!("Mem Timeout Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }

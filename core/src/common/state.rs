@@ -13,6 +13,7 @@ pub struct GlobalPressure {
     pub cpu_psi: f64,
     pub memory_psi: f64,
     pub io_psi: f64,
+    pub io_saturation: f64,
 }
 
 impl GlobalPressure {
@@ -21,6 +22,7 @@ impl GlobalPressure {
             cpu_psi: 0.0,
             memory_psi: 0.0,
             io_psi: 0.0,
+            io_saturation: 0.0,
         }
     }
 }
@@ -45,6 +47,12 @@ pub fn update_io_pressure(psi: f64) {
     }
 }
 
+pub fn update_io_saturation(sat: f64) {
+    if let Ok(mut guard) = SYSTEM_PRESSURE.write() {
+        guard.io_saturation = sat;
+    }
+}
+
 pub fn get_cpu_pressure() -> f64 {
     if let Ok(guard) = SYSTEM_PRESSURE.read() {
         guard.cpu_psi
@@ -64,6 +72,14 @@ pub fn get_memory_pressure() -> f64 {
 pub fn get_io_pressure() -> f64 {
     if let Ok(guard) = SYSTEM_PRESSURE.read() {
         guard.io_psi
+    } else {
+        0.0
+    }
+}
+
+pub fn get_io_saturation() -> f64 {
+    if let Ok(guard) = SYSTEM_PRESSURE.read() {
+        guard.io_saturation
     } else {
         0.0
     }
