@@ -1,10 +1,9 @@
 #!/system/bin/sh
 
-if [ -f "$BootAnimation_location" ]; then
-    ui_print ' [+] Installed Boot-Animation.'
-    ui_print ''
+FILE_CHECK="$MODPATH/system/product/media/bootanimation.zip"
+
+if [ -f "$FILE_CHECK" ] || [ -f "$BootAnimation_location" ]; then
+    ui_print "    ➜ [+] Boot-Animation Installed"
 else
-  ui_print " [x] Resources missing !"
-  touch "$MODPATH"/remove
-  ui_print " [---] Module will be removed on the next boot."
+    ui_print "    ➜ [!] No Boot-Animation found (Skipping)"
 fi
