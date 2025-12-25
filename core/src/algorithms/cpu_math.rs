@@ -26,8 +26,8 @@ pub fn calculate_trend_gain(avg10: f64, avg60: f64, tunables: &CpuTunables) -> f
     1.0 + tunables.trend_factor * delta.tanh()
 }
 
-pub fn calculate_thermal_floor(sustained_load: f64, tunables: &CpuTunables) -> f64 {
-    let fatigue = (sustained_load / 100.0).clamp(0.0, 1.0);
+pub fn calculate_thermal_floor(avg60: f64, tunables: &CpuTunables) -> f64 {
+    let fatigue = (avg60 / 100.0).clamp(0.0, 1.0);
     tunables.min_latency_ns + (tunables.max_latency_ns - tunables.min_latency_ns) * fatigue
 }
 
