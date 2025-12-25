@@ -47,22 +47,41 @@ add_custom_command(
     WORKING_DIRECTORY ${RUST_CRATE_PATH}
     DEPENDS ${RUST_CRATE_PATH}/Cargo.toml
             ${RUST_CRATE_PATH}/src/lib.rs
+            ${RUST_CRATE_PATH}/src/algorithms/mod.rs
+            ${RUST_CRATE_PATH}/src/algorithms/cpu_math.rs
+            ${RUST_CRATE_PATH}/src/algorithms/memory_math.rs
+            ${RUST_CRATE_PATH}/src/algorithms/poll_math.rs
+            ${RUST_CRATE_PATH}/src/algorithms/storage_math.rs
+            ${RUST_CRATE_PATH}/src/algorithms/tolerance.rs
             ${RUST_CRATE_PATH}/src/bindings/mod.rs
-            ${RUST_CRATE_PATH}/src/bindings/c_api.rs
-            ${RUST_CRATE_PATH}/src/bindings/ffi.rs
-            ${RUST_CRATE_PATH}/src/common/mod.rs
-            ${RUST_CRATE_PATH}/src/common/error.rs
-            ${RUST_CRATE_PATH}/src/common/fs.rs
-            ${RUST_CRATE_PATH}/src/common/logger.rs
-            ${RUST_CRATE_PATH}/src/common/psi.rs
-            ${RUST_CRATE_PATH}/src/common/state.rs
-            ${RUST_CRATE_PATH}/src/common/traits.rs
+            ${RUST_CRATE_PATH}/src/bindings/api_entry.rs
+            ${RUST_CRATE_PATH}/src/bindings/sys.rs
+            ${RUST_CRATE_PATH}/src/config/mod.rs
+            ${RUST_CRATE_PATH}/src/config/loop_settings.rs
+            ${RUST_CRATE_PATH}/src/config/tunables.rs
             ${RUST_CRATE_PATH}/src/controllers/mod.rs
-            ${RUST_CRATE_PATH}/src/controllers/memory_logic.rs
-            ${RUST_CRATE_PATH}/src/controllers/signal_logic.rs
-            ${RUST_CRATE_PATH}/src/controllers/storage_logic.rs
-            ${RUST_CRATE_PATH}/src/controllers/tweaker_logic.rs
-            ${RUST_CRATE_PATH}/src/controllers/cpu_logic.rs
+            ${RUST_CRATE_PATH}/src/controllers/cpu_impl.rs
+            ${RUST_CRATE_PATH}/src/controllers/memory_impl.rs
+            ${RUST_CRATE_PATH}/src/controllers/signal_impl.rs
+            ${RUST_CRATE_PATH}/src/controllers/storage_impl.rs
+            ${RUST_CRATE_PATH}/src/core/mod.rs
+            ${RUST_CRATE_PATH}/src/core/interfaces.rs
+            ${RUST_CRATE_PATH}/src/core/lifecycle.rs
+            ${RUST_CRATE_PATH}/src/core/logging.rs
+            ${RUST_CRATE_PATH}/src/core/state.rs
+            ${RUST_CRATE_PATH}/src/core/types.rs
+            ${RUST_CRATE_PATH}/src/hal/mod.rs
+            ${RUST_CRATE_PATH}/src/hal/bridge.rs
+            ${RUST_CRATE_PATH}/src/hal/cached_file.rs
+            ${RUST_CRATE_PATH}/src/hal/filesystem.rs
+            ${RUST_CRATE_PATH}/src/hal/kernel.rs
+            ${RUST_CRATE_PATH}/src/hal/properties.rs
+            ${RUST_CRATE_PATH}/src/monitors/mod.rs
+            ${RUST_CRATE_PATH}/src/monitors/psi_monitor.rs
+            ${RUST_CRATE_PATH}/src/registry/mod.rs
+            ${RUST_CRATE_PATH}/src/registry/boot_tweaks.rs
+            ${RUST_CRATE_PATH}/src/resources/mod.rs
+            ${RUST_CRATE_PATH}/src/resources/sys_paths.rs
     COMMENT "Building Rust static library (${CMAKE_BUILD_TYPE}) for ${RUST_TARGET}..."
 )
 
