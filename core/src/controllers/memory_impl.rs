@@ -142,7 +142,7 @@ impl MemoryController {
         let p_io = get_io_pressure();
         let p_combined = (p_mem + p_io).min(100.0);
         let s_base = memory_math::calculate_swappiness(p_mem, some.avg60, &self.tunables);
-        let target_swap = memory_math::calculate_final_swap(s_base, p_cpu, i_sat, 3.0, &self.tunables).clamp(self.tunables.min_swappiness, self.tunables.max_swappiness);
+        let target_swap = memory_math::calculate_final_swap(s_base, p_cpu, i_sat, &self.tunables).clamp(self.tunables.min_swappiness, self.tunables.max_swappiness);
         let target_vfs = memory_math::calculate_target_vfs(p_mem, &self.tunables);
         let (target_dirty, target_dirty_bg) = memory_math::calculate_dirty_params(p_mem, &self.tunables);
         let target_expire = memory_math::calculate_dirty_expire(p_combined, &self.tunables);
