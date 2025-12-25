@@ -5,9 +5,15 @@ use crate::hal::kernel;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
 use crate::config::tunables::*;
-use crate::config::loop_settings::POLLING_INTERVAL_MS;
+use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::memory_math::{self, MemoryTunables};
-use crate::core::state::{update_memory_pressure, get_io_pressure, get_cpu_pressure, get_io_saturation};
+use crate::algorithms::poll_math::AdaptivePoller;
+use crate::core::state::{
+    update_memory_pressure,
+    get_io_pressure,
+    get_cpu_pressure,
+    get_io_saturation
+};
 use crate::core::interfaces::{EventHandler, LoopAction};
 use crate::core::types::QosError;
 
@@ -58,6 +64,8 @@ pub struct MemoryController {
     current_page_cluster: f64,
     cache: KernelConfigCache,
     tunables: MemoryTunables,
+    poller: AdaptivePoller,
+    next_wake_ms: i32,
 }
 
 impl MemoryController {
@@ -113,6 +121,7 @@ impl MemoryController {
             page_cluster_threshold: 10.0,
             cpu_pow_alpha: 2.0,
         };
+        let poller = AdaptivePoller::new(1.5, 0.5);
         let mut controller = Self {
             fd, swap_file, vfs_file, dirty_ratio_file, dirty_bg_file, dirty_expire_file,
             stat_interval_file, watermark_scale_file, extfrag_file, dirty_writeback_file, page_cluster_file, psi_monitor,
@@ -132,6 +141,8 @@ impl MemoryController {
                 extfrag_threshold: 0, dirty_writeback_centisecs: 0, page_cluster: 0,
             },
             tunables,
+            poller,
+            next_wake_ms: MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
         Ok(controller)
@@ -141,6 +152,7 @@ impl MemoryController {
         let some = data.some;
         let p_mem = some.current.max(some.avg10).max(data.full.avg10 * 2.0);
         update_memory_pressure(p_mem);
+        self.next_wake_ms = self.poller.calculate_next_interval(p_mem) as i32;
         let p_cpu = get_cpu_pressure();
         let i_sat = get_io_saturation();
         let p_io = get_io_pressure();
@@ -267,7 +279,7 @@ impl EventHandler for MemoryController {
         Ok(LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
-        POLLING_INTERVAL_MS as i32
+        self.next_wake_ms
     }
     fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
         rustix::event::epoll::EventFlags::PRI | rustix::event::epoll::EventFlags::ERR
