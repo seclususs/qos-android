@@ -5,8 +5,9 @@ use crate::hal::kernel;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
 use crate::config::tunables::*;
-use crate::config::loop_settings::POLLING_INTERVAL_MS;
+use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::storage_math::{self, StorageTunables};
+use crate::algorithms::poll_math::AdaptivePoller;
 use crate::core::state::{update_io_pressure, update_io_saturation};
 use crate::core::interfaces::{EventHandler, LoopAction};
 use crate::core::types::QosError;
@@ -30,6 +31,8 @@ pub struct StorageController {
     cached_nr_requests: u64,
     cached_fifo_batch: u64,
     tunables: StorageTunables,
+    poller: AdaptivePoller,
+    next_wake_ms: i32,
 }
 
 impl StorageController {
@@ -54,6 +57,7 @@ impl StorageController {
             io_read_ahead_threshold: 10.0,
             io_scaling_factor: 20.0,
         };
+        let poller = AdaptivePoller::new(1.0, 1.0);
         let mut controller = Self { 
             fd,
             read_ahead_file,
@@ -67,6 +71,8 @@ impl StorageController {
             cached_nr_requests: 0,
             cached_fifo_batch: 0,
             tunables,
+            poller,
+            next_wake_ms: MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
         Ok(controller)
@@ -78,6 +84,12 @@ impl StorageController {
         update_io_pressure(some.avg10);
         let i_sat = storage_math::calculate_io_saturation(full.avg10, some.avg10, &self.tunables);
         update_io_saturation(i_sat);
+        if i_sat > 0.0 {
+            self.next_wake_ms = MIN_POLLING_MS as i32;
+            self.poller.calculate_next_interval(100.0); 
+        } else {
+            self.next_wake_ms = self.poller.calculate_next_interval(some.avg10) as i32;
+        }
         let (target_nr, target_fifo) = storage_math::calculate_queue_params(i_sat, &self.tunables);
         let tactical_p = some.current.max(full.current * IO_TACTICAL_MULTIPLIER);
         let target_ra = storage_math::calculate_read_ahead(tactical_p, &self.tunables);
@@ -128,7 +140,7 @@ impl EventHandler for StorageController {
         Ok(LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
-        POLLING_INTERVAL_MS as i32
+        self.next_wake_ms
     }
     fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
         rustix::event::epoll::EventFlags::PRI | rustix::event::epoll::EventFlags::ERR

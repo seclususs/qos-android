@@ -5,8 +5,9 @@ use crate::hal::kernel;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
 use crate::config::tunables::*;
-use crate::config::loop_settings::POLLING_INTERVAL_MS;
+use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::cpu_math::{self, CpuTunables};
+use crate::algorithms::poll_math::AdaptivePoller;
 use crate::core::state::update_cpu_pressure;
 use crate::core::interfaces::{EventHandler, LoopAction};
 use crate::core::types::QosError;
@@ -39,6 +40,8 @@ pub struct CpuController {
     prev_impulse_smooth: f64,
     cache: KernelConfigCache,
     tunables: CpuTunables,
+    poller: AdaptivePoller,
+    next_wake_ms: i32,
 }
 
 impl CpuController {
@@ -73,6 +76,7 @@ impl CpuController {
             decay_coeff: 0.05,
             latency_gran_ratio: 0.75,
         };
+        let poller = AdaptivePoller::new(1.0, 2.5);
         let mut controller = Self {
             fd,
             latency_file,
@@ -95,6 +99,8 @@ impl CpuController {
                 perf_cpu_max_percent: 0,
             },
             tunables,
+            poller,
+            next_wake_ms: MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
         Ok(controller)
@@ -106,11 +112,12 @@ impl CpuController {
         let k_trend = cpu_math::calculate_trend_gain(some.avg10, some.avg60, &self.tunables);
         let p_eff = raw_p * k_trend;
         update_cpu_pressure(p_eff);
+        self.next_wake_ms = self.poller.calculate_next_interval(p_eff) as i32;
         let delta_raw = some.current - some.avg10;
         let delta_smooth = cpu_math::smooth_delta(delta_raw, self.prev_impulse_smooth, &self.tunables);
         self.prev_impulse_smooth = delta_smooth;
         let target_migration = cpu_math::calculate_migration_cost(delta_smooth, p_eff, &self.tunables);
-        let thermal_floor = cpu_math::calculate_thermal_floor(some.avg300, &self.tunables);
+        let thermal_floor = cpu_math::calculate_thermal_floor(some.avg60, &self.tunables);
         let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(p_eff, thermal_floor, &self.tunables);
         let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
         let target_perf = cpu_math::calculate_perf_limit(some.avg10, &self.tunables);
@@ -177,7 +184,7 @@ impl EventHandler for CpuController {
         Ok(LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
-        POLLING_INTERVAL_MS as i32
+        self.next_wake_ms
     }
     fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
         rustix::event::epoll::EventFlags::PRI | rustix::event::epoll::EventFlags::ERR

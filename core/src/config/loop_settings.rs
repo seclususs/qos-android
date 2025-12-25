@@ -1,6 +1,13 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-pub const POLLING_INTERVAL_MS: u64 = 3000;
+pub const MIN_POLLING_MS: u64 = 2000;
+pub const MAX_POLLING_MS: u64 = 10000;
+pub const SLEEP_TOLERANCE_MS: u64 = 500;
+pub const JITTER_PERCENT: u64 = 5;
+pub const QUANTIZATION_STEP_MS: u64 = 100;
+pub const ATTACK_COEFF: f64 = 1.0;
+pub const DECAY_COEFF: f64 = 0.1;
+pub const HYSTERESIS_THRESHOLD_MS: u64 = 200;
 pub const MAX_EPOLL_TIMEOUT_MS: i32 = 5000;
 pub const MAX_EVENTS: usize = 16;
 pub const STABILIZATION_DELAY_SEC: u64 = 60;
