@@ -101,7 +101,12 @@ pub fn calculate_page_cluster(avg10: f64, tunables: &MemoryTunables) -> f64 {
     }
 }
 
-pub fn calculate_final_swap(s_base: f64, p_cpu: f64, _i_sat: f64, _io_sat_beta: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_final_swap(s_base: f64, p_cpu: f64, i_sat: f64, tunables: &MemoryTunables) -> f64 {
     let cpu_penalty = 1.0 - (p_cpu / 100.0).powf(tunables.cpu_pow_alpha);
-    s_base * cpu_penalty
+    let storage_penalty = if i_sat > 0.8 {
+        1.0 - ((i_sat - 0.8) * 2.5)
+    } else {
+        1.0
+    };
+    s_base * cpu_penalty * storage_penalty
 }
