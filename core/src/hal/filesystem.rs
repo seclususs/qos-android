@@ -3,8 +3,7 @@
 use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
-use crate::common::error::QosError;
-use crate::bindings::ffi;
+use crate::core::types::QosError;
 
 const ALLOWED_PREFIXES: [&str; 2] = ["/proc/", "/sys/"];
 
@@ -67,12 +66,4 @@ pub fn write_to_file(path: &str, value: &str) -> Result<(), QosError> {
         log::debug!("Write failed '{}' -> {}: {}", value, path, e);
         QosError::IoError(e)
     })
-}
-
-pub fn set_system_prop(key: &str, value: &str) {
-    if !key.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '-') { return; }
-    if !validate_value(value) { return; }
-    if let Err(e) = ffi::set_system_property(key, value) {
-        log::warn!("Failed to set system prop: {} = {}. Error: {}", key, value, e);
-    }
 }

@@ -1,32 +1,19 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::bindings::ffi;
-use crate::common::fs::{self, write_to_stream};
-use crate::common::psi::PsiMonitor;
-use crate::common::state::update_cpu_pressure;
-use crate::common::traits::{EventHandler, LoopAction};
-use crate::common::error::QosError;
+use crate::hal::filesystem::{self, write_to_stream};
+use crate::hal::kernel;
+use crate::monitors::psi_monitor::PsiMonitor;
+use crate::resources::sys_paths::*;
+use crate::config::tunables::*;
+use crate::config::loop_settings::POLLING_INTERVAL_MS;
+use crate::algorithms::cpu_math::{self, CpuTunables};
+use crate::core::state::update_cpu_pressure;
+use crate::core::interfaces::{EventHandler, LoopAction};
+use crate::core::types::QosError;
+
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
 use std::io::Read;
-
-const K_PSI_CPU_PATH: &str = "/proc/pressure/cpu";
-const K_SCHED_LATENCY_NS: &str = "/proc/sys/kernel/sched_latency_ns";
-const K_SCHED_MIN_GRANULARITY_NS: &str = "/proc/sys/kernel/sched_min_granularity_ns";
-const K_SCHED_WAKEUP_GRANULARITY_NS: &str = "/proc/sys/kernel/sched_wakeup_granularity_ns";
-const K_SCHED_MIGRATION_COST_NS: &str = "/proc/sys/kernel/sched_migration_cost_ns";
-const K_PERF_CPU_TIME_MAX_PERCENT: &str = "/proc/sys/kernel/perf_cpu_time_max_percent";
-const MIN_LATENCY_NS: u64 = 8_000_000;
-const MAX_LATENCY_NS: u64 = 10_000_000;
-const MIN_GRANULARITY_NS: u64 = 6_000_000;
-const MAX_GRANULARITY_NS: u64 = 8_000_000;
-const MIN_WAKEUP_NS: u64 = 2_000_000;
-const MAX_WAKEUP_NS: u64 = 4_000_000;
-const MIN_MIGRATION_COST: u64 = 200_000;
-const MAX_MIGRATION_COST: u64 = 400_000;
-const MIN_PERF_CPU_PERCENT: u64 = 5;
-const MAX_PERF_CPU_PERCENT: u64 = 25;
-const POLLING_INTERVAL_MS: u64 = 2000;
 
 struct KernelConfigCache {
     latency: u64,
@@ -51,20 +38,41 @@ pub struct CpuController {
     current_perf_percent: f64,
     prev_impulse_smooth: f64,
     cache: KernelConfigCache,
+    tunables: CpuTunables,
 }
 
 impl CpuController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("CpuController: Initializing...");
-        let raw_fd = ffi::register_psi_trigger(K_PSI_CPU_PATH, 100000, 1000000)
+        let raw_fd = kernel::register_psi_trigger(K_PSI_CPU_PATH, 120000, 1000000)
             .map_err(|e| QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let latency_file = fs::open_file_for_write(K_SCHED_LATENCY_NS)?;
-        let min_gran_file = fs::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?;
-        let wakeup_file = fs::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?;
-        let migration_file = fs::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok();
-        let perf_cpu_file = fs::open_file_for_write(K_PERF_CPU_TIME_MAX_PERCENT).ok();
+        let latency_file = filesystem::open_file_for_write(K_SCHED_LATENCY_NS)?;
+        let min_gran_file = filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?;
+        let wakeup_file = filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?;
+        let migration_file = filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok();
+        let perf_cpu_file = filesystem::open_file_for_write(K_PERF_CPU_TIME_MAX_PERCENT).ok();
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
+        let tunables = CpuTunables {
+            min_latency_ns: MIN_LATENCY_NS as f64,
+            max_latency_ns: MAX_LATENCY_NS as f64,
+            min_granularity_ns: MIN_GRANULARITY_NS as f64,
+            max_granularity_ns: MAX_GRANULARITY_NS as f64,
+            min_wakeup_ns: MIN_WAKEUP_NS as f64,
+            max_wakeup_ns: MAX_WAKEUP_NS as f64,
+            min_migration_cost: MIN_MIGRATION_COST as f64,
+            max_migration_cost: MAX_MIGRATION_COST as f64,
+            min_perf_cpu_percent: MIN_PERF_CPU_PERCENT as f64,
+            max_perf_cpu_percent: MAX_PERF_CPU_PERCENT as f64,
+            trend_factor: 0.5,
+            critical_threshold: 50.0,
+            alpha_smooth: 0.7,
+            burst_threshold: 5.0,
+            sigmoid_k: 0.15,
+            sigmoid_mid: 25.0,
+            decay_coeff: 0.05,
+            latency_gran_ratio: 0.75,
+        };
         let mut controller = Self {
             fd,
             latency_file,
@@ -86,57 +94,26 @@ impl CpuController {
                 migration_cost: 0,
                 perf_cpu_max_percent: 0,
             },
+            tunables,
         };
         controller.apply_values(true);
         Ok(controller)
-    }
-    fn calculate_trend_gain(&self, avg10: f64, avg60: f64) -> f64 {
-        let delta = avg10 - avg60;
-        1.0 + 0.5 * delta.tanh()
-    }
-    fn calculate_thermal_floor(&self, avg300: f64) -> f64 {
-        let fatigue = (avg300 / 100.0).clamp(0.0, 1.0);
-        MIN_LATENCY_NS as f64 + (MAX_LATENCY_NS - MIN_LATENCY_NS) as f64 * fatigue
-    }
-    fn calculate_perf_limit(&self, avg10: f64) -> f64 {
-        let critical_threshold = 50.0;
-        let saturation = (avg10 / critical_threshold).clamp(0.0, 1.0);
-        let min_limit = MIN_PERF_CPU_PERCENT as f64;
-        let max_limit = MAX_PERF_CPU_PERCENT as f64;
-        let limit = min_limit + (max_limit - min_limit) * (1.0 - saturation);
-        limit.clamp(min_limit, max_limit)
     }
     fn update_dynamics(&mut self) -> Result<(), QosError> {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let raw_p = some.current.max(some.avg10);
-        let k_trend = self.calculate_trend_gain(some.avg10, some.avg60);
+        let k_trend = cpu_math::calculate_trend_gain(some.avg10, some.avg60, &self.tunables);
         let p_eff = raw_p * k_trend;
         update_cpu_pressure(p_eff);
         let delta_raw = some.current - some.avg10;
-        let alpha_smooth = 0.7;
-        let delta_smooth = alpha_smooth * delta_raw + (1.0 - alpha_smooth) * self.prev_impulse_smooth;
+        let delta_smooth = cpu_math::smooth_delta(delta_raw, self.prev_impulse_smooth, &self.tunables);
         self.prev_impulse_smooth = delta_smooth;
-        let threshold_burst = 5.0;
-        let target_migration = if delta_smooth > threshold_burst {
-            MIN_MIGRATION_COST as f64
-        } else {
-            let x = (p_eff / 100.0).clamp(0.0, 1.0);
-            let raw_mig = MIN_MIGRATION_COST as f64 + (MAX_MIGRATION_COST - MIN_MIGRATION_COST) as f64 * (x * x);
-            raw_mig.clamp(MIN_MIGRATION_COST as f64, MAX_MIGRATION_COST as f64)
-        };
-        let thermal_floor = self.calculate_thermal_floor(some.avg300);
-        let k_sig = 0.15;
-        let p_mid = 25.0;
-        let denom = 1.0 + (k_sig * (p_eff - p_mid)).exp();
-        let raw_latency = thermal_floor + ((MAX_LATENCY_NS as f64 - thermal_floor) / denom);
-        let target_latency = raw_latency.clamp(thermal_floor, MAX_LATENCY_NS as f64);
-        let raw_gran = target_latency * 0.75;
-        let target_min_gran = raw_gran.clamp(MIN_GRANULARITY_NS as f64, MAX_GRANULARITY_NS as f64);
-        let decay = (-0.05 * p_eff).exp();
-        let raw_wake = MIN_WAKEUP_NS as f64 + (MAX_WAKEUP_NS - MIN_WAKEUP_NS) as f64 * decay;
-        let target_wakeup = raw_wake.clamp(MIN_WAKEUP_NS as f64, MAX_WAKEUP_NS as f64);
-        let target_perf = self.calculate_perf_limit(some.avg10);
+        let target_migration = cpu_math::calculate_migration_cost(delta_smooth, p_eff, &self.tunables);
+        let thermal_floor = cpu_math::calculate_thermal_floor(some.avg300, &self.tunables);
+        let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(p_eff, thermal_floor, &self.tunables);
+        let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
+        let target_perf = cpu_math::calculate_perf_limit(some.avg10, &self.tunables);
         self.current_latency = target_latency;
         self.current_min_gran = target_min_gran;
         self.current_wakeup = target_wakeup;
@@ -201,5 +178,8 @@ impl EventHandler for CpuController {
     }
     fn get_timeout_ms(&self) -> i32 {
         POLLING_INTERVAL_MS as i32
+    }
+    fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
+        rustix::event::epoll::EventFlags::PRI | rustix::event::epoll::EventFlags::ERR
     }
 }
