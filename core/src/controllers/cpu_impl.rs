@@ -1,6 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::filesystem::{self, write_to_stream};
+use crate::hal::cached_file::{CachedFile, CheckStrategy};
+use crate::hal::filesystem;
 use crate::hal::kernel;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
@@ -16,21 +17,13 @@ use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
 use std::io::Read;
 
-struct KernelConfigCache {
-    latency: u64,
-    min_granularity: u64,
-    wakeup_granularity: u64,
-    migration_cost: u64,
-    perf_cpu_max_percent: u64,
-}
-
 pub struct CpuController {
     fd: File,
-    latency_file: File,
-    min_gran_file: File,
-    wakeup_file: File,
-    migration_file: Option<File>,
-    perf_cpu_file: Option<File>,
+    latency: CachedFile,
+    min_gran: CachedFile,
+    wakeup: CachedFile,
+    migration: CachedFile,
+    perf_cpu: CachedFile,
     psi_monitor: PsiMonitor,
     current_latency: f64,
     current_min_gran: f64,
@@ -38,7 +31,6 @@ pub struct CpuController {
     current_migration: f64,
     current_perf_percent: f64,
     prev_impulse_smooth: f64,
-    cache: KernelConfigCache,
     tunables: CpuTunables,
     poller: AdaptivePoller,
     next_wake_ms: i32,
@@ -50,11 +42,11 @@ impl CpuController {
         let raw_fd = kernel::register_psi_trigger(K_PSI_CPU_PATH, 120000, 1000000)
             .map_err(|e| QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let latency_file = filesystem::open_file_for_write(K_SCHED_LATENCY_NS)?;
-        let min_gran_file = filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?;
-        let wakeup_file = filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?;
-        let migration_file = filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok();
-        let perf_cpu_file = filesystem::open_file_for_write(K_PERF_CPU_TIME_MAX_PERCENT).ok();
+        let latency = CachedFile::new(filesystem::open_file_for_write(K_SCHED_LATENCY_NS)?, 0);
+        let min_gran = CachedFile::new(filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?, 0);
+        let wakeup = CachedFile::new(filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?, 0);
+        let migration = CachedFile::new_opt(filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(), 0);
+        let perf_cpu = CachedFile::new_opt(filesystem::open_file_for_write(K_PERF_CPU_TIME_MAX_PERCENT).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
         let tunables = CpuTunables {
             min_latency_ns: MIN_LATENCY_NS as f64,
@@ -79,11 +71,11 @@ impl CpuController {
         let poller = AdaptivePoller::new(1.0, 2.5);
         let mut controller = Self {
             fd,
-            latency_file,
-            min_gran_file,
-            wakeup_file,
-            migration_file,
-            perf_cpu_file,
+            latency,
+            min_gran,
+            wakeup,
+            migration,
+            perf_cpu,
             psi_monitor,
             current_latency: MIN_LATENCY_NS as f64, 
             current_min_gran: MIN_GRANULARITY_NS as f64,
@@ -91,13 +83,6 @@ impl CpuController {
             current_migration: MIN_MIGRATION_COST as f64,
             current_perf_percent: MAX_PERF_CPU_PERCENT as f64,
             prev_impulse_smooth: 0.0,
-            cache: KernelConfigCache { 
-                latency: 0,
-                min_granularity: 0,
-                wakeup_granularity: 0,
-                migration_cost: 0,
-                perf_cpu_max_percent: 0,
-            },
             tunables,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
@@ -135,35 +120,11 @@ impl CpuController {
         let wake_u64 = self.current_wakeup.round() as u64;
         let mig_u64 = self.current_migration.round() as u64;
         let perf_u64 = self.current_perf_percent.round() as u64;
-        if force || self.cache.latency.abs_diff(lat_u64) > 100_000 {
-            if write_to_stream(&mut self.latency_file, &lat_u64.to_string()).is_ok() {
-                self.cache.latency = lat_u64;
-            }
-        }
-        if force || self.cache.min_granularity.abs_diff(gran_u64) > 100_000 {
-            if write_to_stream(&mut self.min_gran_file, &gran_u64.to_string()).is_ok() {
-                self.cache.min_granularity = gran_u64;
-            }
-        }
-        if force || self.cache.wakeup_granularity.abs_diff(wake_u64) > 100_000 {
-            if write_to_stream(&mut self.wakeup_file, &wake_u64.to_string()).is_ok() {
-                self.cache.wakeup_granularity = wake_u64;
-            }
-        }
-        if let Some(ref mut f) = self.migration_file {
-            if force || self.cache.migration_cost.abs_diff(mig_u64) > 50_000 {
-                if write_to_stream(f, &mig_u64.to_string()).is_ok() {
-                    self.cache.migration_cost = mig_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.perf_cpu_file {
-            if force || self.cache.perf_cpu_max_percent != perf_u64 {
-                if write_to_stream(f, &perf_u64.to_string()).is_ok() {
-                    self.cache.perf_cpu_max_percent = perf_u64;
-                }
-            }
-        }
+        self.latency.update(lat_u64, force, CheckStrategy::Relative(0.05));
+        self.min_gran.update(gran_u64, force, CheckStrategy::Relative(0.05));
+        self.wakeup.update(wake_u64, force, CheckStrategy::Relative(0.10));
+        self.migration.update(mig_u64, force, CheckStrategy::Relative(0.15));
+        self.perf_cpu.update(perf_u64, force, CheckStrategy::Absolute(2));
     }
 }
 

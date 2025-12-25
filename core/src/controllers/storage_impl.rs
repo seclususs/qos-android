@@ -1,6 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::filesystem::{self, write_to_stream};
+use crate::hal::cached_file::{CachedFile, CheckStrategy};
+use crate::hal::filesystem;
 use crate::hal::kernel;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
@@ -20,16 +21,13 @@ const IO_TACTICAL_MULTIPLIER: f64 = 2.0;
 
 pub struct StorageController {
     fd: File,
-    read_ahead_file: File,
-    nr_requests_file: File,
-    fifo_batch_file: Option<File>,
+    read_ahead: CachedFile,
+    nr_requests: CachedFile,
+    fifo_batch: CachedFile,
     psi_monitor: PsiMonitor,
     current_read_ahead: f64,
     current_nr_requests: f64,
     current_fifo_batch: f64,
-    cached_read_ahead: u64,
-    cached_nr_requests: u64,
-    cached_fifo_batch: u64,
     tunables: StorageTunables,
     poller: AdaptivePoller,
     next_wake_ms: i32,
@@ -41,9 +39,9 @@ impl StorageController {
         let raw_fd = kernel::register_psi_trigger(K_PSI_IO_PATH, 100000, 1000000)
             .map_err(|e| QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let read_ahead_file = filesystem::open_file_for_write(K_READ_AHEAD_PATH)?;
-        let nr_requests_file = filesystem::open_file_for_write(K_NR_REQUESTS_PATH)?;
-        let fifo_batch_file = filesystem::open_file_for_write(K_FIFO_BATCH_PATH).ok();
+        let read_ahead = CachedFile::new(filesystem::open_file_for_write(K_READ_AHEAD_PATH)?, 0);
+        let nr_requests = CachedFile::new(filesystem::open_file_for_write(K_NR_REQUESTS_PATH)?, 0);
+        let fifo_batch = CachedFile::new_opt(filesystem::open_file_for_write(K_FIFO_BATCH_PATH).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_IO_PATH)?;
         let tunables = StorageTunables {
             min_read_ahead: MIN_READ_AHEAD as f64,
@@ -60,16 +58,13 @@ impl StorageController {
         let poller = AdaptivePoller::new(1.0, 1.0);
         let mut controller = Self { 
             fd,
-            read_ahead_file,
-            nr_requests_file,
-            fifo_batch_file,
+            read_ahead,
+            nr_requests,
+            fifo_batch,
             psi_monitor,
             current_read_ahead: MAX_READ_AHEAD as f64,
             current_nr_requests: MAX_NR_REQUESTS as f64,
             current_fifo_batch: MAX_FIFO_BATCH as f64,
-            cached_read_ahead: 0,
-            cached_nr_requests: 0,
-            cached_fifo_batch: 0,
             tunables,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
@@ -103,23 +98,9 @@ impl StorageController {
         let ra_u64 = self.current_read_ahead.round() as u64;
         let nr_u64 = self.current_nr_requests.round() as u64;
         let fifo_u64 = self.current_fifo_batch.round() as u64;
-        if force || self.cached_read_ahead != ra_u64 {
-            if write_to_stream(&mut self.read_ahead_file, &ra_u64.to_string()).is_ok() {
-                self.cached_read_ahead = ra_u64;
-            }
-        }
-        if force || self.cached_nr_requests != nr_u64 {
-            if write_to_stream(&mut self.nr_requests_file, &nr_u64.to_string()).is_ok() {
-                self.cached_nr_requests = nr_u64;
-            }
-        }
-        if let Some(ref mut f) = self.fifo_batch_file {
-            if force || self.cached_fifo_batch != fifo_u64 {
-                if write_to_stream(f, &fifo_u64.to_string()).is_ok() {
-                    self.cached_fifo_batch = fifo_u64;
-                }
-            }
-        }
+        self.read_ahead.update(ra_u64, force, CheckStrategy::Absolute(32));
+        self.nr_requests.update(nr_u64, force, CheckStrategy::Absolute(16));
+        self.fifo_batch.update(fifo_u64, force, CheckStrategy::Absolute(2));
     }
 }
 
