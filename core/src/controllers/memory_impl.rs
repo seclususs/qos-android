@@ -1,6 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::filesystem::{self, write_to_stream};
+use crate::hal::cached_file::{CachedFile, CheckStrategy};
+use crate::hal::filesystem;
 use crate::hal::kernel;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
@@ -26,31 +27,18 @@ const MEM_SMOOTH_SLOW: f64 = 0.01;
 const MEM_SMOOTH_FALLBACK: f64 = 0.8;
 const MEM_PRESSURE_HIGH_THRESHOLD: f64 = 40.0;
 
-struct KernelConfigCache {
-    swappiness: u64,
-    vfs_cache_pressure: u64,
-    dirty_ratio: u64,
-    dirty_bg_ratio: u64,
-    dirty_expire_centisecs: u64,
-    stat_interval: u64,
-    watermark_scale_factor: u64,
-    extfrag_threshold: u64,
-    dirty_writeback_centisecs: u64,
-    page_cluster: u64,
-}
-
 pub struct MemoryController {
     fd: File,
-    swap_file: File,
-    vfs_file: File,
-    dirty_ratio_file: Option<File>,
-    dirty_bg_file: Option<File>,
-    dirty_expire_file: Option<File>,
-    stat_interval_file: Option<File>,
-    watermark_scale_file: Option<File>,
-    extfrag_file: Option<File>,
-    dirty_writeback_file: Option<File>,
-    page_cluster_file: Option<File>,
+    swap: CachedFile,
+    vfs: CachedFile,
+    dirty_ratio: CachedFile,
+    dirty_bg: CachedFile,
+    dirty_expire: CachedFile,
+    stat_interval: CachedFile,
+    watermark_scale: CachedFile,
+    extfrag: CachedFile,
+    dirty_writeback: CachedFile,
+    page_cluster: CachedFile,
     psi_monitor: PsiMonitor,
     current_swappiness: f64,
     current_vfs: f64,
@@ -62,7 +50,6 @@ pub struct MemoryController {
     current_extfrag_threshold: f64,
     current_dirty_writeback: f64,
     current_page_cluster: f64,
-    cache: KernelConfigCache,
     tunables: MemoryTunables,
     poller: AdaptivePoller,
     next_wake_ms: i32,
@@ -74,16 +61,16 @@ impl MemoryController {
         let raw_fd = kernel::register_psi_trigger(K_PSI_MEMORY_PATH, 100000, 1000000)
             .map_err(|e| QosError::FfiError(format!("Memory PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let swap_file = filesystem::open_file_for_write(K_SWAPPINESS_PATH)?;
-        let vfs_file = filesystem::open_file_for_write(K_VFS_CACHE_PRESSURE_PATH)?;
-        let dirty_ratio_file = filesystem::open_file_for_write(K_DIRTY_RATIO).ok();
-        let dirty_bg_file = filesystem::open_file_for_write(K_DIRTY_BG_RATIO).ok();
-        let dirty_expire_file = filesystem::open_file_for_write(K_DIRTY_EXPIRE_CENTISECS).ok();
-        let stat_interval_file = filesystem::open_file_for_write(K_STAT_INTERVAL).ok();
-        let watermark_scale_file = filesystem::open_file_for_write(K_WATERMARK_SCALE_FACTOR).ok();
-        let extfrag_file = filesystem::open_file_for_write(K_EXTFRAG_THRESHOLD).ok();
-        let dirty_writeback_file = filesystem::open_file_for_write(K_DIRTY_WRITEBACK_CENTISECS).ok();
-        let page_cluster_file = filesystem::open_file_for_write(K_PAGE_CLUSTER).ok();
+        let swap = CachedFile::new(filesystem::open_file_for_write(K_SWAPPINESS_PATH)?, 0);
+        let vfs = CachedFile::new(filesystem::open_file_for_write(K_VFS_CACHE_PRESSURE_PATH)?, 0);
+        let dirty_ratio = CachedFile::new_opt(filesystem::open_file_for_write(K_DIRTY_RATIO).ok(), 0);
+        let dirty_bg = CachedFile::new_opt(filesystem::open_file_for_write(K_DIRTY_BG_RATIO).ok(), 0);
+        let dirty_expire = CachedFile::new_opt(filesystem::open_file_for_write(K_DIRTY_EXPIRE_CENTISECS).ok(), 0);
+        let stat_interval = CachedFile::new_opt(filesystem::open_file_for_write(K_STAT_INTERVAL).ok(), 0);
+        let watermark_scale = CachedFile::new_opt(filesystem::open_file_for_write(K_WATERMARK_SCALE_FACTOR).ok(), 0);
+        let extfrag = CachedFile::new_opt(filesystem::open_file_for_write(K_EXTFRAG_THRESHOLD).ok(), 0);
+        let dirty_writeback = CachedFile::new_opt(filesystem::open_file_for_write(K_DIRTY_WRITEBACK_CENTISECS).ok(), 0);
+        let page_cluster = CachedFile::new_opt(filesystem::open_file_for_write(K_PAGE_CLUSTER).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_MEMORY_PATH)?;
         let tunables = MemoryTunables {
             min_swappiness: MIN_SWAPPINESS as f64,
@@ -123,8 +110,10 @@ impl MemoryController {
         };
         let poller = AdaptivePoller::new(1.5, 0.5);
         let mut controller = Self {
-            fd, swap_file, vfs_file, dirty_ratio_file, dirty_bg_file, dirty_expire_file,
-            stat_interval_file, watermark_scale_file, extfrag_file, dirty_writeback_file, page_cluster_file, psi_monitor,
+            fd, 
+            swap, vfs, dirty_ratio, dirty_bg, dirty_expire,
+            stat_interval, watermark_scale, extfrag, dirty_writeback, page_cluster, 
+            psi_monitor,
             current_swappiness: MIN_SWAPPINESS as f64,
             current_vfs: MIN_VFS as f64,
             current_dirty: MAX_DIRTY as f64,
@@ -135,11 +124,6 @@ impl MemoryController {
             current_extfrag_threshold: MAX_EXTFRAG_THRESHOLD as f64,
             current_dirty_writeback: MAX_DIRTY_WRITEBACK as f64,
             current_page_cluster: MAX_PAGE_CLUSTER as f64,
-            cache: KernelConfigCache { 
-                swappiness: 0, vfs_cache_pressure: 0, dirty_ratio: 0, dirty_bg_ratio: 0,
-                dirty_expire_centisecs: 0, stat_interval: 0, watermark_scale_factor: 0,
-                extfrag_threshold: 0, dirty_writeback_centisecs: 0, page_cluster: 0,
-            },
             tunables,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
@@ -193,72 +177,16 @@ impl MemoryController {
         let ext_u64 = self.current_extfrag_threshold.round() as u64;
         let dwb_u64 = self.current_dirty_writeback.round() as u64;
         let pc_u64 = self.current_page_cluster.round() as u64;
-        if force || self.cache.swappiness != swap_u64 {
-            if write_to_stream(&mut self.swap_file, &swap_u64.to_string()).is_ok() {
-                self.cache.swappiness = swap_u64;
-            }
-        }
-        if force || self.cache.vfs_cache_pressure != vfs_u64 {
-            if write_to_stream(&mut self.vfs_file, &vfs_u64.to_string()).is_ok() {
-                self.cache.vfs_cache_pressure = vfs_u64;
-            }
-        }
-        if let Some(ref mut f) = self.dirty_ratio_file {
-            if force || self.cache.dirty_ratio != dirty_u64 {
-                if write_to_stream(f, &dirty_u64.to_string()).is_ok() {
-                    self.cache.dirty_ratio = dirty_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.dirty_bg_file {
-            if force || self.cache.dirty_bg_ratio != dbg_u64 {
-                if write_to_stream(f, &dbg_u64.to_string()).is_ok() {
-                    self.cache.dirty_bg_ratio = dbg_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.dirty_expire_file {
-            if force || self.cache.dirty_expire_centisecs != expire_u64 {
-                if write_to_stream(f, &expire_u64.to_string()).is_ok() {
-                    self.cache.dirty_expire_centisecs = expire_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.stat_interval_file {
-            if force || self.cache.stat_interval != stat_u64 {
-                if write_to_stream(f, &stat_u64.to_string()).is_ok() {
-                    self.cache.stat_interval = stat_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.watermark_scale_file {
-            if force || self.cache.watermark_scale_factor != wm_u64 {
-                if write_to_stream(f, &wm_u64.to_string()).is_ok() {
-                    self.cache.watermark_scale_factor = wm_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.extfrag_file {
-            if force || self.cache.extfrag_threshold != ext_u64 {
-                if write_to_stream(f, &ext_u64.to_string()).is_ok() {
-                    self.cache.extfrag_threshold = ext_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.dirty_writeback_file {
-            if force || self.cache.dirty_writeback_centisecs != dwb_u64 {
-                if write_to_stream(f, &dwb_u64.to_string()).is_ok() {
-                    self.cache.dirty_writeback_centisecs = dwb_u64;
-                }
-            }
-        }
-        if let Some(ref mut f) = self.page_cluster_file {
-            if force || self.cache.page_cluster != pc_u64 {
-                if write_to_stream(f, &pc_u64.to_string()).is_ok() {
-                    self.cache.page_cluster = pc_u64;
-                }
-            }
-        }
+        self.swap.update(swap_u64, force, CheckStrategy::Absolute(3));
+        self.vfs.update(vfs_u64, force, CheckStrategy::Absolute(10));
+        self.dirty_ratio.update(dirty_u64, force, CheckStrategy::Absolute(1));
+        self.dirty_bg.update(dbg_u64, force, CheckStrategy::Absolute(1));
+        self.dirty_expire.update(expire_u64, force, CheckStrategy::Relative(0.05));
+        self.stat_interval.update(stat_u64, force, CheckStrategy::Strict);
+        self.watermark_scale.update(wm_u64, force, CheckStrategy::Absolute(2));
+        self.extfrag.update(ext_u64, force, CheckStrategy::Absolute(25));
+        self.dirty_writeback.update(dwb_u64, force, CheckStrategy::Relative(0.10));
+        self.page_cluster.update(pc_u64, force, CheckStrategy::Strict);
     }
 }
 
