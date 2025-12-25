@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use std::os::fd::RawFd;
-use crate::common::error::QosError;
+use crate::core::types::QosError;
 
 #[derive(Debug, PartialEq)]
 pub enum LoopAction {
@@ -18,5 +18,10 @@ pub trait EventHandler {
     }
     fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
         Ok(LoopAction::Continue)
+    }
+    fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
+        rustix::event::epoll::EventFlags::IN 
+        | rustix::event::epoll::EventFlags::PRI 
+        | rustix::event::epoll::EventFlags::ERR
     }
 }

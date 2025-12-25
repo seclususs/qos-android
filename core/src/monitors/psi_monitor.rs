@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::common::error::QosError;
-use crate::common::fs::open_file_for_read;
+use crate::core::types::QosError;
+use crate::hal::filesystem::open_file_for_read;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Instant;
@@ -109,11 +109,5 @@ impl PsiMonitor {
         self.last_some_total = data.some.total;
         self.last_full_total = data.full.total;
         Ok(data)
-    }
-    pub fn read_avg10(&mut self) -> Result<f64, QosError> {
-        self.read_state().map(|d| d.some.avg10)
-    }
-    pub fn read_total_stall(&mut self) -> Result<u64, QosError> {
-         self.read_state().map(|d| d.some.total)
     }
 }

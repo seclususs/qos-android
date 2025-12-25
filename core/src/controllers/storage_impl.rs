@@ -1,27 +1,21 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::bindings::ffi;
-use crate::common::fs::{self, write_to_stream};
-use crate::common::psi::PsiMonitor;
-use crate::common::state::{update_io_pressure, update_io_saturation};
-use crate::common::traits::{EventHandler, LoopAction};
-use crate::common::error::QosError;
+use crate::hal::filesystem::{self, write_to_stream};
+use crate::hal::kernel;
+use crate::monitors::psi_monitor::PsiMonitor;
+use crate::resources::sys_paths::*;
+use crate::config::tunables::*;
+use crate::config::loop_settings::POLLING_INTERVAL_MS;
+use crate::algorithms::storage_math::{self, StorageTunables};
+use crate::core::state::{update_io_pressure, update_io_saturation};
+use crate::core::interfaces::{EventHandler, LoopAction};
+use crate::core::types::QosError;
+
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
 use std::io::Read;
 
-const K_PSI_IO_PATH: &str = "/proc/pressure/io";
-const K_READ_AHEAD_PATH: &str = "/sys/block/mmcblk0/queue/read_ahead_kb";
-const K_NR_REQUESTS_PATH: &str = "/sys/block/mmcblk0/queue/nr_requests";
-const K_FIFO_BATCH_PATH: &str = "/sys/block/mmcblk0/queue/iosched/fifo_batch";
-const MAX_READ_AHEAD: u64 = 256;
-const MIN_READ_AHEAD: u64 = 128;
-const MAX_NR_REQUESTS: u64 = 256;
-const MIN_NR_REQUESTS: u64 = 128; 
-const MIN_FIFO_BATCH: u64 = 8;
-const MAX_FIFO_BATCH: u64 = 16;
-const POLLING_INTERVAL_MS: u64 = 2000;
-const EPSILON: f64 = 0.01;
+const IO_TACTICAL_MULTIPLIER: f64 = 2.0;
 
 pub struct StorageController {
     fd: File,
@@ -35,18 +29,31 @@ pub struct StorageController {
     cached_read_ahead: u64,
     cached_nr_requests: u64,
     cached_fifo_batch: u64,
+    tunables: StorageTunables,
 }
 
 impl StorageController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("StorageController: Initializing...");
-        let raw_fd = ffi::register_psi_trigger(K_PSI_IO_PATH, 100000, 1000000)
+        let raw_fd = kernel::register_psi_trigger(K_PSI_IO_PATH, 100000, 1000000)
             .map_err(|e| QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let read_ahead_file = fs::open_file_for_write(K_READ_AHEAD_PATH)?;
-        let nr_requests_file = fs::open_file_for_write(K_NR_REQUESTS_PATH)?;
-        let fifo_batch_file = fs::open_file_for_write(K_FIFO_BATCH_PATH).ok();
+        let read_ahead_file = filesystem::open_file_for_write(K_READ_AHEAD_PATH)?;
+        let nr_requests_file = filesystem::open_file_for_write(K_NR_REQUESTS_PATH)?;
+        let fifo_batch_file = filesystem::open_file_for_write(K_FIFO_BATCH_PATH).ok();
         let psi_monitor = PsiMonitor::new(K_PSI_IO_PATH)?;
+        let tunables = StorageTunables {
+            min_read_ahead: MIN_READ_AHEAD as f64,
+            max_read_ahead: MAX_READ_AHEAD as f64,
+            min_nr_requests: MIN_NR_REQUESTS as f64,
+            max_nr_requests: MAX_NR_REQUESTS as f64,
+            min_fifo_batch: MIN_FIFO_BATCH as f64,
+            max_fifo_batch: MAX_FIFO_BATCH as f64,
+            io_sat_beta: 3.0,
+            epsilon: 0.01,
+            io_read_ahead_threshold: 10.0,
+            io_scaling_factor: 20.0,
+        };
         let mut controller = Self { 
             fd,
             read_ahead_file,
@@ -59,39 +66,24 @@ impl StorageController {
             cached_read_ahead: 0,
             cached_nr_requests: 0,
             cached_fifo_batch: 0,
+            tunables,
         };
         controller.apply_values(true);
         Ok(controller)
-    }
-    fn calculate_read_ahead(&self, p_curr: f64) -> f64 {
-        if p_curr < 10.0 {
-            MAX_READ_AHEAD as f64
-        } else {
-            let normalized_p = (p_curr - 10.0).max(EPSILON);
-            let scaling = 20.0 / normalized_p; 
-            let result = MIN_READ_AHEAD as f64 + (scaling * (MAX_READ_AHEAD - MIN_READ_AHEAD) as f64);
-            result.clamp(MIN_READ_AHEAD as f64, MAX_READ_AHEAD as f64)
-        }
     }
     fn update_fluid_dynamics(&mut self) -> Result<(), QosError> {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let full = data.full;
         update_io_pressure(some.avg10);
-        let i_sat_raw = full.avg10 / (some.avg10 + EPSILON);
-        let i_sat = i_sat_raw.clamp(0.0, 1.0);
+        let i_sat = storage_math::calculate_io_saturation(full.avg10, some.avg10, &self.tunables);
         update_io_saturation(i_sat);
-        let beta = 3.0;
-        let sat_factor = i_sat.powf(beta);
-        let target_nr = (MAX_NR_REQUESTS as f64 * (1.0 - sat_factor)) + 
-                        (MIN_NR_REQUESTS as f64 * sat_factor);
-        let target_fifo = (MAX_FIFO_BATCH as f64 * (1.0 - sat_factor)) + 
-                          (MIN_FIFO_BATCH as f64 * sat_factor);
-        let tactical_p = some.current.max(full.current * 2.0);
-        let target_ra = self.calculate_read_ahead(tactical_p);
+        let (target_nr, target_fifo) = storage_math::calculate_queue_params(i_sat, &self.tunables);
+        let tactical_p = some.current.max(full.current * IO_TACTICAL_MULTIPLIER);
+        let target_ra = storage_math::calculate_read_ahead(tactical_p, &self.tunables);
         self.current_read_ahead = target_ra;
-        self.current_nr_requests = target_nr.clamp(MIN_NR_REQUESTS as f64, MAX_NR_REQUESTS as f64);
-        self.current_fifo_batch = target_fifo.clamp(MIN_FIFO_BATCH as f64, MAX_FIFO_BATCH as f64);
+        self.current_nr_requests = target_nr.clamp(self.tunables.min_nr_requests, self.tunables.max_nr_requests);
+        self.current_fifo_batch = target_fifo.clamp(self.tunables.min_fifo_batch, self.tunables.max_fifo_batch);
         self.apply_values(false);
         Ok(())
     }
@@ -137,5 +129,8 @@ impl EventHandler for StorageController {
     }
     fn get_timeout_ms(&self) -> i32 {
         POLLING_INTERVAL_MS as i32
+    }
+    fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
+        rustix::event::epoll::EventFlags::PRI | rustix::event::epoll::EventFlags::ERR
     }
 }

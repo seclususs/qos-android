@@ -1,8 +1,9 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::common::state::SHUTDOWN_REQUESTED;
-use crate::common::traits::{EventHandler, LoopAction};
-use crate::common::error::QosError;
+use crate::core::state::SHUTDOWN_REQUESTED;
+use crate::core::interfaces::{EventHandler, LoopAction};
+use crate::core::types::QosError;
+
 use std::fs::File;
 use std::io::Read;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
