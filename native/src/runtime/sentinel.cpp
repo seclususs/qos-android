@@ -9,7 +9,6 @@
 #include "runtime/sentinel.h"
 
 #include <csignal>
-#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 

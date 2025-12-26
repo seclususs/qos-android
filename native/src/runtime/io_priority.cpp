@@ -23,7 +23,6 @@
 
 #define IOPRIO_WHO_PROCESS 1
 #define IOPRIO_CLASS_BE    2
-#define IOPRIO_CLASS_RT    1
 
 namespace qos::runtime {
 

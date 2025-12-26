@@ -23,12 +23,6 @@ namespace qos::runtime {
          * by the Low Memory Killer Daemon (LMKD) under normal circumstances.
          */
         static void harden_process();
-
-        /**
-         * @brief Changes the process name shown in `top` or `ps`.
-         * @param name The new process name (max 15 chars recommended).
-         */
-        static void masquerade_as(const std::string& name);
     };
 
 }

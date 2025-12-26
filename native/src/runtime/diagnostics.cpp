@@ -21,11 +21,6 @@ namespace qos::runtime {
             return false;
         }
 
-        // CGroup verification is warning-only; some functionality might degrade but run.
-        if (access("/dev/memcg", F_OK) != 0 && access("/sys/fs/cgroup/memory", F_OK) != 0) {
-            LOGI("Diagnostics: Warning - Memory CGroup not standard, might reduce effectiveness.");
-        }
-
         LOGI("Diagnostics: Kernel features validated.");
         return true;
     }
