@@ -32,14 +32,5 @@ namespace qos::runtime {
             LOGE("Protection: Cannot open OOM adjustment file.");
         }
     }
-    
-    void Protection::masquerade_as(const std::string& name) {
-        // PR_SET_NAME sets the name of the calling thread.
-        if (prctl(PR_SET_NAME, name.c_str(), 0, 0, 0) != 0) {
-            LOGE("Protection: Failed to masquerade process name.");
-        } else {
-            LOGD("Protection: Process identity masked as '%s'", name.c_str());
-        }
-    }
 
 }

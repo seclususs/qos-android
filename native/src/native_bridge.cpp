@@ -14,7 +14,6 @@
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
-#include <cstdlib>
 #include <sys/system_properties.h>
 
 /**

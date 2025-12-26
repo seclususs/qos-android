@@ -17,7 +17,6 @@
 #include "runtime/sentinel.h"
 
 #include <string>
-#include <iostream>
 #include <unistd.h>
 #include <sys/signalfd.h>
 #include <csignal>
@@ -70,7 +69,6 @@ int main(int argc, char* argv[]) {
     // Make the process resilient against system pressure and termination.
     LOGI("Hardening Environment...");
     qos::runtime::Sentinel::arm();                          // Register crash signal handlers
-    qos::runtime::Protection::masquerade_as("qos_android"); // Hide real name in process list
     qos::runtime::Protection::harden_process();             // Apply OOM Shield (-1000)
     qos::runtime::Limits::expand_resources();               // Increase FD and Stack limits
     qos::runtime::Memory::lock_all_pages();                 // Prevent swapping (mlockall)
