@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.8
+- Replaced integral PSI metrics with Real-Time Differential Load Sensing
+- Introduced Multi-Scale PSI Logic for responsive and stable decisions
+- Added Asymmetric EMA Filtering (Fast Attack, Fast Decay) with Cold-Start Protection
+- Implemented Trend-Aware Dynamic Gain using Non-Linear Control Functions
+- Added Impulse-Based CPU Burst Detection with Low-Pass Filtered Response
+- Introduced Hysteresis-Driven Scheduler and Task Migration Logic
+- Implemented Cross-Coupled Control between CPU, Memory, and Storage subsystems
+- Added Storage Saturation Index with Cubic Queue Throttling for Anti-Bufferbloat
+- Implemented Triple-Domain ZRAM Elasticity
+- Enforced strict constraints, output clamping, and numerical safety guards
+- Implemented Energy-Aware Adaptive Polling Engine for autonomous power efficiency
+- Added Precision-Gated I/O Control with fuzzy tolerance to minimize overhead
+
+---
+
 ## v1.7
 - Introduced non-linear control curves (sigmoid, parabolic, logistic, exponential)
 - Added adaptive EMA filtering to suppress PSI noise and parameter jitter
