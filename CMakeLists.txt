@@ -87,41 +87,41 @@ add_custom_command(
 
 add_custom_target(RustLib DEPENDS ${RUST_STATIC_LIB})
 
-set(JNI_DIR ${CMAKE_SOURCE_DIR}/core/jni)
-set(JNI_INCLUDE_DIR ${JNI_DIR}/include)
-set(JNI_SRC_DIR ${JNI_DIR}/src)
+set(NATIVE_DIR ${CMAKE_SOURCE_DIR}/native)
+set(NATIVE_INCLUDE_DIR ${NATIVE_DIR}/include)
+set(NATIVE_SRC_DIR ${NATIVE_DIR}/src)
 
-file(GLOB CPP_HEADERS "${JNI_INCLUDE_DIR}/*.h")
-file(GLOB ALL_CPP_SOURCES "${JNI_SRC_DIR}/*.cpp")
+file(GLOB_RECURSE ALL_CPP_SOURCES CONFIGURE_DEPENDS "${NATIVE_SRC_DIR}/*.cpp")
+file(GLOB_RECURSE CPP_HEADERS CONFIGURE_DEPENDS "${NATIVE_INCLUDE_DIR}/*.h")
 
 set(LIB_CPP_SOURCES ${ALL_CPP_SOURCES})
-list(REMOVE_ITEM LIB_CPP_SOURCES "${JNI_SRC_DIR}/main.cpp")
+list(REMOVE_ITEM LIB_CPP_SOURCES "${NATIVE_SRC_DIR}/main.cpp")
 
-add_library(qos_daemon_cpp
+add_library(qos_native_lib
     STATIC
     ${LIB_CPP_SOURCES}
     ${CPP_HEADERS}
 )
 
-set_target_properties(qos_daemon_cpp PROPERTIES
+set_target_properties(qos_native_lib PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )
 
-target_include_directories(qos_daemon_cpp PUBLIC ${JNI_INCLUDE_DIR})
+target_include_directories(qos_native_lib PUBLIC ${NATIVE_INCLUDE_DIR})
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_definitions(qos_daemon_cpp PUBLIC DEBUG)
+    target_compile_definitions(qos_native_lib PUBLIC DEBUG)
 endif()
 
 add_executable(qos_daemon
-    ${JNI_SRC_DIR}/main.cpp
+    ${NATIVE_SRC_DIR}/main.cpp
 )
 
 add_dependencies(qos_daemon RustLib)
 
 target_link_libraries(qos_daemon
-    qos_daemon_cpp
+    qos_native_lib
     ${RUST_STATIC_LIB}
     android
     log
