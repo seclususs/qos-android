@@ -52,7 +52,7 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/algorithms/memory_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/poll_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/storage_math.rs
-            ${RUST_CRATE_PATH}/src/algorithms/tolerance.rs
+            ${RUST_CRATE_PATH}/src/algorithms/thermal_math.rs
             ${RUST_CRATE_PATH}/src/bindings/mod.rs
             ${RUST_CRATE_PATH}/src/bindings/api_entry.rs
             ${RUST_CRATE_PATH}/src/bindings/sys.rs
