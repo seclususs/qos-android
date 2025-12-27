@@ -3,15 +3,19 @@
 [![Magisk](https://img.shields.io/badge/Magisk-24%2B-green.svg)](https://github.com/topjohnwu/Magisk)
 [![Platform](https://img.shields.io/badge/Platform-Android-lightgrey.svg)]()
 [![Architecture](https://img.shields.io/badge/Arch-ARM64-blue.svg)]()
+[![SoC](https://img.shields.io/badge/SoC-Helio_G88-orange.svg)]()
+[![Storage](https://img.shields.io/badge/Storage-eMMC-red.svg)]()
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-> ⚠️ **WARNING:** This module is not designed for any specific device and may behave differently across manufacturers, kernels, and ROMs.
+> ⚠️ **WARNING:** This module is not designed for any specific device and may behave differently across manufacturers, kernels, and ROMs. Tuning and assumptions are based on hardware characteristics similar to **MediaTek Helio G88–class** SoCs with **eMMC-based** internal storage. Devices with significantly different hardware (e.g. UFS storage, high-end SoCs) or missing/modified kernel PSI support may experience unstable behavior.
+
 > Misuse may lead to severe instability, bootloops, or data loss. Proceed **ONLY** if you know exactly what you are doing.
 
 ---
 
 ## Requirements
 
+* **Android API 33+**
 * Android device with **Magisk v24.0+**
 * **ARM64 architecture**
 
