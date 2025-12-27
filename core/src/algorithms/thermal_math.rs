@@ -1,5 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::hal::thermal;
+use crate::config::loop_settings::THERMAL_SYNC_INTERVAL_SEC;
+
 use std::time::Instant;
 
 pub struct ThermalTunables {
@@ -54,14 +57,27 @@ impl ThermalPredictor {
             ambient_temp_assumption: ambient,
         }
     }
+    pub fn sync_with_sensor(&mut self, real_temp: f64) {
+        self.virtual_temp = real_temp;
+        self.last_tick = Instant::now();
+        if real_temp < self.ambient_temp_assumption {
+            self.ambient_temp_assumption = real_temp;
+        } else if real_temp > self.ambient_temp_assumption + 10.0 {
+            self.ambient_temp_assumption = self.ambient_temp_assumption.max(30.0);
+        }
+    }
     pub fn update(&mut self, input_pressure: f64, tunables: &ThermalTunables) -> f64 {
         let now = Instant::now();
         let dt_sec = now.duration_since(self.last_tick).as_secs_f64();
-        self.last_tick = now;
-        if dt_sec > 5.0 {
-            self.hard_reset();
-            return 1.0;
+        if dt_sec > THERMAL_SYNC_INTERVAL_SEC as f64 {
+            let real_temp = thermal::read_initial_thermal_state();
+            self.sync_with_sensor(real_temp);
+            self.energy_bucket = 0.0;
+            self.last_tick = now;
+            self.update_state_machine(tunables);
+            return self.calculate_damping_factor(tunables);
         }
+        self.last_tick = now; 
         let safe_dt = if dt_sec < 0.001 { 0.001 } else { dt_sec };
         let heat_in = input_pressure * tunables.alpha_heating;
         let delta_t_ambient = self.virtual_temp - self.ambient_temp_assumption;
@@ -72,10 +88,11 @@ impl ThermalPredictor {
         let bucket_in = input_pressure * safe_dt;
         let bucket_leak = tunables.bucket_leak_rate * safe_dt;
         self.energy_bucket = (self.energy_bucket + bucket_in - bucket_leak)
-            .clamp(0.0, tunables.bucket_size);
+            .clamp(0.0, tunables.bucket_size);  
         self.update_state_machine(tunables);
         self.calculate_damping_factor(tunables)
     }
+    #[allow(dead_code)]
     fn hard_reset(&mut self) {
         self.virtual_temp = self.ambient_temp_assumption;
         self.energy_bucket = 0.0;
