@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-pub const MIN_POLLING_MS: u64 = 2000;
+pub const MIN_POLLING_MS: u64 = 1000;
 pub const MAX_POLLING_MS: u64 = 10000;
 pub const SLEEP_TOLERANCE_MS: u64 = 500;
 pub const JITTER_PERCENT: u64 = 5;

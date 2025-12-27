@@ -50,9 +50,9 @@ impl StorageController {
             max_nr_requests: MAX_NR_REQUESTS as f64,
             min_fifo_batch: MIN_FIFO_BATCH as f64,
             max_fifo_batch: MAX_FIFO_BATCH as f64,
-            io_sat_beta: 3.0,
+            io_sat_beta: 2.5,
             epsilon: 0.01,
-            io_read_ahead_threshold: 10.0,
+            io_read_ahead_threshold: 6.0,
             io_scaling_factor: 20.0,
         };
         let poller = AdaptivePoller::new(1.0, 1.0);

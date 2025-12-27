@@ -17,7 +17,7 @@ pub fn get_file_tweaks() -> Vec<FileTweak> {
         FileTweak { path: "/proc/sys/kernel/printk_devkmsg", value: "off" },
         FileTweak { path: "/proc/sys/kernel/core_pattern", value: "/dev/null" },
         FileTweak { path: "/proc/sys/kernel/dmesg_restrict", value: "1" },
-        FileTweak { path: "/proc/sys/kernel/sched_child_runs_first", value: "1" },
+        FileTweak { path: "/proc/sys/kernel/sched_child_runs_first", value: "0" },
         FileTweak { path: "/proc/sys/kernel/pid_max", value: "65536" },
         FileTweak { path: "/proc/sys/kernel/sched_schedstats", value: "0" },
         FileTweak { path: "/proc/sys/kernel/perf_event_paranoid", value: "2" },

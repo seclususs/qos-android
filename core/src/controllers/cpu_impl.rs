@@ -3,12 +3,14 @@
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
 use crate::hal::filesystem;
 use crate::hal::kernel;
+use crate::hal::thermal;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
 use crate::config::tunables::*;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::cpu_math::{self, CpuTunables};
 use crate::algorithms::poll_math::AdaptivePoller;
+use crate::algorithms::thermal_math::{ThermalPredictor, THERMAL_CONFIG}; 
 use crate::core::state::update_cpu_pressure;
 use crate::core::interfaces::{EventHandler, LoopAction};
 use crate::core::types::QosError;
@@ -32,6 +34,7 @@ pub struct CpuController {
     current_perf_percent: f64,
     prev_impulse_smooth: f64,
     tunables: CpuTunables,
+    thermal_model: ThermalPredictor,
     poller: AdaptivePoller,
     next_wake_ms: i32,
 }
@@ -64,11 +67,13 @@ impl CpuController {
             alpha_smooth: 0.7,
             burst_threshold: 5.0,
             sigmoid_k: 0.15,
-            sigmoid_mid: 25.0,
+            sigmoid_mid: 20.0,
             decay_coeff: 0.05,
-            latency_gran_ratio: 0.75,
+            latency_gran_ratio: 0.73,
         };
         let poller = AdaptivePoller::new(1.0, 2.5);
+        let initial_temp = thermal::read_initial_thermal_state();
+        let thermal_model = ThermalPredictor::new(initial_temp);
         let mut controller = Self {
             fd,
             latency,
@@ -84,6 +89,7 @@ impl CpuController {
             current_perf_percent: MAX_PERF_CPU_PERCENT as f64,
             prev_impulse_smooth: 0.0,
             tunables,
+            thermal_model,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
         };
@@ -94,8 +100,8 @@ impl CpuController {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let raw_p = some.current.max(some.avg10);
-        let k_trend = cpu_math::calculate_trend_gain(some.avg10, some.avg60, &self.tunables);
-        let p_eff = raw_p * k_trend;
+        let damping_factor = self.thermal_model.update(raw_p, &THERMAL_CONFIG);
+        let p_eff = raw_p * damping_factor;
         update_cpu_pressure(p_eff);
         self.next_wake_ms = self.poller.calculate_next_interval(p_eff) as i32;
         let delta_raw = some.current - some.avg10;
@@ -123,7 +129,7 @@ impl CpuController {
         self.latency.update(lat_u64, force, CheckStrategy::Relative(0.05));
         self.min_gran.update(gran_u64, force, CheckStrategy::Relative(0.05));
         self.wakeup.update(wake_u64, force, CheckStrategy::Relative(0.10));
-        self.migration.update(mig_u64, force, CheckStrategy::Relative(0.15));
+        self.migration.update(mig_u64, force, CheckStrategy::Relative(0.07));
         self.perf_cpu.update(perf_u64, force, CheckStrategy::Absolute(2));
     }
 }
