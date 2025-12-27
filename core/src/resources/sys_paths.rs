@@ -24,3 +24,6 @@ pub const K_PAGE_CLUSTER: &str = "/proc/sys/vm/page-cluster";
 pub const K_READ_AHEAD_PATH: &str = "/sys/block/mmcblk0/queue/read_ahead_kb";
 pub const K_NR_REQUESTS_PATH: &str = "/sys/block/mmcblk0/queue/nr_requests";
 pub const K_FIFO_BATCH_PATH: &str = "/sys/block/mmcblk0/queue/iosched/fifo_batch";
+
+pub const K_BATTERY_TEMP_PATH: &str = "/sys/class/power_supply/battery/temp";
+pub const K_THERMAL_ZONE0_PATH: &str = "/sys/class/thermal/thermal_zone0/temp";
