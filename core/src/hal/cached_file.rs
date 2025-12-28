@@ -1,7 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::fs::File;
 use crate::hal::filesystem::write_to_stream;
+
+use std::fs::File;
 
 #[inline(always)]
 fn check_absolute(current: u64, target: u64, threshold: u64) -> bool {
@@ -65,11 +66,5 @@ impl CachedFile {
                 }
             }
         }
-    }
-    pub fn set_cache(&mut self, value: u64) {
-        self.last_value = value;
-    }
-    pub fn get_cache(&self) -> u64 {
-        self.last_value
     }
 }

@@ -1,9 +1,10 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::daemon::types::QosError;
+
 use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
-use crate::core::types::QosError;
 
 const ALLOWED_PREFIXES: [&str; 2] = ["/proc/", "/sys/"];
 

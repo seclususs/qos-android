@@ -1,7 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::core::types::QosError;
+use crate::daemon::types::QosError;
 use crate::hal::filesystem::open_file_for_read;
+
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Instant;

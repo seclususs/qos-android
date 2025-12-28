@@ -1,19 +1,20 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::core::state::{
+use crate::daemon::state::{
     SHUTDOWN_REQUESTED, 
     CPU_SERVICE_ENABLED,
     MEMORY_SERVICE_ENABLED,
     STORAGE_SERVICE_ENABLED,
     TWEAKS_ENABLED
 };
-use crate::core::lifecycle::{self, RecoverableService};
-use crate::core::logging;
+use crate::daemon::runtime::{self, RecoverableService};
+use crate::daemon::logging;
 use crate::hal::bridge::notify_service_death;
 use crate::controllers::signal_impl::SignalController;
 use crate::controllers::memory_impl::MemoryController;
 use crate::controllers::storage_impl::StorageController;
 use crate::controllers::cpu_impl::CpuController;
+use crate::controllers::thermal_impl::ThermalController;
 
 use std::sync::atomic::Ordering;
 use std::thread::{self, JoinHandle};
@@ -67,21 +68,23 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                 log::info!("Rust: System Tweaks are DISABLED by config.");
                 return;
             }
-            lifecycle::wait_for_boot_completion("Tweaker");
+            runtime::wait_for_boot_completion("Tweaker");
             if SHUTDOWN_REQUESTED.load(Ordering::Acquire) { return; }
-            lifecycle::apply_system_tweaks();
+            runtime::apply_system_tweaks();
         });
         SHUTDOWN_REQUESTED.store(false, Ordering::Release);
         let handle = thread::spawn(move || {
             if let Err(e) = tx.send(()) {
                  log::error!("Rust: Failed to send handshake: {}.", e);
             }
-            lifecycle::wait_for_boot_completion("MainLoop");
+            runtime::wait_for_boot_completion("MainLoop");
             if SHUTDOWN_REQUESTED.load(Ordering::Acquire) { return; }
             log::info!("Rust: Constructing Service Vector...");
             let mut services = Vec::new();
             services.push(RecoverableService::new("Signal", 
             move || Ok(Box::new(SignalController::new(signal_fd)))));
+            services.push(RecoverableService::new("Thermal", 
+            || Ok(Box::new(ThermalController::new()?))));
             if MEMORY_SERVICE_ENABLED.load(Ordering::Acquire) {
                 services.push(RecoverableService::new("Memory", 
                 || Ok(Box::new(MemoryController::new()?))));
@@ -95,7 +98,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                 || Ok(Box::new(CpuController::new()?))));
             }
             log::info!("Rust: Initializing Event Loop with {} services...", services.len());
-            if let Err(e) = lifecycle::run_event_loop(services) {
+            if let Err(e) = runtime::run_event_loop(services) {
                 log::error!("Fatal error in event loop: {}", e);
             }
         });

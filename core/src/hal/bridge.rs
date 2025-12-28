@@ -1,7 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::ffi::{CStr, CString};
 use crate::bindings::sys;
+
+use std::ffi::{CStr, CString};
 
 pub fn notify_service_death(context: &str) {
     let c_context_opt = CString::new(context);

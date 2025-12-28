@@ -1,5 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::algorithms::thermal_math::ThermalState;
+
 use std::sync::atomic::AtomicBool;
 use std::sync::RwLock;
 
@@ -28,6 +30,8 @@ impl GlobalPressure {
 }
 
 pub static SYSTEM_PRESSURE: RwLock<GlobalPressure> = RwLock::new(GlobalPressure::new());
+pub static THERMAL_STATE: RwLock<ThermalState> = RwLock::new(ThermalState::Performance);
+pub static THERMAL_DAMPING: RwLock<f64> = RwLock::new(1.0);
 
 pub fn update_cpu_pressure(psi: f64) {
     if let Ok(mut guard) = SYSTEM_PRESSURE.write() {
@@ -50,6 +54,18 @@ pub fn update_io_pressure(psi: f64) {
 pub fn update_io_saturation(sat: f64) {
     if let Ok(mut guard) = SYSTEM_PRESSURE.write() {
         guard.io_saturation = sat;
+    }
+}
+
+pub fn update_thermal_state(state: ThermalState) {
+    if let Ok(mut guard) = THERMAL_STATE.write() {
+        *guard = state;
+    }
+}
+
+pub fn update_thermal_damping(damping: f64) {
+    if let Ok(mut guard) = THERMAL_DAMPING.write() {
+        *guard = damping;
     }
 }
 
@@ -82,5 +98,21 @@ pub fn get_io_saturation() -> f64 {
         guard.io_saturation
     } else {
         0.0
+    }
+}
+
+pub fn get_thermal_state() -> ThermalState {
+    if let Ok(guard) = THERMAL_STATE.read() {
+        *guard
+    } else {
+        ThermalState::Performance
+    }
+}
+
+pub fn get_thermal_damping() -> f64 {
+    if let Ok(guard) = THERMAL_DAMPING.read() {
+        *guard
+    } else {
+        1.0
     }
 }

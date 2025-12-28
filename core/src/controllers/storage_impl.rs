@@ -9,15 +9,13 @@ use crate::config::tunables::*;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::storage_math::{self, StorageTunables};
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::core::state::{update_io_pressure, update_io_saturation};
-use crate::core::interfaces::{EventHandler, LoopAction};
-use crate::core::types::QosError;
+use crate::daemon::state::{update_io_pressure, update_io_saturation, get_thermal_state};
+use crate::daemon::traits::{EventHandler, LoopAction};
+use crate::daemon::types::QosError;
 
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
 use std::io::Read;
-
-const IO_TACTICAL_MULTIPLIER: f64 = 2.0;
 
 pub struct StorageController {
     fd: File,
@@ -54,6 +52,7 @@ impl StorageController {
             epsilon: 0.01,
             io_read_ahead_threshold: 6.0,
             io_scaling_factor: 20.0,
+            io_tactical_multiplier: 2.0,
         };
         let poller = AdaptivePoller::new(1.0, 1.0);
         let mut controller = Self { 
@@ -76,18 +75,19 @@ impl StorageController {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let full = data.full;
+        let thermal_state = get_thermal_state();
         update_io_pressure(some.avg10);
         let i_sat = storage_math::calculate_io_saturation(full.avg10, some.avg10, &self.tunables);
         update_io_saturation(i_sat);
         if i_sat > 0.0 {
             self.next_wake_ms = MIN_POLLING_MS as i32;
-            self.poller.calculate_next_interval(100.0); 
+            self.poller.calculate_next_interval(100.0, some.avg300); 
         } else {
-            self.next_wake_ms = self.poller.calculate_next_interval(some.avg10) as i32;
+            self.next_wake_ms = self.poller.calculate_next_interval(some.avg10, some.avg300) as i32;
         }
-        let (target_nr, target_fifo) = storage_math::calculate_queue_params(i_sat, &self.tunables);
-        let tactical_p = some.current.max(full.current * IO_TACTICAL_MULTIPLIER);
-        let target_ra = storage_math::calculate_read_ahead(tactical_p, &self.tunables);
+        let (target_nr, target_fifo) = storage_math::calculate_queue_params(i_sat, &self.tunables, thermal_state);
+        let tactical_p = some.current.max(full.current * self.tunables.io_tactical_multiplier);
+        let target_ra = storage_math::calculate_read_ahead(tactical_p, &self.tunables, thermal_state);
         self.current_read_ahead = target_ra;
         self.current_nr_requests = target_nr.clamp(self.tunables.min_nr_requests, self.tunables.max_nr_requests);
         self.current_fifo_batch = target_fifo.clamp(self.tunables.min_fifo_batch, self.tunables.max_fifo_batch);

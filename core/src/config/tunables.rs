@@ -1,24 +1,22 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-pub const MIN_LATENCY_NS: u64 = 7_500_000;
-pub const MAX_LATENCY_NS: u64 = 10_000_000;
-pub const MIN_GRANULARITY_NS: u64 = 5_500_000;
-pub const MAX_GRANULARITY_NS: u64 = 8_000_000;
-pub const MIN_WAKEUP_NS: u64 = 2_000_000;
-pub const MAX_WAKEUP_NS: u64 = 4_000_000;
+pub const MIN_LATENCY_NS: u64 = 8_000_000;
+pub const MAX_LATENCY_NS: u64 = 18_000_000;
+pub const MIN_GRANULARITY_NS: u64 = 6_000_000;
+pub const MAX_GRANULARITY_NS: u64 = 13_000_000;
+pub const MIN_WAKEUP_NS: u64 = 3_000_000;
+pub const MAX_WAKEUP_NS: u64 = 6_000_000;
 pub const MIN_MIGRATION_COST: u64 = 200_000;
 pub const MAX_MIGRATION_COST: u64 = 350_000;
-pub const MIN_PERF_CPU_PERCENT: u64 = 5;
-pub const MAX_PERF_CPU_PERCENT: u64 = 25;
 
 pub const MIN_SWAPPINESS: u64 = 20;
 pub const MAX_SWAPPINESS: u64 = 60;
 pub const MIN_VFS: u64 = 80;
 pub const MAX_VFS: u64 = 200;
-pub const MIN_DIRTY: u64 = 5;
-pub const MAX_DIRTY: u64 = 10;
-pub const MIN_DIRTY_BG: u64 = 3;
-pub const MAX_DIRTY_BG: u64 = 8;
+pub const MIN_DIRTY: u64 = 10;
+pub const MAX_DIRTY: u64 = 20;
+pub const MIN_DIRTY_BG: u64 = 5;
+pub const MAX_DIRTY_BG: u64 = 10;
 pub const MIN_DIRTY_EXPIRE: u64 = 1000;
 pub const MAX_DIRTY_EXPIRE: u64 = 2000;
 pub const MIN_STAT_INTERVAL: u64 = 1;

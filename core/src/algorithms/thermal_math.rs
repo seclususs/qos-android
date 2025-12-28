@@ -14,18 +14,8 @@ pub struct ThermalTunables {
     pub threshold_warm: f64,
     pub threshold_hot: f64,
     pub hysteresis_gap: f64,
+    pub lambda_degradation_k: f64,
 }
-
-pub const THERMAL_CONFIG: ThermalTunables = ThermalTunables {
-    alpha_heating: 0.85,
-    lambda_cooling: 0.09,
-    max_virtual_temp: 95.0,
-    bucket_size: 1200.0,
-    bucket_leak_rate: 20.0,
-    threshold_warm: 65.0,
-    threshold_hot: 78.0,
-    hysteresis_gap: 5.0,
-};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ThermalState {
@@ -37,7 +27,7 @@ pub enum ThermalState {
 pub struct ThermalPredictor {
     virtual_temp: f64,
     energy_bucket: f64,
-    current_state: ThermalState,
+    pub current_state: ThermalState,
     last_tick: Instant,
     ambient_temp_assumption: f64,
 }
@@ -66,7 +56,7 @@ impl ThermalPredictor {
             self.ambient_temp_assumption = self.ambient_temp_assumption.max(30.0);
         }
     }
-    pub fn update(&mut self, input_pressure: f64, tunables: &ThermalTunables) -> f64 {
+    pub fn update(&mut self, input_pressure: f64, avg300: f64, tunables: &ThermalTunables) -> f64 {
         let now = Instant::now();
         let dt_sec = now.duration_since(self.last_tick).as_secs_f64();
         if dt_sec > THERMAL_SYNC_INTERVAL_SEC as f64 {
@@ -79,9 +69,11 @@ impl ThermalPredictor {
         }
         self.last_tick = now; 
         let safe_dt = if dt_sec < 0.001 { 0.001 } else { dt_sec };
+        let saturation_factor = (1.0 - (tunables.lambda_degradation_k * avg300)).max(0.2);
+        let lambda_dynamic = tunables.lambda_cooling * saturation_factor;
         let heat_in = input_pressure * tunables.alpha_heating;
         let delta_t_ambient = self.virtual_temp - self.ambient_temp_assumption;
-        let heat_out = delta_t_ambient * tunables.lambda_cooling;
+        let heat_out = delta_t_ambient * lambda_dynamic;
         let delta_temp = (heat_in - heat_out) * safe_dt;
         self.virtual_temp = (self.virtual_temp + delta_temp)
             .clamp(self.ambient_temp_assumption, tunables.max_virtual_temp);
@@ -91,12 +83,6 @@ impl ThermalPredictor {
             .clamp(0.0, tunables.bucket_size);  
         self.update_state_machine(tunables);
         self.calculate_damping_factor(tunables)
-    }
-    #[allow(dead_code)]
-    fn hard_reset(&mut self) {
-        self.virtual_temp = self.ambient_temp_assumption;
-        self.energy_bucket = 0.0;
-        self.current_state = ThermalState::Performance;
     }
     fn update_state_machine(&mut self, tunables: &ThermalTunables) {
         match self.current_state {

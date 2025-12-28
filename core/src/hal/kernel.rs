@@ -1,9 +1,10 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::daemon::types::QosError;
+use crate::bindings::sys;
+
 use std::ffi::CString;
 use std::io;
-use crate::core::types::QosError;
-use crate::bindings::sys;
 
 fn to_cstring(s: &str) -> Result<CString, QosError> {
     CString::new(s).map_err(|e| QosError::InvalidInput(format!("String contains null byte: {}", e)))

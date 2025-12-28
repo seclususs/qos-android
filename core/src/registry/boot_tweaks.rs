@@ -21,6 +21,7 @@ pub fn get_file_tweaks() -> Vec<FileTweak> {
         FileTweak { path: "/proc/sys/kernel/pid_max", value: "65536" },
         FileTweak { path: "/proc/sys/kernel/sched_schedstats", value: "0" },
         FileTweak { path: "/proc/sys/kernel/perf_event_paranoid", value: "2" },
+        FileTweak { path: "/proc/sys/kernel/perf_cpu_time_max_percent", value: "1" },
         FileTweak { path: "/sys/block/mmcblk0/queue/add_random", value: "0" },
         FileTweak { path: "/sys/block/mmcblk0/queue/iostats", value: "0" },
         FileTweak { path: "/sys/block/mmcblk0/queue/rq_affinity", value: "1" },

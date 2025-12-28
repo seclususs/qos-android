@@ -1,10 +1,11 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::resources::sys_paths::K_BATTERY_TEMP_PATH;
+use crate::resources::sys_paths::K_CPU_TEMP_PATH;
+
 use std::fs;
 
 pub fn read_initial_thermal_state() -> f64 {
-    if let Ok(content) = fs::read_to_string(K_BATTERY_TEMP_PATH) {
+    if let Ok(content) = fs::read_to_string(K_CPU_TEMP_PATH) {
         if let Ok(val_raw) = content.trim().parse::<f64>() {
             let abs_val = val_raw.abs();
             let normalized_val = if abs_val >= 1000.0 {

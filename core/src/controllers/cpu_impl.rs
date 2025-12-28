@@ -3,17 +3,15 @@
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
 use crate::hal::filesystem;
 use crate::hal::kernel;
-use crate::hal::thermal;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
 use crate::config::tunables::*;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::cpu_math::{self, CpuTunables};
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::algorithms::thermal_math::{ThermalPredictor, THERMAL_CONFIG}; 
-use crate::core::state::update_cpu_pressure;
-use crate::core::interfaces::{EventHandler, LoopAction};
-use crate::core::types::QosError;
+use crate::daemon::state::{update_cpu_pressure, get_thermal_damping, get_memory_pressure}; 
+use crate::daemon::traits::{EventHandler, LoopAction};
+use crate::daemon::types::QosError;
 
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
@@ -25,16 +23,13 @@ pub struct CpuController {
     min_gran: CachedFile,
     wakeup: CachedFile,
     migration: CachedFile,
-    perf_cpu: CachedFile,
     psi_monitor: PsiMonitor,
     current_latency: f64,
     current_min_gran: f64,
     current_wakeup: f64,
     current_migration: f64,
-    current_perf_percent: f64,
     prev_impulse_smooth: f64,
     tunables: CpuTunables,
-    thermal_model: ThermalPredictor,
     poller: AdaptivePoller,
     next_wake_ms: i32,
 }
@@ -49,7 +44,6 @@ impl CpuController {
         let min_gran = CachedFile::new(filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?, 0);
         let wakeup = CachedFile::new(filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?, 0);
         let migration = CachedFile::new_opt(filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(), 0);
-        let perf_cpu = CachedFile::new_opt(filesystem::open_file_for_write(K_PERF_CPU_TIME_MAX_PERCENT).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
         let tunables = CpuTunables {
             min_latency_ns: MIN_LATENCY_NS as f64,
@@ -60,36 +54,31 @@ impl CpuController {
             max_wakeup_ns: MAX_WAKEUP_NS as f64,
             min_migration_cost: MIN_MIGRATION_COST as f64,
             max_migration_cost: MAX_MIGRATION_COST as f64,
-            min_perf_cpu_percent: MIN_PERF_CPU_PERCENT as f64,
-            max_perf_cpu_percent: MAX_PERF_CPU_PERCENT as f64,
-            trend_factor: 0.5,
-            critical_threshold: 50.0,
-            alpha_smooth: 0.7,
-            burst_threshold: 5.0,
+            trend_factor: 0.2,
+            alpha_smooth: 0.5,
+            burst_threshold: 35.0,
             sigmoid_k: 0.15,
             sigmoid_mid: 20.0,
             decay_coeff: 0.05,
             latency_gran_ratio: 0.73,
+            memory_migration_alpha: 1.0,
+            memory_granularity_scaling: 0.6,
+            memory_burst_penalty: 1.0,
         };
         let poller = AdaptivePoller::new(1.0, 2.5);
-        let initial_temp = thermal::read_initial_thermal_state();
-        let thermal_model = ThermalPredictor::new(initial_temp);
         let mut controller = Self {
             fd,
             latency,
             min_gran,
             wakeup,
             migration,
-            perf_cpu,
             psi_monitor,
             current_latency: MIN_LATENCY_NS as f64, 
             current_min_gran: MIN_GRANULARITY_NS as f64,
             current_wakeup: MIN_WAKEUP_NS as f64,
             current_migration: MIN_MIGRATION_COST as f64,
-            current_perf_percent: MAX_PERF_CPU_PERCENT as f64,
             prev_impulse_smooth: 0.0,
             tunables,
-            thermal_model,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
         };
@@ -99,24 +88,31 @@ impl CpuController {
     fn update_dynamics(&mut self) -> Result<(), QosError> {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
+        let memory_psi = get_memory_pressure();
         let raw_p = some.current.max(some.avg10);
-        let damping_factor = self.thermal_model.update(raw_p, &THERMAL_CONFIG);
-        let p_eff = raw_p * damping_factor;
+        let trend_gain = cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
+        let damping_factor = get_thermal_damping();
+        let p_eff = raw_p * trend_gain * damping_factor;
         update_cpu_pressure(p_eff);
-        self.next_wake_ms = self.poller.calculate_next_interval(p_eff) as i32;
+        self.next_wake_ms = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
         let delta_raw = some.current - some.avg10;
         let delta_smooth = cpu_math::smooth_delta(delta_raw, self.prev_impulse_smooth, &self.tunables);
         self.prev_impulse_smooth = delta_smooth;
-        let target_migration = cpu_math::calculate_migration_cost(delta_smooth, p_eff, &self.tunables);
+        let target_migration = cpu_math::calculate_migration_cost(delta_smooth, p_eff, memory_psi, &self.tunables);
         let thermal_floor = cpu_math::calculate_thermal_floor(some.avg60, &self.tunables);
-        let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(p_eff, thermal_floor, &self.tunables);
+        let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(
+            p_eff, 
+            some.avg10, 
+            some.avg300, 
+            thermal_floor, 
+            memory_psi, 
+            &self.tunables
+        );
         let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
-        let target_perf = cpu_math::calculate_perf_limit(some.avg10, &self.tunables);
         self.current_latency = target_latency;
         self.current_min_gran = target_min_gran;
         self.current_wakeup = target_wakeup;
         self.current_migration = target_migration;
-        self.current_perf_percent = target_perf;
         self.apply_values(false);
         Ok(())
     }
@@ -125,12 +121,10 @@ impl CpuController {
         let gran_u64 = self.current_min_gran.round() as u64;
         let wake_u64 = self.current_wakeup.round() as u64;
         let mig_u64 = self.current_migration.round() as u64;
-        let perf_u64 = self.current_perf_percent.round() as u64;
         self.latency.update(lat_u64, force, CheckStrategy::Relative(0.05));
         self.min_gran.update(gran_u64, force, CheckStrategy::Relative(0.05));
         self.wakeup.update(wake_u64, force, CheckStrategy::Relative(0.10));
         self.migration.update(mig_u64, force, CheckStrategy::Relative(0.07));
-        self.perf_cpu.update(perf_u64, force, CheckStrategy::Absolute(2));
     }
 }
 

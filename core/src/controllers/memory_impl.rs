@@ -9,23 +9,19 @@ use crate::config::tunables::*;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::memory_math::{self, MemoryTunables};
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::core::state::{
+use crate::daemon::state::{
     update_memory_pressure,
     get_io_pressure,
     get_cpu_pressure,
-    get_io_saturation
+    get_io_saturation,
+    get_thermal_state
 };
-use crate::core::interfaces::{EventHandler, LoopAction};
-use crate::core::types::QosError;
+use crate::daemon::traits::{EventHandler, LoopAction};
+use crate::daemon::types::QosError;
 
 use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
 use std::io::Read;
-
-const MEM_SMOOTH_FAST: f64 = 0.1;
-const MEM_SMOOTH_SLOW: f64 = 0.01;
-const MEM_SMOOTH_FALLBACK: f64 = 0.8;
-const MEM_PRESSURE_HIGH_THRESHOLD: f64 = 40.0;
 
 pub struct MemoryController {
     fd: File,
@@ -107,6 +103,10 @@ impl MemoryController {
             vfs_slope: 3.0,
             page_cluster_threshold: 10.0,
             cpu_pow_alpha: 2.0,
+            mem_smooth_fast: 0.1,
+            mem_smooth_slow: 0.01,
+            mem_smooth_fallback: 0.8,
+            mem_pressure_high_threshold: 40.0,
         };
         let poller = AdaptivePoller::new(1.5, 0.5);
         let mut controller = Self {
@@ -135,13 +135,14 @@ impl MemoryController {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let p_mem = some.current.max(some.avg10).max(data.full.avg10 * 2.0);
+        let thermal_state = get_thermal_state();
         update_memory_pressure(p_mem);
-        self.next_wake_ms = self.poller.calculate_next_interval(p_mem) as i32;
+        self.next_wake_ms = self.poller.calculate_next_interval(p_mem, some.avg300) as i32;
         let p_cpu = get_cpu_pressure();
         let i_sat = get_io_saturation();
         let p_io = get_io_pressure();
         let p_combined = (p_mem + p_io).min(100.0);
-        let s_base = memory_math::calculate_swappiness(p_mem, some.avg60, &self.tunables);
+        let s_base = memory_math::calculate_swappiness(p_mem, some.avg60, &self.tunables, thermal_state);
         let target_swap = memory_math::calculate_final_swap(s_base, p_cpu, i_sat, &self.tunables).clamp(self.tunables.min_swappiness, self.tunables.max_swappiness);
         let target_vfs = memory_math::calculate_target_vfs(p_mem, &self.tunables);
         let (target_dirty, target_dirty_bg) = memory_math::calculate_dirty_params(p_mem, &self.tunables);
@@ -150,9 +151,17 @@ impl MemoryController {
         let target_stat = memory_math::calculate_stat_interval(p_cpu, &self.tunables);
         let target_wm = memory_math::calculate_watermark_scale(p_mem, &self.tunables);
         let target_ext = memory_math::calculate_extfrag_threshold(p_cpu, &self.tunables);
-        let target_pc = memory_math::calculate_page_cluster(data.full.avg10, &self.tunables);
-        let decay_factor = if some.avg60 > MEM_PRESSURE_HIGH_THRESHOLD { MEM_SMOOTH_SLOW } else { MEM_SMOOTH_FAST };
-        let smoothing = if target_swap < self.current_swappiness { MEM_SMOOTH_FALLBACK } else { decay_factor };
+        let target_pc = memory_math::calculate_page_cluster(data.full.avg10, &self.tunables, thermal_state);
+        let decay_factor = if some.avg60 > self.tunables.mem_pressure_high_threshold { 
+            self.tunables.mem_smooth_slow 
+        } else { 
+            self.tunables.mem_smooth_fast 
+        };
+        let smoothing = if target_swap < self.current_swappiness { 
+            self.tunables.mem_smooth_fallback 
+        } else { 
+            decay_factor 
+        };
         self.current_swappiness = smoothing * target_swap + (1.0 - smoothing) * self.current_swappiness;
         self.current_vfs = target_vfs.clamp(self.tunables.min_vfs, self.tunables.max_vfs);
         self.current_dirty = target_dirty.clamp(self.tunables.min_dirty, self.tunables.max_dirty);

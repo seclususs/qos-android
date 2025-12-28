@@ -1,8 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::core::state::SHUTDOWN_REQUESTED;
-use crate::core::interfaces::{EventHandler, LoopAction};
-use crate::core::types::QosError;
+use crate::daemon::state::SHUTDOWN_REQUESTED;
+use crate::daemon::traits::{EventHandler, LoopAction};
+use crate::daemon::types::QosError;
 
 use std::fs::File;
 use std::io::Read;

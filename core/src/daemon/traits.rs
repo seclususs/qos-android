@@ -1,7 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::daemon::types::QosError;
+
 use std::os::fd::RawFd;
-use crate::core::types::QosError;
 
 #[derive(Debug, PartialEq)]
 pub enum LoopAction {
