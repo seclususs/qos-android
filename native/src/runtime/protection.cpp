@@ -10,8 +10,6 @@
 #include "logging.h"
 
 #include <fstream>
-#include <sys/prctl.h>
-#include <unistd.h>
 
 namespace qos::runtime {
 

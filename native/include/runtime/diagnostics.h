@@ -11,18 +11,27 @@
 namespace qos::runtime {
 
     /**
+     * @brief Structure to report available kernel features.
+     */
+    struct KernelFeatures {
+        bool has_cpu_psi;   ///< Is /proc/pressure/cpu available?
+        bool has_mem_psi;   ///< Is /proc/pressure/memory available?
+        bool has_io_psi;    ///< Is /proc/pressure/io available?
+    };
+
+    /**
      * @brief Handling system compatibility checks.
      */
     class Diagnostics {
     public:
         /**
-         * @brief Verifies if the kernel supports required features.
-         * Checks for the existence of Pressure Stall Information (PSI)
-         * and Memory Cgroups (memcg).
-         * @return true If critical features (PSI) are available.
-         * @return false If the environment is unsupported.
+         * @brief Scans the kernel environment for supported features.
+         * Instead of returning a simple boolean, this provides a detailed
+         * report of which Pressure Stall Information (PSI) interfaces 
+         * are actually usable.
+         * @return KernelFeatures A struct containing flags for each feature.
          */
-        static bool check_kernel_compatibility();
+        static KernelFeatures check_kernel_features();
     };
 
 }

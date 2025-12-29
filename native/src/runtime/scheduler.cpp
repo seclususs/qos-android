@@ -48,11 +48,26 @@ namespace qos::runtime {
         CPU_ZERO(&cpuset);
         
         // Target Big Cores for intensive Rust logic.
+        // On standard Helio/Snapdragon, these are typically the last 2 cores.
         CPU_SET(6, &cpuset);
         CPU_SET(7, &cpuset);
         
         if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) == -1) {
-            LOGE("Scheduler: Failed to prepare Big Cores for Rust.");
+            // If Big Cores are offline (thermal throttling/hotplug), setaffinity fails.
+            // We MUST NOT leave the thread bound to Little Cores (from previous call).
+            LOGE("Scheduler: Failed to bind to Big Cores (errno: %d).", errno);
+            
+            CPU_ZERO(&cpuset);
+            // Fallback: Enable all typical cores (0-7) to ensure we run somewhere.
+            for (int i = 0; i <= 7; ++i) {
+                CPU_SET(i, &cpuset);
+            }
+            
+            if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) == -1) {
+                LOGE("Scheduler: CRITICAL - Failed to reset affinity.");
+            } else {
+                LOGI("Scheduler: Fallback successful. Affinity reset to default.");
+            }
         } else {
             LOGI("Scheduler: Affinity mask set to Big Cores.");
         }

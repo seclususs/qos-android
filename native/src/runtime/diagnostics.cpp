@@ -10,19 +10,34 @@
 #include "logging.h"
 
 #include <unistd.h>
-#include <fcntl.h>
 
 namespace qos::runtime {
 
-    bool Diagnostics::check_kernel_compatibility() {
-        // PSI is critical for the congestion controller logic.
-        if (access("/proc/pressure/memory", R_OK) != 0) {
-            LOGE("Diagnostics: FATAL - Kernel does not support PSI (Pressure Stall Information).");
-            return false;
+    KernelFeatures Diagnostics::check_kernel_features() {
+        KernelFeatures features = {false, false, false};
+
+        if (access("/proc/pressure/memory", R_OK) == 0) {
+            features.has_mem_psi = true;
+            LOGI("Diagnostics: PSI Memory DETECTED.");
+        } else {
+            LOGI("Diagnostics: WARNING - PSI Memory MISSING.");
         }
 
-        LOGI("Diagnostics: Kernel features validated.");
-        return true;
+        if (access("/proc/pressure/cpu", R_OK) == 0) {
+            features.has_cpu_psi = true;
+            LOGI("Diagnostics: PSI CPU DETECTED.");
+        } else {
+            LOGI("Diagnostics: WARNING - PSI CPU MISSING.");
+        }
+
+        if (access("/proc/pressure/io", R_OK) == 0) {
+            features.has_io_psi = true;
+            LOGI("Diagnostics: PSI I/O DETECTED.");
+        } else {
+            LOGI("Diagnostics: WARNING - PSI I/O MISSING.");
+        }
+
+        return features;
     }
 
 }

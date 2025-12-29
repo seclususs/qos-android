@@ -10,7 +10,6 @@
 #include "logging.h"
 
 #include <sys/resource.h>
-#include <cerrno>
 
 namespace qos::runtime {
 

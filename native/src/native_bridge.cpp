@@ -12,7 +12,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <cstdio>
-#include <cstring>
 #include <cerrno>
 #include <sys/system_properties.h>
 

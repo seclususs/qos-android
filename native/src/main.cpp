@@ -8,6 +8,7 @@
 
 #include "logging.h"
 #include "native_bridge.h"
+#include "config_loader.h"
 #include "runtime/protection.h"
 #include "runtime/scheduler.h"
 #include "runtime/memory.h"
@@ -20,38 +21,7 @@
 #include <unistd.h>
 #include <sys/signalfd.h>
 #include <csignal>
-#include <map>
-#include <fstream>
 #include <cstdlib>
-
-/**
- * @brief Loads feature flags from the configuration file.
- * Parses a simple key-value config file to determine which
- * QoS services should be enabled upon startup.
- * @param path Path to the configuration file (e.g., config.ini).
- * @return std::map<std::string, bool> Map of feature keys to their enabled state.
- */
-static std::map<std::string, bool> load_config(const char* path) {
-    std::map<std::string, bool> config;
-    // Default values: All services enabled
-    config["cpu"] = true;
-    config["mem"] = true;
-    config["io"] = true;
-    config["tweaks"] = true;
-
-    std::ifstream file(path);
-    if (file.is_open()) {
-        std::string line;
-        while (std::getline(file, line)) {
-            // Simple substring matching for configuration parsing
-            if (line.find("cpu_enabled=false") != std::string::npos) config["cpu"] = false;
-            if (line.find("memory_enabled=false") != std::string::npos) config["mem"] = false;
-            if (line.find("storage_enabled=false") != std::string::npos) config["io"] = false;
-            if (line.find("tweaks_enabled=false") != std::string::npos) config["tweaks"] = false;
-        }
-    }
-    return config;
-}
 
 /**
  * @brief Main execution entry point.
@@ -64,7 +34,7 @@ static std::map<std::string, bool> load_config(const char* path) {
  * @return int Exit code (0 for success, EXIT_FAILURE for errors).
  */
 int main(int argc, char* argv[]) {
-    LOGI("=== Daemon Starting ===");
+    LOGI("=== Daemon Starting (Smart Adaptive Mode) ===");
 
     // Make the process resilient against system pressure and termination.
     LOGI("Hardening Environment...");
@@ -78,14 +48,27 @@ int main(int argc, char* argv[]) {
     qos::runtime::Scheduler::set_realtime_policy();
     qos::runtime::IoPriority::set_high_priority();
     
-    // verify if the kernel supports PSI/cgroups required for logic.
-    LOGI("Diagnostics...");
-    if (!qos::runtime::Diagnostics::check_kernel_compatibility()) {
-        LOGE("System Incompatible. Exiting immediately to save resources.");
-        return EXIT_FAILURE; 
+    LOGI("Checking Hardware Support...");
+    auto features = qos::runtime::Diagnostics::check_kernel_features();
+
+    LOGI("Loading Configuration...");
+    auto cfg = qos::config::load("/data/adb/modules/sys_qos/config.ini");
+
+    bool final_cpu = cfg["cpu"] && features.has_cpu_psi;
+    bool final_mem = cfg["mem"] && features.has_mem_psi;
+    bool final_io  = cfg["io"] && features.has_io_psi;
+    bool final_tweaks = cfg["tweaks"];
+
+    if (!final_cpu && !final_mem && !final_io && !final_tweaks) {
+        LOGE("Daemon shutting down to save resources.");
+        return EXIT_FAILURE;
     }
 
     LOGI("Activating Services...");
+    rust_set_cpu_service_enabled(final_cpu);
+    rust_set_memory_service_enabled(final_mem);
+    rust_set_storage_service_enabled(final_io);
+    rust_set_tweaks_enabled(final_tweaks);
     
     // Block signals so they can be handled synchronously via a file descriptor (signalfd)
     // inside the Rust event loop.
@@ -98,22 +81,17 @@ int main(int argc, char* argv[]) {
     
     int sfd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
     
-    // Configuration Loading
-    auto cfg = load_config("/data/adb/modules/sys_qos/config.ini");
-    
-    // Pass configuration state to the Rust static storage
-    rust_set_cpu_service_enabled(cfg["cpu"]);
-    rust_set_memory_service_enabled(cfg["mem"]);
-    rust_set_storage_service_enabled(cfg["io"]);
-    rust_set_tweaks_enabled(cfg["tweaks"]);
-    
     LOGI("Handover to Rust Core...");
     
     // Change thread affinity to Big Cores to ensure the Rust reactor runs with max performance.
     qos::runtime::Scheduler::prepare_for_rust_handover();
     
     // Pass the signal FD to Rust. This function blocks until the service stops.
-    rust_start_services(sfd);
+    int rust_status = rust_start_services(sfd);
+    if (rust_status != 0) {
+        LOGE("Fatal: Rust services failed to start (Error: %d).", rust_status);
+        return EXIT_FAILURE;
+    }
     
     LOGI("Rust services running. Main thread waiting...");
     
