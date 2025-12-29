@@ -51,7 +51,7 @@ impl CpuController {
         let wakeup = CachedFile::new(filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?, 0);
         let migration = CachedFile::new_opt(filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
-        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 75.0);
+        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 70.0);
         let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
         let tunables = CpuTunables {
             min_latency_ns: MIN_LATENCY_NS as f64,
@@ -64,7 +64,7 @@ impl CpuController {
             max_migration_cost: MAX_MIGRATION_COST as f64,
             trend_factor: 0.2,
             alpha_smooth: 0.5,
-            burst_threshold: 35.0,
+            burst_threshold: 25.0,
             sigmoid_k: 0.15,
             sigmoid_mid: 20.0,
             decay_coeff: 0.05,
@@ -76,16 +76,16 @@ impl CpuController {
         let thermal_tunables = ThermalTunables {
             pid_kp: 0.06,
             pid_ki: 0.002,
-            pid_kd: 0.20,
-            target_headroom: 40.0,
-            hard_limit_cpu: 75.0,
-            hard_limit_bat: 42.0,
-            leakage_k: 0.15,
+            pid_kd: 0.22,
+            target_headroom: 30.0,
+            hard_limit_cpu: 70.0,
+            hard_limit_bat: 40.0,
+            leakage_k: 0.12,
             leakage_start_temp: 58.0,
-            bucket_capacity: 500.0,
-            bucket_leak_base: 5.0,
-            psi_threshold: 40.0,
-            psi_strength: 0.20,
+            bucket_capacity: 450.0,
+            bucket_leak_base: 6.0,
+            psi_threshold: 30.0,
+            psi_strength: 0.2,
         };
         let thermal_manager = ThermalManager::new();
         let poller = AdaptivePoller::new(1.0, 2.5);

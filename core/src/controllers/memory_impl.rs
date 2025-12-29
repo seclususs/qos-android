@@ -51,7 +51,7 @@ pub struct MemoryController {
 impl MemoryController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("MemoryController: Initializing...");
-        let raw_fd = kernel::register_psi_trigger(K_PSI_MEMORY_PATH, 100000, 1000000)
+        let raw_fd = kernel::register_psi_trigger(K_PSI_MEMORY_PATH, 150000, 1000000)
             .map_err(|e| QosError::FfiError(format!("Memory PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let swap = CachedFile::new(filesystem::open_file_for_write(K_SWAPPINESS_PATH)?, 0);

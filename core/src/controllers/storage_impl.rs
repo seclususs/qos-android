@@ -34,7 +34,7 @@ pub struct StorageController {
 impl StorageController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("StorageController: Initializing...");
-        let raw_fd = kernel::register_psi_trigger(K_PSI_IO_PATH, 100000, 1000000)
+        let raw_fd = kernel::register_psi_trigger(K_PSI_IO_PATH, 250000, 1000000)
             .map_err(|e| QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let read_ahead = CachedFile::new(filesystem::open_file_for_write(K_READ_AHEAD_PATH)?, 0);
