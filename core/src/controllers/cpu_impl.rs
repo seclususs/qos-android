@@ -37,7 +37,7 @@ pub struct CpuController {
 impl CpuController {
     pub fn new() -> Result<Self, QosError> {
         log::info!("CpuController: Initializing...");
-        let raw_fd = kernel::register_psi_trigger(K_PSI_CPU_PATH, 120000, 1000000)
+        let raw_fd = kernel::register_psi_trigger(K_PSI_CPU_PATH, 100000, 1000000)
             .map_err(|e| QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let latency = CachedFile::new(filesystem::open_file_for_write(K_SCHED_LATENCY_NS)?, 0);
@@ -60,7 +60,7 @@ impl CpuController {
             sigmoid_k: 0.15,
             sigmoid_mid: 20.0,
             decay_coeff: 0.05,
-            latency_gran_ratio: 0.73,
+            latency_gran_ratio: 0.75,
             memory_migration_alpha: 1.0,
             memory_granularity_scaling: 0.6,
             memory_burst_penalty: 1.0,

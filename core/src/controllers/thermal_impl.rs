@@ -37,12 +37,12 @@ impl ThermalController {
         let poller = AdaptivePoller::new(0.5, 0.5);
         let tunables = ThermalTunables {
             alpha_heating: 0.30,
-            lambda_cooling: 0.02,
-            max_virtual_temp: 65.0,
+            lambda_cooling: 0.005,
+            max_virtual_temp: 60.0,
             bucket_size: 300.0,
-            bucket_leak_rate: 10.0,
-            threshold_warm: 38.0,
-            threshold_hot: 45.0,
+            bucket_leak_rate: 5.0,
+            threshold_warm: 36.0,
+            threshold_hot: 42.0,
             hysteresis_gap: 2.0,
             lambda_degradation_k: 0.05, 
         };
