@@ -25,3 +25,4 @@ pub const K_NR_REQUESTS_PATH: &str = "/sys/block/mmcblk0/queue/nr_requests";
 pub const K_FIFO_BATCH_PATH: &str = "/sys/block/mmcblk0/queue/iosched/fifo_batch";
 
 pub const K_CPU_TEMP_PATH: &str = "/sys/class/thermal/thermal_zone3/temp";
+pub const K_BATTERY_TEMP_PATH: &str = "/sys/class/power_supply/battery/temp";

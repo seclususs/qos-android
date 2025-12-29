@@ -7,7 +7,7 @@ pub const MAX_GRANULARITY_NS: u64 = 12_000_000;
 pub const MIN_WAKEUP_NS: u64 = 3_000_000;
 pub const MAX_WAKEUP_NS: u64 = 6_000_000;
 pub const MIN_MIGRATION_COST: u64 = 200_000;
-pub const MAX_MIGRATION_COST: u64 = 350_000;
+pub const MAX_MIGRATION_COST: u64 = 400_000;
 
 pub const MIN_SWAPPINESS: u64 = 20;
 pub const MAX_SWAPPINESS: u64 = 60;

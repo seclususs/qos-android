@@ -1,7 +1,5 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::thermal_math::ThermalState;
-
 pub struct MemoryTunables {
     pub min_swappiness: f64,
     pub max_swappiness: f64,
@@ -43,16 +41,11 @@ pub struct MemoryTunables {
     pub mem_pressure_high_threshold: f64,
 }
 
-pub fn calculate_swappiness(p_curr: f64, p_avg60: f64, tunables: &MemoryTunables, thermal_state: ThermalState) -> f64 {
+pub fn calculate_swappiness(p_curr: f64, p_avg60: f64, tunables: &MemoryTunables) -> f64 {
     let anchor_p = p_curr.max(p_avg60);
     let denom = 1.0 + (-tunables.swap_sigmoid_k * (anchor_p - tunables.swap_sigmoid_mid)).exp();
-    let base_swappiness = tunables.min_swappiness + ((tunables.max_swappiness - tunables.min_swappiness) / denom);
-    let thermal_factor = match thermal_state {
-        ThermalState::Performance => 1.0,
-        ThermalState::Balanced => 0.8,
-        ThermalState::Conservation => 0.5,
-    };
-    (base_swappiness * thermal_factor).clamp(tunables.min_swappiness, tunables.max_swappiness)
+    let res = tunables.min_swappiness + ((tunables.max_swappiness - tunables.min_swappiness) / denom);
+    res.clamp(tunables.min_swappiness, tunables.max_swappiness)
 }
 
 pub fn calculate_dirty_expire(p_eff: f64, tunables: &MemoryTunables) -> f64 {
@@ -104,10 +97,7 @@ pub fn calculate_dirty_writeback(target_expire: f64, tunables: &MemoryTunables) 
     target_wb
 }
 
-pub fn calculate_page_cluster(avg10: f64, tunables: &MemoryTunables, thermal_state: ThermalState) -> f64 {
-    if thermal_state == ThermalState::Conservation {
-        return tunables.min_page_cluster;
-    }
+pub fn calculate_page_cluster(avg10: f64, tunables: &MemoryTunables) -> f64 {
     if avg10 > tunables.page_cluster_threshold {
         tunables.min_page_cluster
     } else {

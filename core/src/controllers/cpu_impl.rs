@@ -3,13 +3,15 @@
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
 use crate::hal::filesystem;
 use crate::hal::kernel;
+use crate::hal::thermal::ThermalSensor;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
 use crate::config::tunables::*;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::cpu_math::{self, CpuTunables};
+use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::daemon::state::{update_cpu_pressure, get_thermal_damping, get_memory_pressure}; 
+use crate::daemon::state::{update_cpu_pressure, get_memory_pressure}; 
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 
@@ -24,6 +26,10 @@ pub struct CpuController {
     wakeup: CachedFile,
     migration: CachedFile,
     psi_monitor: PsiMonitor,
+    thermal_manager: ThermalManager,
+    thermal_tunables: ThermalTunables,
+    cpu_sensor: ThermalSensor,
+    battery_sensor: ThermalSensor,
     current_latency: f64,
     current_min_gran: f64,
     current_wakeup: f64,
@@ -45,6 +51,8 @@ impl CpuController {
         let wakeup = CachedFile::new(filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?, 0);
         let migration = CachedFile::new_opt(filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
+        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 75.0);
+        let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
         let tunables = CpuTunables {
             min_latency_ns: MIN_LATENCY_NS as f64,
             max_latency_ns: MAX_LATENCY_NS as f64,
@@ -65,6 +73,21 @@ impl CpuController {
             memory_granularity_scaling: 0.6,
             memory_burst_penalty: 1.0,
         };
+        let thermal_tunables = ThermalTunables {
+            pid_kp: 0.06,
+            pid_ki: 0.002,
+            pid_kd: 0.20,
+            target_headroom: 40.0,
+            hard_limit_cpu: 75.0,
+            hard_limit_bat: 42.0,
+            leakage_k: 0.15,
+            leakage_start_temp: 58.0,
+            bucket_capacity: 500.0,
+            bucket_leak_base: 5.0,
+            psi_threshold: 40.0,
+            psi_strength: 0.20,
+        };
+        let thermal_manager = ThermalManager::new();
         let poller = AdaptivePoller::new(1.0, 2.5);
         let mut controller = Self {
             fd,
@@ -73,6 +96,10 @@ impl CpuController {
             wakeup,
             migration,
             psi_monitor,
+            thermal_manager,
+            thermal_tunables,
+            cpu_sensor,
+            battery_sensor,
             current_latency: MIN_LATENCY_NS as f64, 
             current_min_gran: MIN_GRANULARITY_NS as f64,
             current_wakeup: MIN_WAKEUP_NS as f64,
@@ -90,8 +117,10 @@ impl CpuController {
         let some = data.some;
         let memory_psi = get_memory_pressure();
         let raw_p = some.current.max(some.avg10);
+        let cpu_temp = self.cpu_sensor.read();
+        let bat_temp = self.battery_sensor.read();
+        let damping_factor = self.thermal_manager.update(cpu_temp, bat_temp, raw_p, &self.thermal_tunables);
         let trend_gain = cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
-        let damping_factor = get_thermal_damping();
         let p_eff = raw_p * trend_gain * damping_factor;
         update_cpu_pressure(p_eff);
         self.next_wake_ms = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
@@ -124,7 +153,7 @@ impl CpuController {
         self.latency.update(lat_u64, force, CheckStrategy::Relative(0.05));
         self.min_gran.update(gran_u64, force, CheckStrategy::Relative(0.05));
         self.wakeup.update(wake_u64, force, CheckStrategy::Relative(0.10));
-        self.migration.update(mig_u64, force, CheckStrategy::Relative(0.07));
+        self.migration.update(mig_u64, force, CheckStrategy::Absolute(10000));
     }
 }
 

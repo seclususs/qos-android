@@ -9,7 +9,7 @@ use crate::config::tunables::*;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::algorithms::storage_math::{self, StorageTunables};
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::daemon::state::{update_io_pressure, update_io_saturation, get_thermal_state};
+use crate::daemon::state::{update_io_pressure, update_io_saturation};
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 
@@ -75,7 +75,6 @@ impl StorageController {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let full = data.full;
-        let thermal_state = get_thermal_state();
         update_io_pressure(some.avg10);
         let i_sat = storage_math::calculate_io_saturation(full.avg10, some.avg10, &self.tunables);
         update_io_saturation(i_sat);
@@ -85,9 +84,9 @@ impl StorageController {
         } else {
             self.next_wake_ms = self.poller.calculate_next_interval(some.avg10, some.avg300) as i32;
         }
-        let (target_nr, target_fifo) = storage_math::calculate_queue_params(i_sat, &self.tunables, thermal_state);
+        let (target_nr, target_fifo) = storage_math::calculate_queue_params(i_sat, &self.tunables);
         let tactical_p = some.current.max(full.current * self.tunables.io_tactical_multiplier);
-        let target_ra = storage_math::calculate_read_ahead(tactical_p, &self.tunables, thermal_state);
+        let target_ra = storage_math::calculate_read_ahead(tactical_p, &self.tunables);
         self.current_read_ahead = target_ra;
         self.current_nr_requests = target_nr.clamp(self.tunables.min_nr_requests, self.tunables.max_nr_requests);
         self.current_fifo_batch = target_fifo.clamp(self.tunables.min_fifo_batch, self.tunables.max_fifo_batch);

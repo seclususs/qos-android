@@ -1,131 +1,106 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::thermal;
-use crate::config::loop_settings::THERMAL_SYNC_INTERVAL_SEC;
-
 use std::time::Instant;
 
+#[derive(Clone, Copy)]
 pub struct ThermalTunables {
-    pub alpha_heating: f64,
-    pub lambda_cooling: f64,
-    pub max_virtual_temp: f64,
-    pub bucket_size: f64,
-    pub bucket_leak_rate: f64,
-    pub threshold_warm: f64,
-    pub threshold_hot: f64,
-    pub hysteresis_gap: f64,
-    pub lambda_degradation_k: f64,
+    pub pid_kp: f64,
+    pub pid_ki: f64,
+    pub pid_kd: f64,
+    pub target_headroom: f64,
+    pub hard_limit_cpu: f64,
+    pub hard_limit_bat: f64,
+    pub leakage_k: f64,
+    pub leakage_start_temp: f64,
+    pub bucket_capacity: f64,
+    pub bucket_leak_base: f64,
+    pub psi_threshold: f64,
+    pub psi_strength: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ThermalState {
-    Performance,
-    Balanced,
-    Conservation
+struct PidController {
+    integral_error: f64,
+    prev_error: f64,
+    prev_derivative: f64,
 }
 
-pub struct ThermalPredictor {
-    virtual_temp: f64,
-    energy_bucket: f64,
-    pub current_state: ThermalState,
-    last_tick: Instant,
-    ambient_temp_assumption: f64,
-}
-
-impl ThermalPredictor {
-    pub fn new(start_temp_c: f64) -> Self {
-        let ambient = if start_temp_c < 35.0 {
-            start_temp_c
-        } else {
-            35.0
-        };
+impl PidController {
+    fn new() -> Self {
         Self {
-            virtual_temp: start_temp_c, 
+            integral_error: 0.0,
+            prev_error: 0.0,
+            prev_derivative: 0.0,
+        }
+    }
+    fn update(&mut self, error: f64, dt_sec: f64, tunables: &ThermalTunables) -> f64 {
+        self.integral_error = (self.integral_error + (error * dt_sec)).clamp(-100.0, 100.0);
+        let raw_derivative = if dt_sec > 0.0 {
+            (error - self.prev_error) / dt_sec
+        } else {
+            0.0
+        };
+        self.prev_error = error;
+        let alpha = 0.2; 
+        let smoothed_derivative = alpha * raw_derivative + (1.0 - alpha) * self.prev_derivative;
+        self.prev_derivative = smoothed_derivative;
+        let p_term = tunables.pid_kp * error;
+        let i_term = tunables.pid_ki * self.integral_error;
+        let d_term = tunables.pid_kd * smoothed_derivative;
+        p_term + i_term + d_term
+    }
+}
+
+pub struct ThermalManager {
+    pid: PidController,
+    energy_bucket: f64,
+    last_tick: Instant,
+}
+
+impl ThermalManager {
+    pub fn new() -> Self {
+        Self {
+            pid: PidController::new(),
             energy_bucket: 0.0,
-            current_state: ThermalState::Performance,
             last_tick: Instant::now(),
-            ambient_temp_assumption: ambient,
         }
     }
-    pub fn sync_with_sensor(&mut self, real_temp: f64) {
-        self.virtual_temp = real_temp;
-        self.last_tick = Instant::now();
-        if real_temp < self.ambient_temp_assumption {
-            self.ambient_temp_assumption = real_temp;
-        } else if real_temp > self.ambient_temp_assumption + 10.0 {
-            self.ambient_temp_assumption = self.ambient_temp_assumption.max(30.0);
-        }
-    }
-    pub fn update(&mut self, input_pressure: f64, avg300: f64, tunables: &ThermalTunables) -> f64 {
+    pub fn update(&mut self, cpu_temp: f64, bat_temp: f64, psi_load: f64, tunables: &ThermalTunables) -> f64 {
         let now = Instant::now();
-        let dt_sec = now.duration_since(self.last_tick).as_secs_f64();
-        if dt_sec > THERMAL_SYNC_INTERVAL_SEC as f64 {
-            let real_temp = thermal::read_initial_thermal_state();
-            self.sync_with_sensor(real_temp);
-            self.energy_bucket = 0.0;
-            self.last_tick = now;
-            self.update_state_machine(tunables);
-            return self.calculate_damping_factor(tunables);
+        let dt = now.duration_since(self.last_tick).as_secs_f64();
+        let dt_safe = dt.clamp(0.01, 1.0); 
+        self.last_tick = now;
+        let excess_load = (psi_load - tunables.psi_threshold).max(0.0);
+        let anticipatory_penalty = excess_load * tunables.psi_strength;
+        let bat_safety_margin = (tunables.hard_limit_bat - bat_temp).max(0.0);
+        let safety_scaling = (bat_safety_margin / 10.0).clamp(0.0, 1.0);
+        let base_headroom = tunables.target_headroom * safety_scaling;
+        let base_target = (bat_temp + base_headroom).min(tunables.hard_limit_cpu);
+        let dynamic_target = base_target - anticipatory_penalty;
+        let error = cpu_temp - dynamic_target;
+        let pid_output = self.pid.update(error, dt_safe, tunables);
+        let leakage_penalty = if cpu_temp > tunables.leakage_start_temp {
+            let excess = cpu_temp - tunables.leakage_start_temp;
+            (excess * tunables.leakage_k).exp()
+        } else {
+            1.0
+        };
+        let cooling_potential = (cpu_temp - bat_temp).max(1.0);
+        let leak_rate = tunables.bucket_leak_base * (cooling_potential / 20.0);
+        if error > 0.0 {
+            self.energy_bucket += error * dt_safe * 5.0; 
+        } else {
+            self.energy_bucket -= leak_rate * dt_safe;
         }
-        self.last_tick = now; 
-        let safe_dt = if dt_sec < 0.001 { 0.001 } else { dt_sec };
-        let saturation_factor = (1.0 - (tunables.lambda_degradation_k * avg300)).max(0.2);
-        let lambda_dynamic = tunables.lambda_cooling * saturation_factor;
-        let heat_in = input_pressure * tunables.alpha_heating;
-        let delta_t_ambient = self.virtual_temp - self.ambient_temp_assumption;
-        let heat_out = delta_t_ambient * lambda_dynamic;
-        let delta_temp = (heat_in - heat_out) * safe_dt;
-        self.virtual_temp = (self.virtual_temp + delta_temp)
-            .clamp(self.ambient_temp_assumption, tunables.max_virtual_temp);
-        let bucket_in = input_pressure * safe_dt;
-        let bucket_leak = tunables.bucket_leak_rate * safe_dt;
-        self.energy_bucket = (self.energy_bucket + bucket_in - bucket_leak)
-            .clamp(0.0, tunables.bucket_size);  
-        self.update_state_machine(tunables);
-        self.calculate_damping_factor(tunables)
-    }
-    fn update_state_machine(&mut self, tunables: &ThermalTunables) {
-        match self.current_state {
-            ThermalState::Performance => {
-                if self.virtual_temp > tunables.threshold_warm 
-                   || self.energy_bucket > (tunables.bucket_size * 0.75) {
-                    self.current_state = ThermalState::Balanced;
-                }
-            },
-            ThermalState::Balanced => {
-                if self.virtual_temp > tunables.threshold_hot {
-                    self.current_state = ThermalState::Conservation;
-                }
-                else if self.virtual_temp < (tunables.threshold_warm - tunables.hysteresis_gap) 
-                        && self.energy_bucket < (tunables.bucket_size * 0.25) {
-                    self.current_state = ThermalState::Performance;
-                }
-            },
-            ThermalState::Conservation => {
-                if self.virtual_temp < (tunables.threshold_hot - tunables.hysteresis_gap) {
-                    self.current_state = ThermalState::Balanced;
-                }
-            }
+        self.energy_bucket = self.energy_bucket.clamp(0.0, tunables.bucket_capacity);
+        let base_throttle = pid_output.max(0.0);
+        let phys_throttle = base_throttle * leakage_penalty;
+        let bucket_fill_ratio = self.energy_bucket / tunables.bucket_capacity;
+        let sustained_penalty = bucket_fill_ratio * 0.5;
+        let total_severity = phys_throttle + sustained_penalty;
+        let damping = 1.0 / (1.0 + total_severity);
+        if bat_temp >= tunables.hard_limit_bat {
+            return damping.min(0.2); 
         }
-    }
-    fn calculate_damping_factor(&self, tunables: &ThermalTunables) -> f64 {
-        if self.current_state == ThermalState::Performance && self.energy_bucket < 50.0 {
-            return 1.0;
-        }
-        let temp_range = tunables.max_virtual_temp - self.ambient_temp_assumption;
-        let curr_offset = self.virtual_temp - self.ambient_temp_assumption;
-        let ratio = (curr_offset / temp_range).clamp(0.0, 1.0);
-        let quadratic_drop = ratio * ratio;
-        let mut damping = 1.0 - quadratic_drop;
-        match self.current_state {
-            ThermalState::Performance => {}, 
-            ThermalState::Balanced => {
-                damping *= 0.90;
-            },
-            ThermalState::Conservation => {
-                damping *= 0.60;
-            }
-        }
-        damping.clamp(0.2, 1.0)
+        damping.clamp(0.1, 1.0)
     }
 }

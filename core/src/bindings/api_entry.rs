@@ -14,7 +14,6 @@ use crate::controllers::signal_impl::SignalController;
 use crate::controllers::memory_impl::MemoryController;
 use crate::controllers::storage_impl::StorageController;
 use crate::controllers::cpu_impl::CpuController;
-use crate::controllers::thermal_impl::ThermalController;
 
 use std::sync::atomic::Ordering;
 use std::thread::{self, JoinHandle};
@@ -83,8 +82,6 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
             let mut services = Vec::new();
             services.push(RecoverableService::new("Signal", 
             move || Ok(Box::new(SignalController::new(signal_fd)))));
-            services.push(RecoverableService::new("Thermal", 
-            || Ok(Box::new(ThermalController::new()?))));
             if MEMORY_SERVICE_ENABLED.load(Ordering::Acquire) {
                 services.push(RecoverableService::new("Memory", 
                 || Ok(Box::new(MemoryController::new()?))));
