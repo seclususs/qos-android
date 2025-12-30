@@ -22,10 +22,20 @@
 #include <sys/signalfd.h>
 #include <csignal>
 #include <cstdlib>
+#include <malloc.h>
+
+// Android Bionic Constants
+#ifndef M_DECAY_TIME
+#define M_DECAY_TIME -100
+#endif
+
+#ifndef M_PURGE
+#define M_PURGE -101
+#endif
 
 /**
  * @brief Main execution entry point.
- * 1. Hardens the process (OOM shield, scheduling).
+ * 1. Hardens the process (OOM shield, scheduling, memory trim).
  * 2. Checks kernel compatibility.
  * 3. Loads config and passes it to Rust.
  * 4. Hands over control to Rust reactor loop.
@@ -34,6 +44,7 @@
  * @return int Exit code (0 for success, EXIT_FAILURE for errors).
  */
 int main(int argc, char* argv[]) {
+    mallopt(M_DECAY_TIME, 0);
     LOGI("=== Daemon Starting ===");
 
     // Make the process resilient against system pressure and termination.
@@ -43,9 +54,17 @@ int main(int argc, char* argv[]) {
     qos::runtime::Limits::expand_resources();               // Increase FD and Stack limits
     qos::runtime::Memory::lock_all_pages();                 // Prevent swapping (mlockall)
     
-    // Set initial priority (Little Cores + FIFO) for initialization phase
-    qos::runtime::Scheduler::bind_to_little_cores();
+    // Combined Scheduler Initialization
+    // 1. Lock to Little Cores (Efficiency)
+    // 2. Set RT Priority (Responsiveness)
+    // 3. Set Timer Slack (Power Saving)
+    // 4. UClamp (Limit Max Freq to ~30%)
+    qos::runtime::Scheduler::enforce_efficiency_mode(); 
     qos::runtime::Scheduler::set_realtime_policy();
+    qos::runtime::Scheduler::maximize_timer_slack();
+    qos::runtime::Scheduler::limit_cpu_utilization();
+    
+    // 5. Set I/O Priority (Disk Access)
     qos::runtime::IoPriority::set_high_priority();
     
     LOGI("Checking Hardware Support...");
@@ -82,9 +101,6 @@ int main(int argc, char* argv[]) {
     int sfd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
     
     LOGI("Handover to Rust Core...");
-    
-    // Finalize scheduler settings before handover
-    qos::runtime::Scheduler::prepare_for_rust_handover();
     
     // Pass the signal FD to Rust. This function blocks until the service stops.
     int rust_status = rust_start_services(sfd);
