@@ -21,8 +21,8 @@ pub trait EventHandler {
         Ok(LoopAction::Continue)
     }
     fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
-        rustix::event::epoll::EventFlags::IN 
-        | rustix::event::epoll::EventFlags::PRI 
-        | rustix::event::epoll::EventFlags::ERR
+        rustix::event::epoll::EventFlags::IN
+            | rustix::event::epoll::EventFlags::PRI
+            | rustix::event::epoll::EventFlags::ERR
     }
 }

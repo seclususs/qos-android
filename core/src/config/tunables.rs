@@ -33,6 +33,6 @@ pub const MAX_PAGE_CLUSTER: u64 = 1;
 pub const MAX_READ_AHEAD: u64 = 256;
 pub const MIN_READ_AHEAD: u64 = 128;
 pub const MAX_NR_REQUESTS: u64 = 256;
-pub const MIN_NR_REQUESTS: u64 = 128; 
+pub const MIN_NR_REQUESTS: u64 = 128;
 pub const MIN_FIFO_BATCH: u64 = 8;
 pub const MAX_FIFO_BATCH: u64 = 16;

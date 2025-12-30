@@ -1,23 +1,23 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::algorithms::cpu_math::{self, CpuTunables};
+use crate::algorithms::poll_math::AdaptivePoller;
+use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
+use crate::config::loop_settings::MIN_POLLING_MS;
+use crate::config::tunables::*;
+use crate::daemon::state::{get_memory_pressure, update_cpu_pressure};
+use crate::daemon::traits::{EventHandler, LoopAction};
+use crate::daemon::types::QosError;
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
 use crate::hal::filesystem;
 use crate::hal::kernel;
 use crate::hal::thermal::ThermalSensor;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
-use crate::config::tunables::*;
-use crate::config::loop_settings::MIN_POLLING_MS;
-use crate::algorithms::cpu_math::{self, CpuTunables};
-use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
-use crate::algorithms::poll_math::AdaptivePoller;
-use crate::daemon::state::{update_cpu_pressure, get_memory_pressure}; 
-use crate::daemon::traits::{EventHandler, LoopAction};
-use crate::daemon::types::QosError;
 
-use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
 use std::io::Read;
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 
 pub struct CpuController {
     fd: File,
@@ -47,9 +47,18 @@ impl CpuController {
             .map_err(|e| QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let latency = CachedFile::new(filesystem::open_file_for_write(K_SCHED_LATENCY_NS)?, 0);
-        let min_gran = CachedFile::new(filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?, 0);
-        let wakeup = CachedFile::new(filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?, 0);
-        let migration = CachedFile::new_opt(filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(), 0);
+        let min_gran = CachedFile::new(
+            filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?,
+            0,
+        );
+        let wakeup = CachedFile::new(
+            filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?,
+            0,
+        );
+        let migration = CachedFile::new_opt(
+            filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(),
+            0,
+        );
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
         let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 70.0);
         let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
@@ -100,7 +109,7 @@ impl CpuController {
             thermal_tunables,
             cpu_sensor,
             battery_sensor,
-            current_latency: MIN_LATENCY_NS as f64, 
+            current_latency: MIN_LATENCY_NS as f64,
             current_min_gran: MIN_GRANULARITY_NS as f64,
             current_wakeup: MIN_WAKEUP_NS as f64,
             current_migration: MIN_MIGRATION_COST as f64,
@@ -119,23 +128,28 @@ impl CpuController {
         let raw_p = some.current.max(some.avg10);
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
-        let damping_factor = self.thermal_manager.update(cpu_temp, bat_temp, raw_p, &self.thermal_tunables);
-        let trend_gain = cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
+        let damping_factor =
+            self.thermal_manager
+                .update(cpu_temp, bat_temp, raw_p, &self.thermal_tunables);
+        let trend_gain =
+            cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
         let p_eff = raw_p * trend_gain * damping_factor;
         update_cpu_pressure(p_eff);
         self.next_wake_ms = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
         let delta_raw = some.current - some.avg10;
-        let delta_smooth = cpu_math::smooth_delta(delta_raw, self.prev_impulse_smooth, &self.tunables);
+        let delta_smooth =
+            cpu_math::smooth_delta(delta_raw, self.prev_impulse_smooth, &self.tunables);
         self.prev_impulse_smooth = delta_smooth;
-        let target_migration = cpu_math::calculate_migration_cost(delta_smooth, p_eff, memory_psi, &self.tunables);
+        let target_migration =
+            cpu_math::calculate_migration_cost(delta_smooth, p_eff, memory_psi, &self.tunables);
         let thermal_floor = cpu_math::calculate_thermal_floor(some.avg60, &self.tunables);
         let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(
-            p_eff, 
-            some.avg10, 
-            some.avg300, 
-            thermal_floor, 
-            memory_psi, 
-            &self.tunables
+            p_eff,
+            some.avg10,
+            some.avg300,
+            thermal_floor,
+            memory_psi,
+            &self.tunables,
         );
         let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
         self.current_latency = target_latency;
@@ -148,29 +162,35 @@ impl CpuController {
     fn apply_values(&mut self, force: bool) {
         let lat_u64 = crate::algorithms::sanitize_to_u64(
             self.current_latency,
-            self.tunables.max_latency_ns as u64
+            self.tunables.max_latency_ns as u64,
         );
-        let gran_u64 =crate::algorithms::sanitize_to_u64(
+        let gran_u64 = crate::algorithms::sanitize_to_u64(
             self.current_min_gran,
-            self.tunables.max_granularity_ns as u64
+            self.tunables.max_granularity_ns as u64,
         );
         let wake_u64 = crate::algorithms::sanitize_to_u64(
             self.current_wakeup,
-            self.tunables.max_wakeup_ns as u64
+            self.tunables.max_wakeup_ns as u64,
         );
         let mig_u64 = crate::algorithms::sanitize_to_u64(
             self.current_migration,
-            self.tunables.min_migration_cost as u64
+            self.tunables.min_migration_cost as u64,
         );
-        self.latency.update(lat_u64, force, CheckStrategy::Relative(0.05));
-        self.min_gran.update(gran_u64, force, CheckStrategy::Relative(0.05));
-        self.wakeup.update(wake_u64, force, CheckStrategy::Relative(0.10));
-        self.migration.update(mig_u64, force, CheckStrategy::Absolute(10000));
+        self.latency
+            .update(lat_u64, force, CheckStrategy::Relative(0.05));
+        self.min_gran
+            .update(gran_u64, force, CheckStrategy::Relative(0.05));
+        self.wakeup
+            .update(wake_u64, force, CheckStrategy::Relative(0.10));
+        self.migration
+            .update(mig_u64, force, CheckStrategy::Absolute(10000));
     }
 }
 
 impl EventHandler for CpuController {
-    fn as_raw_fd(&self) -> RawFd { self.fd.as_raw_fd() }
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
     fn on_event(&mut self) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);

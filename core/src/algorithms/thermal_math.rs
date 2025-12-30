@@ -40,7 +40,7 @@ impl PidController {
             0.0
         };
         self.prev_error = error;
-        let alpha = 0.2; 
+        let alpha = 0.2;
         let smoothed_derivative = alpha * raw_derivative + (1.0 - alpha) * self.prev_derivative;
         self.prev_derivative = smoothed_derivative;
         let p_term = tunables.pid_kp * error;
@@ -56,6 +56,12 @@ pub struct ThermalManager {
     last_tick: Instant,
 }
 
+impl Default for ThermalManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThermalManager {
     pub fn new() -> Self {
         Self {
@@ -64,10 +70,16 @@ impl ThermalManager {
             last_tick: Instant::now(),
         }
     }
-    pub fn update(&mut self, cpu_temp: f64, bat_temp: f64, psi_load: f64, tunables: &ThermalTunables) -> f64 {
+    pub fn update(
+        &mut self,
+        cpu_temp: f64,
+        bat_temp: f64,
+        psi_load: f64,
+        tunables: &ThermalTunables,
+    ) -> f64 {
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64();
-        let dt_safe = dt.clamp(0.01, 1.0); 
+        let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;
         let excess_load = (psi_load - tunables.psi_threshold).max(0.0);
         let anticipatory_penalty = excess_load * tunables.psi_strength;
@@ -87,7 +99,7 @@ impl ThermalManager {
         let cooling_potential = (cpu_temp - bat_temp).max(1.0);
         let leak_rate = tunables.bucket_leak_base * (cooling_potential / 20.0);
         if error > 0.0 {
-            self.energy_bucket += error * dt_safe * 5.0; 
+            self.energy_bucket += error * dt_safe * 5.0;
         } else {
             self.energy_bucket -= leak_rate * dt_safe;
         }
@@ -99,7 +111,7 @@ impl ThermalManager {
         let total_severity = phys_throttle + sustained_penalty;
         let damping = 1.0 / (1.0 + total_severity);
         if bat_temp >= tunables.hard_limit_bat {
-            return damping.min(0.2); 
+            return damping.min(0.2);
         }
         damping.clamp(0.1, 1.0)
     }

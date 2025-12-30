@@ -1,21 +1,21 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::algorithms::poll_math::AdaptivePoller;
+use crate::algorithms::storage_math::{self, StorageTunables};
+use crate::config::loop_settings::MIN_POLLING_MS;
+use crate::config::tunables::*;
+use crate::daemon::state::{update_io_pressure, update_io_saturation};
+use crate::daemon::traits::{EventHandler, LoopAction};
+use crate::daemon::types::QosError;
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
 use crate::hal::filesystem;
 use crate::hal::kernel;
 use crate::monitors::psi_monitor::PsiMonitor;
 use crate::resources::sys_paths::*;
-use crate::config::tunables::*;
-use crate::config::loop_settings::MIN_POLLING_MS;
-use crate::algorithms::storage_math::{self, StorageTunables};
-use crate::algorithms::poll_math::AdaptivePoller;
-use crate::daemon::state::{update_io_pressure, update_io_saturation};
-use crate::daemon::traits::{EventHandler, LoopAction};
-use crate::daemon::types::QosError;
 
-use std::os::fd::{RawFd, AsRawFd, FromRawFd};
 use std::fs::File;
 use std::io::Read;
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 
 pub struct StorageController {
     fd: File,
@@ -39,7 +39,8 @@ impl StorageController {
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let read_ahead = CachedFile::new(filesystem::open_file_for_write(K_READ_AHEAD_PATH)?, 0);
         let nr_requests = CachedFile::new(filesystem::open_file_for_write(K_NR_REQUESTS_PATH)?, 0);
-        let fifo_batch = CachedFile::new_opt(filesystem::open_file_for_write(K_FIFO_BATCH_PATH).ok(), 0);
+        let fifo_batch =
+            CachedFile::new_opt(filesystem::open_file_for_write(K_FIFO_BATCH_PATH).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_IO_PATH)?;
         let tunables = StorageTunables {
             min_read_ahead: MIN_READ_AHEAD as f64,
@@ -55,7 +56,7 @@ impl StorageController {
             io_tactical_multiplier: 2.0,
         };
         let poller = AdaptivePoller::new(1.0, 1.0);
-        let mut controller = Self { 
+        let mut controller = Self {
             fd,
             read_ahead,
             nr_requests,
@@ -80,40 +81,49 @@ impl StorageController {
         update_io_saturation(i_sat);
         if i_sat > 0.0 {
             self.next_wake_ms = MIN_POLLING_MS as i32;
-            self.poller.calculate_next_interval(100.0, some.avg300); 
+            self.poller.calculate_next_interval(100.0, some.avg300);
         } else {
             self.next_wake_ms = self.poller.calculate_next_interval(some.avg10, some.avg300) as i32;
         }
         let (target_nr, target_fifo) = storage_math::calculate_queue_params(i_sat, &self.tunables);
-        let tactical_p = some.current.max(full.current * self.tunables.io_tactical_multiplier);
+        let tactical_p = some
+            .current
+            .max(full.current * self.tunables.io_tactical_multiplier);
         let target_ra = storage_math::calculate_read_ahead(tactical_p, &self.tunables);
         self.current_read_ahead = target_ra;
-        self.current_nr_requests = target_nr.clamp(self.tunables.min_nr_requests, self.tunables.max_nr_requests);
-        self.current_fifo_batch = target_fifo.clamp(self.tunables.min_fifo_batch, self.tunables.max_fifo_batch);
+        self.current_nr_requests =
+            target_nr.clamp(self.tunables.min_nr_requests, self.tunables.max_nr_requests);
+        self.current_fifo_batch =
+            target_fifo.clamp(self.tunables.min_fifo_batch, self.tunables.max_fifo_batch);
         self.apply_values(false);
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
         let ra_u64 = crate::algorithms::sanitize_to_u64(
             self.current_read_ahead,
-            self.tunables.max_read_ahead as u64
+            self.tunables.max_read_ahead as u64,
         );
         let nr_u64 = crate::algorithms::sanitize_to_u64(
             self.current_nr_requests,
-            self.tunables.min_nr_requests as u64
+            self.tunables.min_nr_requests as u64,
         );
         let fifo_u64 = crate::algorithms::sanitize_to_u64(
             self.current_fifo_batch,
-            self.tunables.max_fifo_batch as u64
+            self.tunables.max_fifo_batch as u64,
         );
-        self.read_ahead.update(ra_u64, force, CheckStrategy::Absolute(32));
-        self.nr_requests.update(nr_u64, force, CheckStrategy::Absolute(16));
-        self.fifo_batch.update(fifo_u64, force, CheckStrategy::Absolute(2));
+        self.read_ahead
+            .update(ra_u64, force, CheckStrategy::Absolute(32));
+        self.nr_requests
+            .update(nr_u64, force, CheckStrategy::Absolute(16));
+        self.fifo_batch
+            .update(fifo_u64, force, CheckStrategy::Absolute(2));
     }
 }
 
 impl EventHandler for StorageController {
-    fn as_raw_fd(&self) -> RawFd { self.fd.as_raw_fd() }
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
     fn on_event(&mut self) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);

@@ -9,9 +9,5 @@ pub fn init() {
     } else {
         LevelFilter::Error
     };
-    android_logger::init_once(
-        Config::default()
-            .with_tag("QoS")
-            .with_max_level(level)
-    );
+    android_logger::init_once(Config::default().with_tag("QoS").with_max_level(level));
 }

@@ -55,15 +55,17 @@ impl CachedFile {
                 true
             } else {
                 match strategy {
-                    CheckStrategy::Absolute(threshold) => check_absolute(self.last_value, new_value, threshold),
-                    CheckStrategy::Relative(tolerance) => check_relative(self.last_value, new_value, tolerance),
+                    CheckStrategy::Absolute(threshold) => {
+                        check_absolute(self.last_value, new_value, threshold)
+                    }
+                    CheckStrategy::Relative(tolerance) => {
+                        check_relative(self.last_value, new_value, tolerance)
+                    }
                     CheckStrategy::Strict => self.last_value != new_value,
                 }
             };
-            if needs_update {
-                if write_to_stream(file, new_value).is_ok() {
-                    self.last_value = new_value;
-                }
+            if needs_update && write_to_stream(file, new_value).is_ok() {
+                self.last_value = new_value;
             }
         }
     }

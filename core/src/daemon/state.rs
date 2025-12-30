@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::sync::atomic::AtomicBool;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
 
 pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 pub static CPU_SERVICE_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -14,6 +14,12 @@ pub struct GlobalPressure {
     pub memory_psi: f64,
     pub io_psi: f64,
     pub io_saturation: f64,
+}
+
+impl Default for GlobalPressure {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GlobalPressure {

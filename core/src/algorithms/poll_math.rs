@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::config::loop_settings::{MIN_POLLING_MS, MAX_POLLING_MS};
+use crate::config::loop_settings::{MAX_POLLING_MS, MIN_POLLING_MS};
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -39,8 +39,13 @@ impl AdaptivePoller {
         }
     }
     fn next_random(&mut self, range: u64) -> u64 {
-        if range == 0 { return 0; }
-        self.rng_state = self.rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        if range == 0 {
+            return 0;
+        }
+        self.rng_state = self
+            .rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1);
         let limit = range * 2;
         self.rng_state % (limit + 1)
     }
@@ -68,11 +73,13 @@ impl AdaptivePoller {
         let p_term = prediction * self.weight_pressure;
         let d_term = velocity.abs() * self.weight_derivative;
         let urgency_score = (p_term + d_term).clamp(0.0, 100.0);
-        let raw_interval = dynamic_max as f64 - ((urgency_score / 100.0) * (dynamic_max - dynamic_min) as f64);
+        let raw_interval =
+            dynamic_max as f64 - ((urgency_score / 100.0) * (dynamic_max - dynamic_min) as f64);
         let target = if raw_interval < self.target_interval as f64 {
             raw_interval
         } else {
-            (raw_interval * DECAY_COEFF) + (self.target_interval as f64 * (ATTACK_COEFF - DECAY_COEFF))
+            (raw_interval * DECAY_COEFF)
+                + (self.target_interval as f64 * (ATTACK_COEFF - DECAY_COEFF))
         };
         self.target_interval = target as u64;
         let diff = (self.target_interval as i64 - self.current_interval as i64).abs();
@@ -85,7 +92,8 @@ impl AdaptivePoller {
         self.apply_discrete_math_mut(self.current_interval, dynamic_min, dynamic_max)
     }
     fn apply_discrete_math_mut(&mut self, interval: u64, min_limit: u64, max_limit: u64) -> u64 {
-        let quantized = ((interval as f64 / QUANTIZATION_STEP_MS as f64).round() * QUANTIZATION_STEP_MS as f64) as u64;
+        let quantized = ((interval as f64 / QUANTIZATION_STEP_MS as f64).round()
+            * QUANTIZATION_STEP_MS as f64) as u64;
         let clamped = quantized.clamp(min_limit, max_limit);
         let jitter_range = (clamped * JITTER_PERCENT) / 100;
         let noise = self.next_random(jitter_range);

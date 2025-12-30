@@ -18,14 +18,14 @@ pub struct PsiTrend {
     pub total: u64,
 }
 
-impl PsiTrend {
-    pub fn default() -> Self {
+impl Default for PsiTrend {
+    fn default() -> Self {
         Self {
             current: 0.0,
             avg10: 0.0,
             avg60: 0.0,
             avg300: 0.0,
-            total: 0
+            total: 0,
         }
     }
 }
@@ -58,7 +58,9 @@ impl PsiMonitor {
         })
     }
     pub fn read_state(&mut self) -> Result<PsiData, QosError> {
-        self.file.seek(SeekFrom::Start(0)).map_err(QosError::IoError)?;
+        self.file
+            .seek(SeekFrom::Start(0))
+            .map_err(QosError::IoError)?;
         let bytes_read = match self.file.read(&mut self.buffer) {
             Ok(n) => n,
             Err(e) => return Err(QosError::IoError(e)),
@@ -74,7 +76,11 @@ impl PsiMonitor {
         } else {
             now.duration_since(self.last_read_time).as_micros() as f64
         };
-        let dt = if elapsed_micros < 1000.0 { 1000.0 } else { elapsed_micros };
+        let dt = if elapsed_micros < 1000.0 {
+            1000.0
+        } else {
+            elapsed_micros
+        };
         let mut data = PsiData {
             some: PsiTrend::default(),
             full: PsiTrend::default(),
@@ -82,8 +88,14 @@ impl PsiMonitor {
         for line in content.lines() {
             let is_some = line.starts_with("some ");
             let is_full = line.starts_with("full ");
-            if !is_some && !is_full { continue; }
-            let target = if is_some { &mut data.some } else { &mut data.full };
+            if !is_some && !is_full {
+                continue;
+            }
+            let target = if is_some {
+                &mut data.some
+            } else {
+                &mut data.full
+            };
             for token in line.split_whitespace() {
                 if let Some(v) = token.strip_prefix("avg10=") {
                     target.avg10 = v.parse::<f64>().unwrap_or(0.0);

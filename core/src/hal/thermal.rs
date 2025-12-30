@@ -42,11 +42,11 @@ impl ThermalSensor {
                         } else {
                             val
                         }
-                    },
-                    Err(_) => self.default_val
+                    }
+                    Err(_) => self.default_val,
                 }
             }
-            _ => self.default_val
+            _ => self.default_val,
         }
     }
 }

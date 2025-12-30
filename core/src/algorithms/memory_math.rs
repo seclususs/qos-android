@@ -44,25 +44,30 @@ pub struct MemoryTunables {
 pub fn calculate_swappiness(p_curr: f64, p_avg60: f64, tunables: &MemoryTunables) -> f64 {
     let anchor_p = p_curr.max(p_avg60);
     let denom = 1.0 + (-tunables.swap_sigmoid_k * (anchor_p - tunables.swap_sigmoid_mid)).exp();
-    let res = tunables.min_swappiness + ((tunables.max_swappiness - tunables.min_swappiness) / denom);
+    let res =
+        tunables.min_swappiness + ((tunables.max_swappiness - tunables.min_swappiness) / denom);
     res.clamp(tunables.min_swappiness, tunables.max_swappiness)
 }
 
 pub fn calculate_dirty_expire(p_eff: f64, tunables: &MemoryTunables) -> f64 {
     let decay = (-tunables.dirty_decay_coeff * p_eff).exp();
-    let res = tunables.min_dirty_expire + (tunables.max_dirty_expire - tunables.min_dirty_expire) * decay;
+    let res =
+        tunables.min_dirty_expire + (tunables.max_dirty_expire - tunables.min_dirty_expire) * decay;
     res.clamp(tunables.min_dirty_expire, tunables.max_dirty_expire)
 }
 
 pub fn calculate_stat_interval(p_cpu: f64, tunables: &MemoryTunables) -> f64 {
     let t = (p_cpu / 100.0).clamp(0.0, 1.0);
-    let interval = tunables.min_stat_interval + (tunables.max_stat_interval - tunables.min_stat_interval) * t;
+    let interval =
+        tunables.min_stat_interval + (tunables.max_stat_interval - tunables.min_stat_interval) * t;
     interval.clamp(tunables.min_stat_interval, tunables.max_stat_interval)
 }
 
 pub fn calculate_watermark_scale(p_mem: f64, tunables: &MemoryTunables) -> f64 {
-    let denom = 1.0 + (-tunables.watermark_sigmoid_k * (p_mem - tunables.watermark_sigmoid_mid)).exp();
-    let res = tunables.min_watermark_scale + ((tunables.max_watermark_scale - tunables.min_watermark_scale) / denom);
+    let denom =
+        1.0 + (-tunables.watermark_sigmoid_k * (p_mem - tunables.watermark_sigmoid_mid)).exp();
+    let res = tunables.min_watermark_scale
+        + ((tunables.max_watermark_scale - tunables.min_watermark_scale) / denom);
     res.clamp(tunables.min_watermark_scale, tunables.max_watermark_scale)
 }
 
@@ -87,14 +92,16 @@ pub fn calculate_target_vfs(p_mem: f64, tunables: &MemoryTunables) -> f64 {
 pub fn calculate_dirty_params(p_mem: f64, tunables: &MemoryTunables) -> (f64, f64) {
     let decay = (-tunables.dirty_ratio_decay * p_mem).exp();
     let target_dirty = tunables.min_dirty + (tunables.max_dirty - tunables.min_dirty) * decay;
-    let target_dirty_bg = tunables.min_dirty_bg + (tunables.max_dirty_bg - tunables.min_dirty_bg) * decay;
+    let target_dirty_bg =
+        tunables.min_dirty_bg + (tunables.max_dirty_bg - tunables.min_dirty_bg) * decay;
     (target_dirty, target_dirty_bg)
 }
 
 pub fn calculate_dirty_writeback(target_expire: f64, tunables: &MemoryTunables) -> f64 {
-    let t_wb = (target_expire - tunables.min_dirty_expire) / (tunables.max_dirty_expire - tunables.min_dirty_expire);
-    let target_wb = tunables.min_dirty_writeback + (tunables.max_dirty_writeback - tunables.min_dirty_writeback) * t_wb;
-    target_wb
+    let t_wb = (target_expire - tunables.min_dirty_expire)
+        / (tunables.max_dirty_expire - tunables.min_dirty_expire);
+    tunables.min_dirty_writeback
+        + (tunables.max_dirty_writeback - tunables.min_dirty_writeback) * t_wb
 }
 
 pub fn calculate_page_cluster(avg10: f64, tunables: &MemoryTunables) -> f64 {

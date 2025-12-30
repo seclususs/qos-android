@@ -16,7 +16,9 @@ pub struct SignalController {
 impl SignalController {
     pub fn new(fd: RawFd) -> Self {
         unsafe {
-            Self { file: File::from_raw_fd(fd) }
+            Self {
+                file: File::from_raw_fd(fd),
+            }
         }
     }
 }
@@ -28,15 +30,13 @@ impl EventHandler for SignalController {
     fn on_event(&mut self) -> Result<LoopAction, QosError> {
         log::info!("SignalController: Signal received from Kernel.");
         let mut buf = [0u8; 128];
-        match self.file.read(&mut buf) {
-            Ok(_) => {
+        match self.file.read_exact(&mut buf) {
+            Ok(()) => {
                 log::info!("SignalController: Requesting shutdown...");
                 SHUTDOWN_REQUESTED.store(true, Ordering::Release);
                 Ok(LoopAction::Continue)
-            },
-            Err(e) => {
-                Err(QosError::IoError(e))
             }
+            Err(e) => Err(QosError::IoError(e)),
         }
     }
 }
