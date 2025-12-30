@@ -1,89 +1,52 @@
 # Changelog
 
-## v1.8
+## v1.9 (Latest)
+- **Core:** Implemented Closed-Loop PID Thermal Regulation
+- **Scheduling:** Enforced Daemon UClamp & Timer Slack Coalescing
+- **Polling:** Added Stochastic Polling Jitter with Quantization
+- **Affinity:** Refined Core Affinity with Topology Fallback
+- **Safety:** Added Deep Sleep Time Discontinuity Detection
+- **Diagnostics:** Implemented Granular Kernel Feature Discovery
+- **Optimization:** Optimized Memory Footprint via Immediate Decay (`mallopt`)
+- **Config:** Refactored Config Parser for Fault Tolerance
+
+---
+
+## History (Archived)
+
+### v1.8
 - Replaced integral PSI metrics with Real-Time Differential Load Sensing
 - Introduced Multi-Scale PSI Logic for responsive and stable decisions
-- Added Asymmetric EMA Filtering (Fast Attack, Fast Decay) with Cold-Start Protection
+- Added Asymmetric EMA Filtering (Fast Attack, Fast Decay)
 - Implemented Trend-Aware Dynamic Gain using Non-Linear Control Functions
-- Added Impulse-Based CPU Burst Detection with Low-Pass Filtered Response
+- Added Impulse-Based CPU Burst Detection
 - Introduced Hysteresis-Driven Scheduler and Task Migration Logic
 - Implemented Cross-Coupled Control between CPU, Memory, and Storage subsystems
-- Added Storage Saturation Index with Cubic Queue Throttling for Anti-Bufferbloat
+- Added Storage Saturation Index with Cubic Queue Throttling
 - Implemented Triple-Domain ZRAM Elasticity
-- Enforced strict constraints, output clamping, and numerical safety guards
-- Implemented Energy-Aware Adaptive Polling Engine for autonomous power efficiency
-- Added Precision-Gated I/O Control with fuzzy tolerance to minimize overhead
+- Implemented Energy-Aware Adaptive Polling Engine
 
----
+### v1.7
+- Introduced non-linear control curves (sigmoid, parabolic, logistic)
+- Added adaptive EMA filtering to suppress PSI noise
+- Introduced derived granularity for latency-aware preemption
+- Improved memory pressure handling with logistic growth
+- Implemented adaptive I/O congestion control
 
-## v1.7
-- Introduced non-linear control curves (sigmoid, parabolic, logistic, exponential)
-- Added adaptive EMA filtering to suppress PSI noise and parameter jitter
-- Applied inverse sigmoid and parabolic curves for stable CPU scheduler control
-- Introduced derived granularity for consistent, latency-aware preemption
-- Improved memory pressure handling with logistic growth and exponential decay
-- Implemented adaptive I/O congestion control and optimized queue batching
-- Added new dynamically controlled parameters
-- Introduced configurable subsystem control
-
----
-
-## v1.6
+### v1.6
 - Refactored to Continuous Dynamic Control (Linear Interpolation)
 - Implemented active CPU Scheduler Controller with burst detection
 - Added global state awareness for cross-controller optimization
-- Optimized PSI monitoring with persistent file descriptors
 - Added support for user configuration file (`config.ini`)
 
----
-
-## v1.5
+### v1.5
 - Implemented self-healing architecture with auto-recovery
 - Migrated to synchronous signal handling (signalfd)
 - Offloaded display operations to async worker threads
-- Optimized I/O with persistent file descriptors
 - Enhanced security with strict path validation
-- Added boot completion safety check
 
----
-
-## v1.4
-- Tuned kernel parameters
-- Dependency updates
-- Security hardening
-
----
-
-## v1.3
-- Optimized parameters for better balance
-- Significantly reduced background CPU usage
-- Adjusted touch boost timeout logic
-- Migrated core logic to Rust for maximum stability
-
----
-
-## v1.2
-- Refactor to context-aware FSM with hysteresis
-- Improved stability
-- Added auto-recovery & active polling
-- Added memoization for syscalls
-- Optimized kernel params
-
----
-
-## v1.1
-- Impl Event-Driven (Epoll) Arch
-- Optimized CPU & RAM Usage
-
----
-
-## v1.0
-- Adaptive Resource Control
-- Smart Memory Management
-- Intelligent I/O Scheduler
-- Dynamic Refresh Rate
-- Network Optimization
-- Kernel Optimization
-- VM Tuning
-- Enhanced Security Settings
-- Custom Boot Animation
+### v1.0 - v1.4 (Legacy / Pre-Stable)
+- **v1.4:** Tuned kernel parameters and security hardening.
+- **v1.3:** **Major Milestone:** Migrated core logic to Rust for maximum stability.
+- **v1.2:** Context-aware FSM with hysteresis and memoization.
+- **v1.0-v1.1:** Initial release with Event-Driven Epoll Architecture, Adaptive Resource Control, and Smart Memory Management.
