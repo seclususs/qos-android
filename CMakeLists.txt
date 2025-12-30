@@ -64,12 +64,12 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/controllers/memory_impl.rs
             ${RUST_CRATE_PATH}/src/controllers/signal_impl.rs
             ${RUST_CRATE_PATH}/src/controllers/storage_impl.rs
-            ${RUST_CRATE_PATH}/src/core/mod.rs
-            ${RUST_CRATE_PATH}/src/core/interfaces.rs
-            ${RUST_CRATE_PATH}/src/core/lifecycle.rs
-            ${RUST_CRATE_PATH}/src/core/logging.rs
-            ${RUST_CRATE_PATH}/src/core/state.rs
-            ${RUST_CRATE_PATH}/src/core/types.rs
+            ${RUST_CRATE_PATH}/src/daemon/mod.rs
+            ${RUST_CRATE_PATH}/src/daemon/traits.rs
+            ${RUST_CRATE_PATH}/src/daemon/runtime.rs
+            ${RUST_CRATE_PATH}/src/daemon/logging.rs
+            ${RUST_CRATE_PATH}/src/daemon/state.rs
+            ${RUST_CRATE_PATH}/src/daemon/types.rs
             ${RUST_CRATE_PATH}/src/hal/mod.rs
             ${RUST_CRATE_PATH}/src/hal/bridge.rs
             ${RUST_CRATE_PATH}/src/hal/cached_file.rs
