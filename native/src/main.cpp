@@ -34,7 +34,7 @@
  * @return int Exit code (0 for success, EXIT_FAILURE for errors).
  */
 int main(int argc, char* argv[]) {
-    LOGI("=== Daemon Starting (Smart Adaptive Mode) ===");
+    LOGI("=== Daemon Starting ===");
 
     // Make the process resilient against system pressure and termination.
     LOGI("Hardening Environment...");
@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
     
     LOGI("Handover to Rust Core...");
     
-    // Change thread affinity to Big Cores to ensure the Rust reactor runs with max performance.
+    // Finalize scheduler settings before handover
     qos::runtime::Scheduler::prepare_for_rust_handover();
     
     // Pass the signal FD to Rust. This function blocks until the service stops.
