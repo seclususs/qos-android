@@ -3,18 +3,18 @@
 *.bat text eol=crlf
 
 # Source code
-*.cpp text
-*.h text
-*.rs text
+*.cpp text eol=lf
+*.h   text eol=lf
+*.rs  text eol=lf
 
 # Configuration
-*.json text
-*.prop text
-*.toml text
+*.json text eol=lf
+*.prop text eol=lf
+*.toml text eol=lf
 
 # Text
-*.md text
-*.txt text
+*.md  text eol=lf
+*.txt text eol=lf
 
 # Magisk
 magisk-module/**/*.sh -text
