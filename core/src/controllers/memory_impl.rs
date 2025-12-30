@@ -172,16 +172,46 @@ impl MemoryController {
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let swap_u64 = self.current_swappiness.round() as u64;
-        let vfs_u64 = self.current_vfs.round() as u64;
-        let dirty_u64 = self.current_dirty.round() as u64;
-        let dbg_u64 = self.current_dirty_bg.round() as u64;
-        let expire_u64 = self.current_dirty_expire.round() as u64;
-        let stat_u64 = self.current_stat_interval.round() as u64;
-        let wm_u64 = self.current_watermark_scale.round() as u64;
-        let ext_u64 = self.current_extfrag_threshold.round() as u64;
-        let dwb_u64 = self.current_dirty_writeback.round() as u64;
-        let pc_u64 = self.current_page_cluster.round() as u64;
+        let swap_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_swappiness,
+            self.tunables.min_swappiness as u64
+        );
+        let vfs_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_vfs,
+            self.tunables.min_vfs as u64
+        );
+        let dirty_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_dirty,
+            self.tunables.max_dirty as u64
+        );
+        let dbg_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_dirty_bg,
+            self.tunables.max_dirty_bg as u64
+        );
+        let expire_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_dirty_expire,
+            self.tunables.max_dirty_expire as u64
+        );
+        let stat_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_stat_interval,
+            self.tunables.min_stat_interval as u64
+        );
+        let wm_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_watermark_scale,
+            self.tunables.min_watermark_scale as u64
+        );
+        let ext_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_extfrag_threshold,
+            self.tunables.max_extfrag_threshold as u64
+        );
+        let dwb_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_dirty_writeback,
+            self.tunables.max_dirty_writeback as u64
+        );
+        let pc_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_page_cluster,
+            self.tunables.max_page_cluster as u64
+        );
         self.swap.update(swap_u64, force, CheckStrategy::Absolute(3));
         self.vfs.update(vfs_u64, force, CheckStrategy::Absolute(10));
         self.dirty_ratio.update(dirty_u64, force, CheckStrategy::Absolute(1));

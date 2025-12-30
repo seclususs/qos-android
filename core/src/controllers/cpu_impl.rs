@@ -146,10 +146,22 @@ impl CpuController {
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let lat_u64 = self.current_latency.round() as u64;
-        let gran_u64 = self.current_min_gran.round() as u64;
-        let wake_u64 = self.current_wakeup.round() as u64;
-        let mig_u64 = self.current_migration.round() as u64;
+        let lat_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_latency,
+            self.tunables.max_latency_ns as u64
+        );
+        let gran_u64 =crate::algorithms::sanitize_to_u64(
+            self.current_min_gran,
+            self.tunables.max_granularity_ns as u64
+        );
+        let wake_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_wakeup,
+            self.tunables.max_wakeup_ns as u64
+        );
+        let mig_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_migration,
+            self.tunables.min_migration_cost as u64
+        );
         self.latency.update(lat_u64, force, CheckStrategy::Relative(0.05));
         self.min_gran.update(gran_u64, force, CheckStrategy::Relative(0.05));
         self.wakeup.update(wake_u64, force, CheckStrategy::Relative(0.10));

@@ -94,9 +94,18 @@ impl StorageController {
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let ra_u64 = self.current_read_ahead.round() as u64;
-        let nr_u64 = self.current_nr_requests.round() as u64;
-        let fifo_u64 = self.current_fifo_batch.round() as u64;
+        let ra_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_read_ahead,
+            self.tunables.max_read_ahead as u64
+        );
+        let nr_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_nr_requests,
+            self.tunables.min_nr_requests as u64
+        );
+        let fifo_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_fifo_batch,
+            self.tunables.max_fifo_batch as u64
+        );
         self.read_ahead.update(ra_u64, force, CheckStrategy::Absolute(32));
         self.nr_requests.update(nr_u64, force, CheckStrategy::Absolute(16));
         self.fifo_batch.update(fifo_u64, force, CheckStrategy::Absolute(2));

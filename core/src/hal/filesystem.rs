@@ -44,13 +44,14 @@ pub fn open_file_for_read(path: &str) -> Result<File, QosError> {
         .map_err(|e| QosError::IoError(e))
 }
 
-pub fn write_to_stream(file: &mut File, value: &str) -> Result<(), QosError> {
-    if !validate_value(value) {
-        return Err(QosError::InvalidInput(format!("Invalid characters in value: '{}'", value)));
-    }
-    let _ = file.seek(SeekFrom::Start(0));
-    let content = format!("{}\n", value);
-    file.write_all(content.as_bytes()).map_err(|e| {
+pub fn write_to_stream(file: &mut File, value: u64) -> Result<(), QosError> {
+    let mut buffer = [0u8; 24]; 
+    let mut cursor = std::io::Cursor::new(&mut buffer[..]);
+    write!(cursor, "{}\n", value).map_err(|e| QosError::IoError(e))?;
+    let len = cursor.position() as usize;
+    let valid_slice = &buffer[..len];
+    file.seek(SeekFrom::Start(0)).map_err(|e| QosError::IoError(e))?;
+    file.write_all(valid_slice).map_err(|e| {
         log::warn!("Write to stream failed: {}", e);
         QosError::IoError(e)
     })?;

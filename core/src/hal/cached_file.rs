@@ -61,7 +61,7 @@ impl CachedFile {
                 }
             };
             if needs_update {
-                if write_to_stream(file, &new_value.to_string()).is_ok() {
+                if write_to_stream(file, new_value).is_ok() {
                     self.last_value = new_value;
                 }
             }
