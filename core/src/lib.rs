@@ -1,3 +1,6 @@
+//! This file is part of QoS-Android.
+//! Licensed under the GNU GPL v3 or later.
+
 pub mod algorithms;
 pub mod bindings;
 pub mod config;

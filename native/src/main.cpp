@@ -1,10 +1,5 @@
-/**
- * @brief Entry point.
- *
- * @author Seclususs
- * @see [GitHub Repository](https://github.com/seclususs/qos-android)
- * 
- */
+// This file is part of QoS-Android.
+// Licensed under the GNU GPL v3 or later.
 
 #include "logging.h"
 #include "native_bridge.h"

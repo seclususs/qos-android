@@ -34,10 +34,10 @@
 
 ## License
 
-```text
+Copyright (C) 2025 Seclususs
+
 This project is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).  
 You are free to use, modify, and redistribute this software under the terms of the GPL.  
 
 This program comes with **NO WARRANTY**, to the extent permitted by law.  
 For full license text, see [LICENSE](LICENSE) or <https://www.gnu.org/licenses/gpl-3.0.html>.
-```
