@@ -1,10 +1,4 @@
-/**
- * @brief Implementation of resource expansion logic.
- * 
- * @author Seclususs
- * @see [GitHub Repository](https://github.com/seclususs/qos-android)
- * 
- */
+// Author: [Seclususs](https://github.com/seclususs)
 
 #include "runtime/limits.h"
 #include "logging.h"
@@ -13,33 +7,39 @@
 
 namespace qos::runtime {
 
-    void Limits::expand_resources() {
-        struct rlimit rl;
+void Limits::expand_resources() {
+  struct rlimit rl;
 
-        // 1. Expand File Descriptors (FDs)
-        if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
-            rl.rlim_cur = rl.rlim_max; // Set soft limit to hard limit
-            if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
-                LOGE("Limits: Failed to maximize FD limit.");
-            } else {
-                LOGD("Limits: FD limit expanded to %lu", rl.rlim_cur);
-            }
-        }
+  // 1. Maximize File Descriptors
+  // We set the soft limit equal to the hard limit to ensure we can
+  // open all required PSI monitors and control files without hitting
+  // the default (often low) limit.
+  if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
+    rl.rlim_cur = rl.rlim_max;
+    if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
+      LOGE("Limits: Failed to maximize FD limit.");
+    } else {
+      LOGD("Limits: FD limit expanded to %lu", rl.rlim_cur);
+    }
+  }
 
-        // 2. Expand Stack Size
-        if (getrlimit(RLIMIT_STACK, &rl) == 0) {
-            // Target 16MB stack, ensuring we don't exceed the hard limit.
-            rlim_t target = 16 * 1024 * 1024;
-            if (rl.rlim_max != RLIM_INFINITY && target > rl.rlim_max) {
-                target = rl.rlim_max;
-            }
-            rl.rlim_cur = target;
-            if (setrlimit(RLIMIT_STACK, &rl) != 0) {
-                LOGE("Limits: Failed to expand Stack.");
-            } else {
-                LOGD("Limits: Stack expanded to %lu bytes", rl.rlim_cur);
-            }
-        }
+  // 2. Expand Stack Size
+  // We aim for a 16MB stack to provide ample headroom.
+  if (getrlimit(RLIMIT_STACK, &rl) == 0) {
+    rlim_t target = 16 * 1024 * 1024; // 16MB
+
+    // Respect the hard limit if it's lower than our target.
+    if (rl.rlim_max != RLIM_INFINITY && target > rl.rlim_max) {
+      target = rl.rlim_max;
     }
 
+    rl.rlim_cur = target;
+    if (setrlimit(RLIMIT_STACK, &rl) != 0) {
+      LOGE("Limits: Failed to expand Stack.");
+    } else {
+      LOGD("Limits: Stack expanded to %lu bytes", rl.rlim_cur);
+    }
+  }
 }
+
+} // namespace qos::runtime

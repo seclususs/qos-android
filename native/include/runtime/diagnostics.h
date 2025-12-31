@@ -1,37 +1,43 @@
 /**
- * @brief Diagnostic tools for kernel feature verification.
- * 
+ * @file diagnostics.h
+ * @brief System capability analysis tools.
+ *
+ * This header defines structures and classes used to introspect the
+ * kernel and runtime environment to determine feature availability.
+ *
  * @author Seclususs
  * @see [GitHub Repository](https://github.com/seclususs/qos-android)
- * 
  */
 
 #pragma once
 
 namespace qos::runtime {
 
-    /**
-     * @brief Structure to report available kernel features.
-     */
-    struct KernelFeatures {
-        bool has_cpu_psi;   ///< Is /proc/pressure/cpu available?
-        bool has_mem_psi;   ///< Is /proc/pressure/memory available?
-        bool has_io_psi;    ///< Is /proc/pressure/io available?
-    };
+/**
+ * @brief Represents the availability of Pressure Stall Information (PSI)
+ * interfaces.
+ */
+struct KernelFeatures {
+  bool has_cpu_psi; ///< True if /proc/pressure/cpu is readable.
+  bool has_mem_psi; ///< True if /proc/pressure/memory is readable.
+  bool has_io_psi;  ///< True if /proc/pressure/io is readable.
+};
 
-    /**
-     * @brief Handling system compatibility checks.
-     */
-    class Diagnostics {
-    public:
-        /**
-         * @brief Scans the kernel environment for supported features.
-         * Instead of returning a simple boolean, this provides a detailed
-         * report of which Pressure Stall Information (PSI) interfaces 
-         * are actually usable.
-         * @return KernelFeatures A struct containing flags for each feature.
-         */
-        static KernelFeatures check_kernel_features();
-    };
+/**
+ * @brief Provides static methods for environment verification.
+ */
+class Diagnostics {
+public:
+  /**
+   * @brief Scans the filesystem to detect supported kernel features.
+   *
+   * Checks for the existence and accessibility of PSI interfaces. This
+   * allows the daemon to degrade gracefully on kernels that do not support
+   * specific pressure metrics.
+   *
+   * @return A filled KernelFeatures structure indicating available subsystems.
+   */
+  static KernelFeatures check_kernel_features();
+};
 
-}
+} // namespace qos::runtime

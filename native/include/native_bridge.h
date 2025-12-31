@@ -1,12 +1,13 @@
 /**
- * @brief C ABI boundary between the C++ Daemon/JNI layer and the Rust logic library.
+ * @file native_bridge.h
+ * @brief ABI boundary declaration for the Native-to-Core interface.
  *
- * This file defines the contract for FFI (Foreign Function Interface).
- * It uses standard C types to ensure ABI compatibility.
- * 
+ * This header defines the C linkage functions used to interoperate between
+ * the C++ runtime environment and the core logic library. It strictly uses
+ * standard C types to maintain ABI compatibility across the language boundary.
+ *
  * @author Seclususs
  * @see [GitHub Repository](https://github.com/seclususs/qos-android)
- * 
  */
 
 #ifndef NATIVE_BRIDGE_H
@@ -19,102 +20,142 @@ extern "C" {
 #endif
 
 // -----------------------------------------------------------------------------
-// Rust -> C++ Calls (Downcalls)
+// Core Library Entry Points (Downcalls: C++ calls Rust)
 // -----------------------------------------------------------------------------
 
 /**
- * @brief Controls the lifecycle of the CPU Congestion Controller.
+ * @brief Configures the enabled state of the CPU Controller service.
  *
- * Updates the atomic state in the Rust layer to enable or disable 
- * dynamic CPU scheduling adjustments based on Pressure Stall Information (PSI).
+ * Updates the configuration state for the CPU pressure monitor.
+ * This operation is thread-safe and the new state takes effect immediately
+ * for the next polling cycle.
  *
- * @param enabled Set to true to activate the controller, false to pause/disable it.
+ * @param[in] enabled True to enable the service, false to disable.
  */
 void rust_set_cpu_service_enabled(bool enabled);
 
 /**
- * @brief Controls the lifecycle of the Memory Management Controller.
+ * @brief Configures the enabled state of the Memory Controller service.
  *
- * Updates the atomic state in the Rust layer to enable or disable 
- * dynamic virtual memory tuning (swappiness, cache pressure, etc.).
+ * Updates the configuration state for the Memory pressure monitor.
+ * This operation is thread-safe and the new state takes effect immediately
+ * for the next polling cycle.
  *
- * @param enabled Set to true to activate the controller, false to pause/disable it.
+ * @param[in] enabled True to enable the service, false to disable.
  */
 void rust_set_memory_service_enabled(bool enabled);
 
 /**
- * @brief Controls the lifecycle of the Storage I/O Controller.
+ * @brief Configures the enabled state of the Storage Controller service.
  *
- * Updates the atomic state in the Rust layer to enable or disable 
- * dynamic I/O scheduler tuning (read-ahead, request queues) based on I/O pressure.
+ * Updates the configuration state for the Storage/IO pressure monitor.
+ * This operation is thread-safe and the new state takes effect immediately
+ * for the next polling cycle.
  *
- * @param enabled Set to true to activate the controller, false to pause/disable it.
+ * @param[in] enabled True to enable the service, false to disable.
  */
 void rust_set_storage_service_enabled(bool enabled);
 
 /**
- * @brief Toggles the application of static System Tweaks.
+ * @brief Configures the enabled state of the System Tweaks module.
  *
- * Updates the atomic configuration in the Rust layer. If enabled, static
- * sysctl and property tweaks will be applied upon service startup.
+ * Determines whether boot-time optimizations (sysctl/prop) should be applied.
  *
- * @param enabled Set to true to apply tweaks on start, false to skip.
+ * @note This configuration is read only once during the service startup
+ *       sequence. Changes made after `rust_start_services` is called may 
+ *       have no effect.
+ *
+ * @param[in] enabled True to apply tweaks, false to skip.
  */
 void rust_set_tweaks_enabled(bool enabled);
 
 /**
- * @brief Initializes and starts the Rust event loop.
+ * @brief Initializes and starts the core service reactor in a background
+ * thread.
  *
- * This function passes control to the Rust runtime. It typically spawns
- * worker threads and prepares the reactor for event handling.
+ * This function initializes the logging subsystem and spawns the main event
+ * loop thread. It blocks only until initialization is complete (handshake
+ * received). Use rust_join_threads() to wait for the service to terminate.
  *
- * @param signal_fd A file descriptor created via signalfd() to handle Unix signals.
- * @return 0 on success, non-zero error code on failure.
+ * @param[in] signal_fd A valid file descriptor (created via signalfd) used to
+ *                      receive asynchronous POSIX signals within the event loop. 
+ *                      Must be a valid, readable file descriptor.
+ *
+ * @return 0 on successful initialization, non-zero on failure or timeout.
  */
 int rust_start_services(int signal_fd);
 
 /**
- * @brief Blocks the calling thread until all Rust services have shut down.
+ * @brief Waits for the core service threads to terminate.
  *
- * Designed to be called from main() to prevent the process from exiting
- * while background threads are still active.
+ * This function blocks the calling thread until the main thread of the
+ * core library has joined. It ensures that the process does not exit
+ * prematurely while services are cleaning up.
  */
 void rust_join_threads(void);
 
 // -----------------------------------------------------------------------------
-// C++ -> Rust Callbacks (Upcalls)
+// Native Runtime Callbacks (Upcalls: Rust calls C++)
 // -----------------------------------------------------------------------------
 
 /**
- * @brief Notifies the native layer that a service has encountered a fatal error.
- * @param context Null-terminated string describing the failure reason.
+ * @brief Reports a critical service failure to the native runtime.
+ *
+ * This callback allows the core library to log fatal errors via the
+ * Android logging system before initiating a shutdown.
+ *
+ * @param[in] context A null-terminated C string describing the error context.
+ *                    If NULL, a default "Unknown Reason" message is used.
  */
-void cpp_notify_service_death(const char* context);
+void cpp_notify_service_death(const char *context);
 
 /**
  * @brief Registers a Pressure Stall Information (PSI) trigger with the kernel.
  *
- * @param path Path to the PSI file (e.g., "/proc/pressure/memory").
- * @param threshold_us Stall threshold in microseconds.
- * @param window_us Window size in microseconds.
- * @return A valid file descriptor on success, or -1 on failure with errno set.
+ * This function handles the low-level file I/O required to register a
+ * pollable trigger with the Linux kernel's PSI interface.
  *
- * @note The returned FD must be polled (epoll/select) for readable events.
+ * @param[in] path         The filesystem path to the PSI resource (e.g.,
+ *                         "/proc/pressure/cpu"). Must not be NULL.
+ * @param[in] threshold_us The stall threshold in microseconds.
+ * @param[in] window_us    The monitoring window size in microseconds.
+ *
+ * @return A valid file descriptor (>= 0) on success.
+ * @return -1 on failure. In this case, `errno` is set to indicate the specific
+ *         error (e.g., `EINVAL` if path is null, `EACCES` if permission denied).
+ *
+ * @note The returned file descriptor ownership is transferred to the caller
+ *       and must be managed (closed) by the caller.
  */
-int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us);
+int cpp_register_psi_trigger(const char *path, int threshold_us, int window_us);
 
 /**
  * @brief Sets an Android system property.
- * @return 0 on success, -1 on failure.
+ *
+ * Wrapper around the Android system property API.
+ *
+ * @param[in] key   The property key string. Must not be NULL.
+ * @param[in] value The property value string. Must not be NULL.
+ *
+ * @return 0 on success.
+ * @return -1 on failure. If the underlying API fails without setting `errno`,
+ *         this wrapper sets `errno` to `EACCES` by default.
  */
-int cpp_set_system_property(const char* key, const char* value);
+int cpp_set_system_property(const char *key, const char *value);
 
 /**
  * @brief Retrieves an Android system property.
- * @param max_len Size of the output buffer.
- * @return Length of the string copied, or -1 on error.
+ *
+ * Wrapper around the Android system property API.
+ *
+ * @param[in]  key     The property key string. Must not be NULL.
+ * @param[out] value   Buffer to store the retrieved value. Must not be NULL.
+ * @param[in]  max_len Size of the buffer in bytes.
+ *
+ * @return The length of the retrieved value on success.
+ * @return -1 on failure (e.g., if inputs are invalid).
  */
-int cpp_get_system_property(const char* key, char* value, size_t max_len);
+int cpp_get_system_property(const char *key, char *value, size_t max_len);
 
 #ifdef __cplusplus
 }
