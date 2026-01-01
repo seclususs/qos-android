@@ -37,6 +37,10 @@ pub fn get_file_tweaks() -> Vec<FileTweak> {
             value: "0",
         },
         FileTweak {
+            path: "/proc/sys/kernel/sched_tunable_scaling",
+            value: "1",
+        },
+        FileTweak {
             path: "/proc/sys/kernel/pid_max",
             value: "65536",
         },
@@ -87,6 +91,10 @@ pub fn get_file_tweaks() -> Vec<FileTweak> {
         FileTweak {
             path: "/sys/block/mmcblk0/queue/scheduler",
             value: "deadline",
+        },
+        FileTweak {
+            path: "/sys/block/zram0/max_comp_streams",
+            value: "8",
         },
         FileTweak {
             path: "/proc/sys/net/ipv4/tcp_notsent_lowat",
@@ -151,6 +159,10 @@ pub fn get_file_tweaks() -> Vec<FileTweak> {
         FileTweak {
             path: "/proc/sys/net/ipv4/tcp_congestion_control",
             value: "westwood",
+        },
+        FileTweak {
+            path: "/proc/sys/debug/exception-trace",
+            value: "0",
         },
     ]
 }

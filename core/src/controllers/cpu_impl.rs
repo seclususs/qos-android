@@ -25,6 +25,9 @@ pub struct CpuController {
     min_gran: CachedFile,
     wakeup: CachedFile,
     migration: CachedFile,
+    nr_migrate: CachedFile,
+    walt_init: CachedFile,
+    uclamp_min: CachedFile,
     psi_monitor: PsiMonitor,
     thermal_manager: ThermalManager,
     thermal_tunables: ThermalTunables,
@@ -34,7 +37,11 @@ pub struct CpuController {
     current_min_gran: f64,
     current_wakeup: f64,
     current_migration: f64,
+    current_nr_migrate: f64,
+    current_walt_init: f64,
+    current_uclamp_min: f64,
     prev_impulse_smooth: f64,
+    prev_kinetic_urgency: f64,
     tunables: CpuTunables,
     poller: AdaptivePoller,
     next_wake_ms: i32,
@@ -59,8 +66,20 @@ impl CpuController {
             filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(),
             0,
         );
+        let nr_migrate = CachedFile::new_opt(
+            filesystem::open_file_for_write(K_SCHED_NR_MIGRATE).ok(),
+            MAX_NR_MIGRATE,
+        );
+        let walt_init = CachedFile::new_opt(
+            filesystem::open_file_for_write(K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
+            MIN_WALT_INIT_PCT,
+        );
+        let uclamp_min = CachedFile::new_opt(
+            filesystem::open_file_for_write(K_SCHED_UCLAMP_UTIL_MIN).ok(),
+            MIN_UCLAMP_MIN,
+        );
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
-        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 70.0);
+        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 60.0);
         let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
         let tunables = CpuTunables {
             min_latency_ns: MIN_LATENCY_NS as f64,
@@ -71,30 +90,42 @@ impl CpuController {
             max_wakeup_ns: MAX_WAKEUP_NS as f64,
             min_migration_cost: MIN_MIGRATION_COST as f64,
             max_migration_cost: MAX_MIGRATION_COST as f64,
-            trend_factor: 0.2,
+            min_nr_migrate: MIN_NR_MIGRATE as f64,
+            max_nr_migrate: MAX_NR_MIGRATE as f64,
+            min_walt_init_pct: MIN_WALT_INIT_PCT as f64,
+            max_walt_init_pct: MAX_WALT_INIT_PCT as f64,
+            min_uclamp_min: MIN_UCLAMP_MIN as f64,
+            max_uclamp_min: MAX_UCLAMP_MIN as f64,
+            nr_migrate_k: 0.15,
+            uclamp_k: 0.35,
+            uclamp_mid: 45.0,
+            trend_factor: 0.3,
             alpha_smooth: 0.5,
-            burst_threshold: 25.0,
-            sigmoid_k: 0.15,
-            sigmoid_mid: 20.0,
-            decay_coeff: 0.05,
+            kinetic_k: 2.0,
+            kinetic_scaling_factor: 45.0,
+            kinetic_attack: 0.90,
+            kinetic_decay: 0.15,
+            sigmoid_k: 0.20,
+            sigmoid_mid: 25.0,
+            decay_coeff: 0.08,
             latency_gran_ratio: 0.75,
             memory_migration_alpha: 1.0,
             memory_granularity_scaling: 0.6,
             memory_burst_penalty: 1.0,
         };
         let thermal_tunables = ThermalTunables {
-            pid_kp: 0.06,
-            pid_ki: 0.002,
+            pid_kp: 0.075,
+            pid_ki: 0.003,
             pid_kd: 0.22,
-            target_headroom: 30.0,
-            hard_limit_cpu: 70.0,
+            target_headroom: 20.0,
+            hard_limit_cpu: 60.0,
             hard_limit_bat: 40.0,
-            leakage_k: 0.12,
-            leakage_start_temp: 58.0,
-            bucket_capacity: 450.0,
-            bucket_leak_base: 6.0,
-            psi_threshold: 30.0,
-            psi_strength: 0.2,
+            leakage_k: 0.15,
+            leakage_start_temp: 50.0,
+            bucket_capacity: 400.0,
+            bucket_leak_base: 5.0,
+            psi_threshold: 20.0,
+            psi_strength: 0.40,
         };
         let thermal_manager = ThermalManager::new();
         let poller = AdaptivePoller::new(1.0, 2.5);
@@ -104,6 +135,9 @@ impl CpuController {
             min_gran,
             wakeup,
             migration,
+            nr_migrate,
+            walt_init,
+            uclamp_min,
             psi_monitor,
             thermal_manager,
             thermal_tunables,
@@ -113,7 +147,11 @@ impl CpuController {
             current_min_gran: MIN_GRANULARITY_NS as f64,
             current_wakeup: MIN_WAKEUP_NS as f64,
             current_migration: MIN_MIGRATION_COST as f64,
+            current_nr_migrate: MAX_NR_MIGRATE as f64,
+            current_walt_init: MIN_WALT_INIT_PCT as f64,
+            current_uclamp_min: MIN_UCLAMP_MIN as f64,
             prev_impulse_smooth: 0.0,
+            prev_kinetic_urgency: 0.0,
             tunables,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
@@ -133,48 +171,76 @@ impl CpuController {
                 .update(cpu_temp, bat_temp, raw_p, &self.thermal_tunables);
         let trend_gain =
             cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
-        let p_eff = raw_p * trend_gain * damping_factor;
+        let p_eff = raw_p * trend_gain;
         update_cpu_pressure(p_eff);
         self.next_wake_ms = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
+        let kinetic_urgency = cpu_math::calculate_kinetic_urgency(
+            some.current,
+            some.avg10,
+            self.prev_kinetic_urgency,
+            &self.tunables,
+        );
+        self.prev_kinetic_urgency = kinetic_urgency;
+        let thermal_floor_ns = cpu_math::calculate_thermal_floor(damping_factor, &self.tunables);
+        let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(
+            p_eff,
+            kinetic_urgency,
+            thermal_floor_ns,
+            memory_psi,
+            &self.tunables,
+        );
         let delta_raw = some.current - some.avg10;
         let delta_smooth =
             cpu_math::smooth_delta(delta_raw, self.prev_impulse_smooth, &self.tunables);
         self.prev_impulse_smooth = delta_smooth;
         let target_migration =
             cpu_math::calculate_migration_cost(delta_smooth, p_eff, memory_psi, &self.tunables);
-        let thermal_floor = cpu_math::calculate_thermal_floor(some.avg60, &self.tunables);
-        let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(
-            p_eff,
-            some.avg10,
-            some.avg300,
-            thermal_floor,
-            memory_psi,
-            &self.tunables,
-        );
         let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
+        let target_nr_migrate = cpu_math::calculate_nr_migrate(p_eff, &self.tunables);
+        let target_walt_init = cpu_math::calculate_walt_init(p_eff, &self.tunables);
+        let target_uclamp = cpu_math::calculate_uclamp_min(p_eff, damping_factor, &self.tunables);
         self.current_latency = target_latency;
         self.current_min_gran = target_min_gran;
         self.current_wakeup = target_wakeup;
         self.current_migration = target_migration;
+        self.current_nr_migrate = target_nr_migrate;
+        self.current_walt_init = target_walt_init;
+        self.current_uclamp_min = target_uclamp;
         self.apply_values(false);
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let lat_u64 = crate::algorithms::sanitize_to_u64(
+        let lat_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_latency,
             self.tunables.max_latency_ns as u64,
+            50_000,
         );
-        let gran_u64 = crate::algorithms::sanitize_to_u64(
+        let gran_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_min_gran,
             self.tunables.max_granularity_ns as u64,
+            50_000,
         );
-        let wake_u64 = crate::algorithms::sanitize_to_u64(
+        let wake_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_wakeup,
             self.tunables.max_wakeup_ns as u64,
+            50_000,
         );
-        let mig_u64 = crate::algorithms::sanitize_to_u64(
+        let mig_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_migration,
             self.tunables.min_migration_cost as u64,
+            50_000,
+        );
+        let nr_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_nr_migrate,
+            self.tunables.min_nr_migrate as u64,
+        );
+        let walt_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_walt_init,
+            self.tunables.min_walt_init_pct as u64,
+        );
+        let uclamp_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_uclamp_min,
+            self.tunables.min_uclamp_min as u64,
         );
         self.latency
             .update(lat_u64, force, CheckStrategy::Relative(0.05));
@@ -183,7 +249,13 @@ impl CpuController {
         self.wakeup
             .update(wake_u64, force, CheckStrategy::Relative(0.10));
         self.migration
-            .update(mig_u64, force, CheckStrategy::Absolute(10000));
+            .update(mig_u64, force, CheckStrategy::Absolute(50000));
+        self.nr_migrate
+            .update(nr_u64, force, CheckStrategy::Absolute(2));
+        self.walt_init
+            .update(walt_u64, force, CheckStrategy::Absolute(3));
+        self.uclamp_min
+            .update(uclamp_u64, force, CheckStrategy::Absolute(32));
     }
 }
 

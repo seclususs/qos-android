@@ -1,13 +1,19 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 pub const MIN_LATENCY_NS: u64 = 8_000_000;
-pub const MAX_LATENCY_NS: u64 = 16_000_000;
+pub const MAX_LATENCY_NS: u64 = 24_000_000;
 pub const MIN_GRANULARITY_NS: u64 = 6_000_000;
-pub const MAX_GRANULARITY_NS: u64 = 12_000_000;
+pub const MAX_GRANULARITY_NS: u64 = 18_000_000;
 pub const MIN_WAKEUP_NS: u64 = 3_000_000;
 pub const MAX_WAKEUP_NS: u64 = 6_000_000;
 pub const MIN_MIGRATION_COST: u64 = 200_000;
-pub const MAX_MIGRATION_COST: u64 = 400_000;
+pub const MAX_MIGRATION_COST: u64 = 600_000;
+pub const MIN_NR_MIGRATE: u64 = 8;
+pub const MAX_NR_MIGRATE: u64 = 32;
+pub const MIN_WALT_INIT_PCT: u64 = 15;
+pub const MAX_WALT_INIT_PCT: u64 = 45;
+pub const MIN_UCLAMP_MIN: u64 = 0;
+pub const MAX_UCLAMP_MIN: u64 = 256;
 
 pub const MIN_SWAPPINESS: u64 = 20;
 pub const MAX_SWAPPINESS: u64 = 60;

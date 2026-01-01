@@ -49,11 +49,11 @@ impl StorageController {
             max_nr_requests: MAX_NR_REQUESTS as f64,
             min_fifo_batch: MIN_FIFO_BATCH as f64,
             max_fifo_batch: MAX_FIFO_BATCH as f64,
-            io_sat_beta: 2.5,
+            io_sat_beta: 3.0,
             epsilon: 0.01,
-            io_read_ahead_threshold: 6.0,
-            io_scaling_factor: 20.0,
-            io_tactical_multiplier: 2.0,
+            io_read_ahead_threshold: 10.0,
+            io_scaling_factor: 25.0,
+            io_tactical_multiplier: 4.0,
         };
         let poller = AdaptivePoller::new(1.0, 1.0);
         let mut controller = Self {
@@ -99,13 +99,15 @@ impl StorageController {
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let ra_u64 = crate::algorithms::sanitize_to_u64(
+        let ra_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_read_ahead,
             self.tunables.max_read_ahead as u64,
+            32,
         );
-        let nr_u64 = crate::algorithms::sanitize_to_u64(
+        let nr_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_nr_requests,
             self.tunables.min_nr_requests as u64,
+            16,
         );
         let fifo_u64 = crate::algorithms::sanitize_to_u64(
             self.current_fifo_batch,
