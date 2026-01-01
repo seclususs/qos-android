@@ -50,7 +50,7 @@ public:
   /**
    * @brief Limits CPU utilization via UClamp.
    *
-   * Applies a utilization clamp (approx 15%) to the process. This prevents
+   * Applies a utilization clamp (approx 10%) to the process. This prevents
    * the scheduler from ramping up the frequency for this daemon, ensuring
    * it remains on low-power operating points even during activity bursts.
    */

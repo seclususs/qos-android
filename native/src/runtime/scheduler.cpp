@@ -119,10 +119,10 @@ void Scheduler::limit_cpu_utilization() {
   attr.sched_flags = SCHED_FLAG_KEEP_POLICY | SCHED_FLAG_UTIL_CLAMP_MAX;
 
   // UClamp value range is 0 - 1024.
-  // 102 corresponds to approx 15% of max capacity.
+  // 102 corresponds to approx 10% of max capacity.
   // This prevents the scheduler from selecting high-frequency OPPs for this
   // task.
-  attr.sched_util_max = 154;
+  attr.sched_util_max = 102;
 
   // Apply to the current thread (PID 0).
   if (sched_setattr(0, &attr, 0) == -1) {
