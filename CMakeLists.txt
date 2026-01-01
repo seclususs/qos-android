@@ -97,21 +97,21 @@ file(GLOB_RECURSE CPP_HEADERS CONFIGURE_DEPENDS "${NATIVE_INCLUDE_DIR}/*.h")
 set(LIB_CPP_SOURCES ${ALL_CPP_SOURCES})
 list(REMOVE_ITEM LIB_CPP_SOURCES "${NATIVE_SRC_DIR}/main.cpp")
 
-add_library(qos_native_lib
+add_library(qos_native
     STATIC
     ${LIB_CPP_SOURCES}
     ${CPP_HEADERS}
 )
 
-set_target_properties(qos_native_lib PROPERTIES
+set_target_properties(qos_native PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )
 
-target_include_directories(qos_native_lib PUBLIC ${NATIVE_INCLUDE_DIR})
+target_include_directories(qos_native PUBLIC ${NATIVE_INCLUDE_DIR})
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_definitions(qos_native_lib PUBLIC DEBUG)
+    target_compile_definitions(qos_native PUBLIC DEBUG)
 endif()
 
 add_executable(qos_daemon
@@ -121,7 +121,7 @@ add_executable(qos_daemon
 add_dependencies(qos_daemon RustLib)
 
 target_link_libraries(qos_daemon
-    qos_native_lib
+    qos_native
     ${RUST_STATIC_LIB}
     android
     log
