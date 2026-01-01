@@ -14,7 +14,7 @@ use crate::hal::bridge::notify_service_death;
 
 use std::sync::atomic::Ordering;
 use std::sync::{Mutex, mpsc};
-use std::thread::{self, JoinHandle};
+use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
 
 static MAIN_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
@@ -40,8 +40,12 @@ pub extern "C" fn rust_set_tweaks_enabled(enabled: bool) {
 }
 
 /// # Safety
-/// This function is the entry point for the C++ library to start the Rust services.
-/// It expects a valid signal file descriptor.
+/// Initializes the Rust runtime and starts background services.
+/// # Requirements
+/// * `signal_fd` must be a valid, open file descriptor.
+/// * **Ownership Transfer**: The ownership of `signal_fd` is transferred to Rust.
+///   The C++ caller must NOT close or use this FD after calling this function,
+///   as Rust will close it upon shutdown.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
     {
@@ -68,54 +72,62 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
             "Rust: Service entry point reached. Signal FD: {}",
             signal_fd
         );
-        thread::spawn(|| {
-            if !TWEAKS_ENABLED.load(Ordering::Acquire) {
-                log::info!("Rust: System Tweaks are DISABLED by config.");
-                return;
-            }
-            runtime::wait_for_boot_completion("Tweaker");
-            if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
-                return;
-            }
-            runtime::apply_system_tweaks();
-        });
+        Builder::new()
+            .name("Tweaks".into())
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                if !TWEAKS_ENABLED.load(Ordering::Acquire) {
+                    log::info!("Rust: System Tweaks are DISABLED by config.");
+                    return;
+                }
+                runtime::wait_for_boot_completion("Tweaker");
+                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                    return;
+                }
+                runtime::apply_system_tweaks();
+            })
+            .expect("Failed to spawn Tweaks thread");
         SHUTDOWN_REQUESTED.store(false, Ordering::Release);
-        let handle = thread::spawn(move || {
-            if let Err(e) = tx.send(()) {
-                log::error!("Rust: Failed to send handshake: {}.", e);
-            }
-            runtime::wait_for_boot_completion("MainLoop");
-            if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
-                return;
-            }
-            log::info!("Rust: Constructing Service Vector...");
-            let mut services = Vec::new();
-            services.push(RecoverableService::new("Signal", move || {
-                Ok(Box::new(SignalController::new(signal_fd)))
-            }));
-            if MEMORY_SERVICE_ENABLED.load(Ordering::Acquire) {
-                services.push(RecoverableService::new("Memory", || {
-                    Ok(Box::new(MemoryController::new()?))
+        let handle = Builder::new()
+            .name("MainLoop".into())
+            .stack_size(1024 * 1024)
+            .spawn(move || {
+                if let Err(e) = tx.send(()) {
+                    log::error!("Rust: Failed to send handshake: {}.", e);
+                }
+                runtime::wait_for_boot_completion("MainLoop");
+                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                    return;
+                }
+                log::info!("Rust: Constructing Service Vector...");
+                let mut services = Vec::new();
+                services.push(RecoverableService::new("Signal", move || {
+                    Ok(Box::new(unsafe { SignalController::new(signal_fd) }))
                 }));
-            }
-            if STORAGE_SERVICE_ENABLED.load(Ordering::Acquire) {
-                services.push(RecoverableService::new("Storage", || {
-                    Ok(Box::new(StorageController::new()?))
-                }));
-            }
-            if CPU_SERVICE_ENABLED.load(Ordering::Acquire) {
-                services.push(RecoverableService::new("CPU", || {
-                    Ok(Box::new(CpuController::new()?))
-                }));
-            }
-            log::info!(
-                "Rust: Initializing Event Loop with {} services...",
-                services.len()
-            );
-            if let Err(e) = runtime::run_event_loop(services) {
-                log::error!("Fatal error in event loop: {}", e);
-            }
-        });
+                if MEMORY_SERVICE_ENABLED.load(Ordering::Acquire) {
+                    services.push(RecoverableService::new("Memory", || {
+                        Ok(Box::new(MemoryController::new()?))
+                    }));
+                }
+                if STORAGE_SERVICE_ENABLED.load(Ordering::Acquire) {
+                    services.push(RecoverableService::new("Storage", || {
+                        Ok(Box::new(StorageController::new()?))
+                    }));
+                }
+                if CPU_SERVICE_ENABLED.load(Ordering::Acquire) {
+                    services.push(RecoverableService::new("CPU", || {
+                        Ok(Box::new(CpuController::new()?))
+                    }));
+                }
+                log::info!(
+                    "Rust: Initializing Event Loop with {} services...",
+                    services.len()
+                );
+                if let Err(e) = runtime::run_event_loop(services) {
+                    log::error!("Fatal error in event loop: {}", e);
+                }
+            })
+            .expect("Failed to spawn MainLoop thread");
         match MAIN_THREAD.lock() {
             Ok(mut guard) => *guard = Some(handle),
             Err(poisoned) => *poisoned.into_inner() = Some(handle),
@@ -136,7 +148,10 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
 }
 
 /// # Safety
-/// This function joins the main thread. It is unsafe because it assumes the thread handle exists.
+/// Joins the main event loop thread.
+/// The caller must ensure that this function is **not** called from within the
+/// Rust background thread itself (e.g., via a callback), as attempting to
+/// join the current thread will result in a deadlock or panic.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_join_threads() {
     log::info!("Rust: C++ requested join threads.");

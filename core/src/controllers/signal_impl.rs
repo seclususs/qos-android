@@ -14,11 +14,13 @@ pub struct SignalController {
 }
 
 impl SignalController {
-    pub fn new(fd: RawFd) -> Self {
-        unsafe {
-            Self {
-                file: File::from_raw_fd(fd),
-            }
+    /// # Safety
+    /// The caller must ensure that `fd` is a valid, open file descriptor that
+    /// this process has ownership of. The `SignalController` will take ownership
+    /// of this FD and close it when dropped.
+    pub unsafe fn new(fd: RawFd) -> Self {
+        Self {
+            file: unsafe { File::from_raw_fd(fd) },
         }
     }
 }
