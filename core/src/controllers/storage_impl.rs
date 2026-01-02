@@ -1,11 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::algorithms::storage_math::{
-    StorageTunables, calculate_fifo_batch, calculate_io_deltas, calculate_next_queue_depth,
-    calculate_read_ahead, calculate_target_latency, calculate_weighted_throughput,
-    should_update_nr_requests,
-};
+use crate::algorithms::storage_math::{self, StorageTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
 use crate::daemon::state::{update_io_pressure, update_io_saturation};
@@ -92,13 +88,15 @@ impl StorageController {
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64();
         let dt_safe = dt.max(0.001);
-        let delta = calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_safe);
+        let delta =
+            storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_safe);
         self.prev_io_stats = current_io_stats;
         self.last_tick = now;
         update_io_pressure(psi_data.some.avg10);
         update_io_saturation(current_io_stats.in_flight as f64);
-        let lambda_eff = calculate_weighted_throughput(&delta, &self.tunables);
-        let target_latency = calculate_target_latency(psi_data.some.avg10, &self.tunables);
+        let lambda_eff = storage_math::calculate_weighted_throughput(&delta, &self.tunables);
+        let target_latency =
+            storage_math::calculate_target_latency(psi_data.some.avg10, &self.tunables);
         let current_latency = if delta.service_time_ms > 0.0 {
             delta.service_time_ms
         } else if lambda_eff > 0.0 {
@@ -106,7 +104,7 @@ impl StorageController {
         } else {
             0.0
         };
-        let calculated_nr = calculate_next_queue_depth(
+        let calculated_nr = storage_math::calculate_next_queue_depth(
             lambda_eff,
             current_latency,
             target_latency,
@@ -114,12 +112,20 @@ impl StorageController {
             psi_data.full.avg10,
             &self.tunables,
         );
-        let calculated_ra =
-            calculate_read_ahead(delta.throughput_read, psi_data.some.avg10, &self.tunables);
-        if should_update_nr_requests(calculated_nr, self.current_nr_requests, &self.tunables) {
+        let calculated_ra = storage_math::calculate_read_ahead(
+            delta.throughput_read,
+            psi_data.some.avg10,
+            &self.tunables,
+        );
+        if storage_math::should_update_nr_requests(
+            calculated_nr,
+            self.current_nr_requests,
+            &self.tunables,
+        ) {
             self.current_nr_requests = calculated_nr;
         }
-        let calculated_fifo = calculate_fifo_batch(self.current_nr_requests, &self.tunables);
+        let calculated_fifo =
+            storage_math::calculate_fifo_batch(self.current_nr_requests, &self.tunables);
         self.current_read_ahead = calculated_ra;
         self.current_fifo_batch = calculated_fifo;
         if psi_data.some.avg10 > 10.0 || current_io_stats.in_flight > 4 {
