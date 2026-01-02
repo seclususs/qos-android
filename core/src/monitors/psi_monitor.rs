@@ -1,5 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::algorithms::kalman_math::{KalmanConfig, KalmanFilter};
 use crate::daemon::types::QosError;
 use crate::hal::filesystem::open_file_for_read;
 
@@ -43,11 +44,18 @@ pub struct PsiMonitor {
     last_some_total: u64,
     last_full_total: u64,
     first_run: bool,
+    filter_some: KalmanFilter,
+    filter_full: KalmanFilter,
 }
 
 impl PsiMonitor {
     pub fn new(path: &str) -> Result<Self, QosError> {
         let file = open_file_for_read(path)?;
+        let config = KalmanConfig {
+            q_base: 2.0,
+            r_base: 10.0,
+            fading_factor: 1.05,
+        };
         Ok(Self {
             file,
             buffer: [0u8; BUFFER_SIZE],
@@ -55,6 +63,8 @@ impl PsiMonitor {
             last_some_total: 0,
             last_full_total: 0,
             first_run: true,
+            filter_some: KalmanFilter::new(config),
+            filter_full: KalmanFilter::new(config),
         })
     }
     pub fn read_state(&mut self) -> Result<PsiData, QosError> {
@@ -71,12 +81,18 @@ impl PsiMonitor {
         let content = std::str::from_utf8(&self.buffer[..bytes_read])
             .map_err(|_| QosError::PsiParseError("Invalid UTF-8".to_string()))?;
         let now = Instant::now();
+        let elapsed_duration = now.duration_since(self.last_read_time);
+        let dt_sec = if self.first_run {
+            1.0
+        } else {
+            elapsed_duration.as_secs_f64().max(0.001)
+        };
         let elapsed_micros = if self.first_run {
             1_000_000.0
         } else {
-            now.duration_since(self.last_read_time).as_micros() as f64
+            elapsed_duration.as_micros() as f64
         };
-        let dt = if elapsed_micros < 1000.0 {
+        let dt_calc = if elapsed_micros < 1000.0 {
             1000.0
         } else {
             elapsed_micros
@@ -111,11 +127,17 @@ impl PsiMonitor {
         if !self.first_run {
             let delta_some = data.some.total.saturating_sub(self.last_some_total) as f64;
             let delta_full = data.full.total.saturating_sub(self.last_full_total) as f64;
-            data.some.current = (delta_some / dt * 100.0).clamp(0.0, 100.0);
-            data.full.current = (delta_full / dt * 100.0).clamp(0.0, 100.0);
+            let raw_some = delta_some / dt_calc * 100.0;
+            let raw_full = delta_full / dt_calc * 100.0;
+            data.some.current = self.filter_some.update(raw_some, dt_sec);
+            data.full.current = self.filter_full.update(raw_full, dt_sec);
         } else {
             data.some.current = data.some.avg10;
             data.full.current = data.full.avg10;
+            self.filter_some.reset();
+            self.filter_full.reset();
+            self.filter_some.update(data.some.avg10, 1.0);
+            self.filter_full.update(data.full.avg10, 1.0);
             self.first_run = false;
         }
         self.last_read_time = now;
