@@ -62,7 +62,7 @@ pub fn get_file_tweaks() -> Vec<FileTweak> {
         },
         FileTweak {
             path: "/sys/block/mmcblk0/queue/iostats",
-            value: "0",
+            value: "1",
         },
         FileTweak {
             path: "/sys/block/mmcblk0/queue/rq_affinity",
