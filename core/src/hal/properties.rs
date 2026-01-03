@@ -1,17 +1,12 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use super::validate_value;
 use crate::bindings::{sys, to_cstring};
 use crate::daemon::types::QosError;
 
 use libc::c_char;
 use std::ffi::CStr;
 use std::io;
-
-fn validate_value(value: &str) -> bool {
-    value
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '=' || c == ' ')
-}
 
 pub fn set_system_property(key: &str, value: &str) -> Result<(), QosError> {
     if !key

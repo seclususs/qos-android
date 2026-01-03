@@ -1,5 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use super::validate_value;
 use crate::daemon::types::QosError;
 
 use std::fs::{self, File};
@@ -27,12 +28,6 @@ fn validate_path_secure(path_str: &str) -> Result<(), QosError> {
             canonical_str
         )))
     }
-}
-
-fn validate_value(value: &str) -> bool {
-    value
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '=' || c == ' ')
 }
 
 pub fn open_file_for_write(path: &str) -> Result<File, QosError> {

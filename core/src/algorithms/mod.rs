@@ -15,10 +15,7 @@ pub fn sanitize_to_u64(val: f64, fallback: u64) -> u64 {
 
 #[inline(always)]
 pub fn sanitize_to_clean_u64(val: f64, fallback: u64, step: u64) -> u64 {
-    if !val.is_finite() {
-        return fallback;
-    }
-    let val_u64 = val.round() as u64;
+    let val_u64 = sanitize_to_u64(val, fallback);
     if step == 0 || step == 1 {
         return val_u64;
     }
