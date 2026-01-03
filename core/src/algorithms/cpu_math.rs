@@ -1,5 +1,17 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+#[derive(Debug, Clone, Copy)]
+pub struct PhysicsState {
+    pub pos: f64,
+    pub vel: f64,
+}
+
+impl Default for PhysicsState {
+    fn default() -> Self {
+        Self { pos: 0.0, vel: 0.0 }
+    }
+}
+
 pub struct CpuTunables {
     pub min_latency_ns: f64,
     pub max_latency_ns: f64,
@@ -20,10 +32,9 @@ pub struct CpuTunables {
     pub uclamp_mid: f64,
     pub trend_factor: f64,
     pub alpha_smooth: f64,
-    pub kinetic_k: f64,
-    pub kinetic_scaling_factor: f64,
-    pub kinetic_attack: f64,
-    pub kinetic_decay: f64,
+    pub spring_stiffness: f64,
+    pub damping_ratio: f64,
+    pub gain_scheduling_alpha: f64,
     pub sigmoid_k: f64,
     pub sigmoid_mid: f64,
     pub decay_coeff: f64,
@@ -31,22 +42,43 @@ pub struct CpuTunables {
     pub memory_migration_alpha: f64,
     pub memory_granularity_scaling: f64,
     pub memory_burst_penalty: f64,
+    pub trend_boost_intensity: f64,
+    pub animation_vel_threshold: f64,
+    pub animation_pos_threshold: f64,
+    pub animation_poll_interval: f64,
 }
 
-pub fn calculate_kinetic_urgency(
-    current_pressure: f64,
-    baseline_pressure: f64,
-    prev_urgency: f64,
+pub fn calculate_physics_urgency(
+    state: &mut PhysicsState,
+    target_psi: f64,
+    dt_sec: f64,
+    damping_factor: f64,
+    stress_gain: f64,
     tunables: &CpuTunables,
 ) -> f64 {
-    let delta = current_pressure - baseline_pressure;
-    if delta <= 0.0 {
-        return prev_urgency + tunables.kinetic_decay * (0.0 - prev_urgency);
+    let k_base = tunables.spring_stiffness;
+    let k_dynamic = k_base * (1.0 + (tunables.gain_scheduling_alpha * stress_gain));
+    let thermal_health = damping_factor.clamp(0.1, 1.0);
+    let k_final = k_dynamic * thermal_health.powi(2);
+    let c_critical = 2.0 * k_final.sqrt();
+    let c_base = c_critical * tunables.damping_ratio;
+    let c_final = c_base / thermal_health.sqrt();
+    let displacement = target_psi - state.pos;
+    let spring_force = k_final * displacement;
+    let damping_force = -c_final * state.vel;
+    let total_force = spring_force + damping_force;
+    let acceleration = total_force;
+    state.vel += acceleration * dt_sec;
+    state.pos += state.vel * dt_sec;
+    if state.pos < 0.0 {
+        state.pos = 0.0;
+        state.vel = 0.0;
     }
-    let normalized_delta = delta / tunables.kinetic_scaling_factor;
-    let raw_urgency = normalized_delta.powf(tunables.kinetic_k);
-    let target_urgency = raw_urgency.clamp(0.0, 2.0);
-    prev_urgency + tunables.kinetic_attack * (target_urgency - prev_urgency)
+    if state.pos > 500.0 {
+        state.pos = 500.0;
+        state.vel = 0.0;
+    }
+    state.pos
 }
 
 pub fn calculate_trend_gain(
@@ -56,7 +88,7 @@ pub fn calculate_trend_gain(
     tunables: &CpuTunables,
 ) -> f64 {
     let delta = avg10 - avg60;
-    let base_gain = 1.0 + tunables.trend_factor * delta.tanh();
+    let base_gain = if delta > 0.0 { delta.tanh() } else { 0.0 };
     let memory_penalty = (memory_psi / 100.0) * tunables.memory_burst_penalty;
     base_gain / (1.0 + memory_penalty)
 }
@@ -75,7 +107,7 @@ pub fn calculate_migration_cost(
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
     let raw_mig = tunables.min_migration_cost
         + (tunables.max_migration_cost - tunables.min_migration_cost) * (x * x);
-    let burst_factor = (delta_smooth / tunables.kinetic_scaling_factor).clamp(0.0, 1.0);
+    let burst_factor = (delta_smooth / 50.0).clamp(0.0, 1.0);
     let kinetic_mig = raw_mig * (1.0 - (burst_factor * 0.5));
     let inertia_factor = 1.0 + (tunables.memory_migration_alpha * (memory_psi / 100.0));
     (kinetic_mig * inertia_factor).clamp(
@@ -86,7 +118,7 @@ pub fn calculate_migration_cost(
 
 pub fn calculate_latency_and_granularity(
     p_eff: f64,
-    kinetic_urgency: f64,
+    physics_urgency: f64,
     thermal_floor_ns: f64,
     memory_psi: f64,
     tunables: &CpuTunables,
@@ -95,7 +127,7 @@ pub fn calculate_latency_and_granularity(
     let normal_latency =
         tunables.min_latency_ns + ((tunables.max_latency_ns - tunables.min_latency_ns) / denom);
     let latency_range = tunables.max_latency_ns - tunables.min_latency_ns;
-    let effective_urgency = kinetic_urgency.min(1.0);
+    let effective_urgency = (physics_urgency / 100.0).clamp(0.0, 1.0);
     let burst_latency = tunables.max_latency_ns - (effective_urgency * latency_range);
     let ideal_latency = normal_latency.min(burst_latency);
     let final_latency = ideal_latency.max(thermal_floor_ns);
@@ -142,4 +174,17 @@ pub fn calculate_uclamp_min(pressure: f64, damping_factor: f64, tunables: &CpuTu
 
 pub fn smooth_delta(current_delta: f64, prev_smooth: f64, tunables: &CpuTunables) -> f64 {
     tunables.alpha_smooth * current_delta + (1.0 - tunables.alpha_smooth) * prev_smooth
+}
+
+pub fn calculate_effective_pressure(
+    physics_urgency: f64,
+    trend_gain: f64,
+    tunables: &CpuTunables,
+) -> f64 {
+    physics_urgency * (1.0 + trend_gain * tunables.trend_boost_intensity)
+}
+
+pub fn is_animating(state: &PhysicsState, target_psi: f64, tunables: &CpuTunables) -> bool {
+    state.vel.abs() > tunables.animation_vel_threshold
+        || (state.pos - target_psi).abs() > tunables.animation_pos_threshold
 }
