@@ -30,3 +30,5 @@ pub const K_FIFO_BATCH_PATH: &str = "/sys/block/mmcblk0/queue/iosched/fifo_batch
 pub const K_CPU_TEMP_PATH: &str = "/sys/class/thermal/thermal_zone3/temp";
 pub const K_BATTERY_TEMP_PATH: &str = "/sys/class/power_supply/battery/temp";
 pub const K_MMC_DISKSTATS_PATH: &str = "/sys/block/mmcblk0/stat";
+pub const K_VMSTAT_PATH: &str = "/proc/vmstat";
+pub const K_BUDDYINFO_PATH: &str = "/proc/buddyinfo";

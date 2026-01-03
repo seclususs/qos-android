@@ -4,20 +4,21 @@ use crate::algorithms::memory_math::{self, MemoryTunables};
 use crate::algorithms::poll_math::AdaptivePoller;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
-use crate::daemon::state::{
-    get_cpu_pressure, get_io_pressure, get_io_saturation, update_memory_pressure,
-};
+use crate::daemon::state::{get_cpu_pressure, get_io_saturation, update_memory_pressure};
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
 use crate::hal::filesystem;
 use crate::hal::kernel;
+use crate::hal::thermal::ThermalSensor;
 use crate::monitors::psi_monitor::PsiMonitor;
+use crate::monitors::vm_monitor::{VmMonitor, VmStats};
 use crate::resources::sys_paths::*;
 
 use std::fs::File;
 use std::io::Read;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+use std::time::Instant;
 
 pub struct MemoryController {
     fd: File,
@@ -32,6 +33,11 @@ pub struct MemoryController {
     dirty_writeback: CachedFile,
     page_cluster: CachedFile,
     psi_monitor: PsiMonitor,
+    vm_monitor: VmMonitor,
+    cpu_sensor: ThermalSensor,
+    prev_vm_stats: VmStats,
+    prev_psi_mem: f64,
+    last_tick: Instant,
     current_swappiness: f64,
     current_vfs: f64,
     current_dirty: f64,
@@ -81,6 +87,9 @@ impl MemoryController {
         let page_cluster =
             CachedFile::new_opt(filesystem::open_file_for_write(K_PAGE_CLUSTER).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_MEMORY_PATH)?;
+        let mut vm_monitor = VmMonitor::new(K_VMSTAT_PATH, K_BUDDYINFO_PATH)?;
+        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 45.0);
+        let initial_vm_stats = vm_monitor.read_stats().unwrap_or(VmStats::default());
         let tunables = MemoryTunables {
             min_swappiness: MIN_SWAPPINESS as f64,
             max_swappiness: MAX_SWAPPINESS as f64,
@@ -102,24 +111,15 @@ impl MemoryController {
             max_page_cluster: MAX_PAGE_CLUSTER as f64,
             min_vfs: MIN_VFS as f64,
             max_vfs: MAX_VFS as f64,
-            swap_sigmoid_k: 0.2,
-            swap_sigmoid_mid: 50.0,
-            dirty_decay_coeff: 0.15,
-            dirty_ratio_decay: 0.05,
-            watermark_sigmoid_k: 0.1,
-            watermark_sigmoid_mid: 30.0,
-            extfrag_cpu_threshold: 40.0,
-            vfs_low_threshold: 40.0,
-            vfs_high_threshold: 85.0,
-            vfs_base: 100.0,
-            vfs_max_val: 200.0,
-            vfs_slope: 4.0,
-            page_cluster_threshold: 5.0,
-            cpu_pow_alpha: 2.5,
-            mem_smooth_fast: 0.15,
-            mem_smooth_slow: 0.02,
-            mem_smooth_fallback: 0.8,
-            mem_pressure_high_threshold: 40.0,
+            hydraulic_kp: 0.5,
+            hydraulic_kd: 0.25,
+            turbulence_factor: 20.0,
+            thermal_vfs_k: 0.05,
+            entropy_watermark_k: 2.0,
+            wss_penalty_factor: 2.5,
+            zram_thermal_penalty: 2.5,
+            general_smooth_factor: 0.25,
+            watermark_smooth_factor: 0.1,
         };
         let poller = AdaptivePoller::new(1.5, 0.5);
         let mut controller = Self {
@@ -135,6 +135,11 @@ impl MemoryController {
             dirty_writeback,
             page_cluster,
             psi_monitor,
+            vm_monitor,
+            cpu_sensor,
+            prev_vm_stats: initial_vm_stats,
+            prev_psi_mem: 0.0,
+            last_tick: Instant::now(),
             current_swappiness: MIN_SWAPPINESS as f64,
             current_vfs: MIN_VFS as f64,
             current_dirty: MAX_DIRTY as f64,
@@ -153,63 +158,65 @@ impl MemoryController {
         Ok(controller)
     }
     fn update_thermodynamics(&mut self) -> Result<(), QosError> {
-        let data = self.psi_monitor.read_state()?;
-        let some = data.some;
-        let p_mem = some.current.max(some.avg10).max(data.full.avg10 * 2.0);
-        update_memory_pressure(p_mem);
-        self.next_wake_ms = self.poller.calculate_next_interval(p_mem, some.avg300) as i32;
+        let psi_data = self.psi_monitor.read_state()?;
+        let vm_stats = self.vm_monitor.read_stats()?;
+        let cpu_temp = self.cpu_sensor.read();
         let p_cpu = get_cpu_pressure();
-        let i_sat = get_io_saturation();
-        let p_io = get_io_pressure();
-        let p_combined = (p_mem + p_io).min(100.0);
-        let s_base = memory_math::calculate_swappiness(p_mem, some.avg60, &self.tunables);
-        let target_swap = memory_math::calculate_final_swap(s_base, p_cpu, i_sat, &self.tunables)
-            .clamp(self.tunables.min_swappiness, self.tunables.max_swappiness);
-        let target_vfs = memory_math::calculate_target_vfs(p_mem, &self.tunables);
+        let io_sat = get_io_saturation();
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_tick).as_secs_f64().max(0.001);
+        self.last_tick = now;
+        let fluid_delta = memory_math::calculate_fluid_dynamics(&vm_stats, &self.prev_vm_stats, dt);
+        let p_mem = psi_data.some.current.max(psi_data.some.avg10);
+        let dp_dt = memory_math::calculate_pressure_derivative(p_mem, self.prev_psi_mem, dt);
+        self.prev_psi_mem = p_mem;
+        self.prev_vm_stats = vm_stats;
+        update_memory_pressure(p_mem);
+        self.next_wake_ms =
+            self.poller
+                .calculate_next_interval(p_mem, psi_data.some.avg300) as i32;
+        let target_swap = memory_math::calculate_swappiness_physics(
+            p_mem,
+            dp_dt,
+            &fluid_delta,
+            cpu_temp,
+            io_sat,
+            &self.tunables,
+        );
+        let target_vfs = memory_math::calculate_vfs_thermodynamics(p_mem, &self.tunables);
         let (target_dirty, target_dirty_bg) =
-            memory_math::calculate_dirty_params(p_mem, &self.tunables);
-        let target_expire = memory_math::calculate_dirty_expire(p_combined, &self.tunables);
+            memory_math::calculate_sediment_control(io_sat, &self.tunables);
+        let target_expire = memory_math::calculate_sediment_time(io_sat, &self.tunables);
         let target_wb = memory_math::calculate_dirty_writeback(target_expire, &self.tunables);
-        let target_stat = memory_math::calculate_stat_interval(p_cpu, &self.tunables);
-        let target_wm = memory_math::calculate_watermark_scale(p_mem, &self.tunables);
-        let target_ext = memory_math::calculate_extfrag_threshold(p_cpu, &self.tunables);
-        let target_pc = memory_math::calculate_page_cluster(data.full.avg10, &self.tunables);
-        let decay_factor = if some.avg60 > self.tunables.mem_pressure_high_threshold {
-            self.tunables.mem_smooth_slow
-        } else {
-            self.tunables.mem_smooth_fast
-        };
-        let smoothing = if target_swap < self.current_swappiness {
-            self.tunables.mem_smooth_fallback
-        } else {
-            decay_factor
-        };
-        self.current_swappiness =
-            smoothing * target_swap + (1.0 - smoothing) * self.current_swappiness;
-        self.current_vfs = target_vfs.clamp(self.tunables.min_vfs, self.tunables.max_vfs);
-        self.current_dirty = target_dirty.clamp(self.tunables.min_dirty, self.tunables.max_dirty);
-        self.current_dirty_bg =
-            target_dirty_bg.clamp(self.tunables.min_dirty_bg, self.tunables.max_dirty_bg);
-        self.current_dirty_expire = target_expire.clamp(
-            self.tunables.min_dirty_expire,
-            self.tunables.max_dirty_expire,
+        let target_wm = memory_math::calculate_watermark_entropy(
+            p_mem,
+            vm_stats.fragmentation_index,
+            &self.tunables,
         );
-        self.current_dirty_writeback = target_wb.clamp(
-            self.tunables.min_dirty_writeback,
-            self.tunables.max_dirty_writeback,
+        let target_stat = memory_math::calculate_sampling_rate(p_mem, &self.tunables);
+        let target_ext = memory_math::calculate_extfrag_physics(p_cpu, &self.tunables);
+        let target_pc = memory_math::calculate_viscosity(p_cpu, &self.tunables);
+        self.current_swappiness = memory_math::smooth_value(
+            self.current_swappiness,
+            target_swap,
+            self.tunables.general_smooth_factor,
         );
-        self.current_stat_interval = target_stat.clamp(
-            self.tunables.min_stat_interval,
-            self.tunables.max_stat_interval,
+        self.current_vfs = memory_math::smooth_value(
+            self.current_vfs,
+            target_vfs,
+            self.tunables.general_smooth_factor,
         );
-        self.current_watermark_scale = target_wm.clamp(
-            self.tunables.min_watermark_scale,
-            self.tunables.max_watermark_scale,
+        self.current_dirty = target_dirty;
+        self.current_dirty_bg = target_dirty_bg;
+        self.current_dirty_expire = target_expire;
+        self.current_dirty_writeback = target_wb;
+        self.current_stat_interval = target_stat;
+        self.current_watermark_scale = memory_math::smooth_value(
+            self.current_watermark_scale,
+            target_wm,
+            self.tunables.watermark_smooth_factor,
         );
-        self.current_extfrag_threshold = target_ext.clamp(
-            self.tunables.min_extfrag_threshold,
-            self.tunables.max_extfrag_threshold,
-        );
+        self.current_extfrag_threshold = target_ext;
         self.current_page_cluster = target_pc;
         self.apply_values(false);
         Ok(())
@@ -254,22 +261,22 @@ impl MemoryController {
             self.tunables.max_page_cluster as u64,
         );
         self.swap
-            .update(swap_u64, force, CheckStrategy::Absolute(4));
+            .update(swap_u64, force, CheckStrategy::Absolute(5));
         self.vfs.update(vfs_u64, force, CheckStrategy::Absolute(10));
         self.dirty_ratio
             .update(dirty_u64, force, CheckStrategy::Absolute(1));
         self.dirty_bg
             .update(dbg_u64, force, CheckStrategy::Absolute(1));
         self.dirty_expire
-            .update(expire_u64, force, CheckStrategy::Relative(0.05));
+            .update(expire_u64, force, CheckStrategy::Relative(0.1));
         self.stat_interval
             .update(stat_u64, force, CheckStrategy::Strict);
         self.watermark_scale
             .update(wm_u64, force, CheckStrategy::Absolute(2));
         self.extfrag
-            .update(ext_u64, force, CheckStrategy::Absolute(25));
+            .update(ext_u64, force, CheckStrategy::Absolute(20));
         self.dirty_writeback
-            .update(dwb_u64, force, CheckStrategy::Relative(0.10));
+            .update(dwb_u64, force, CheckStrategy::Relative(0.1));
         self.page_cluster
             .update(pc_u64, force, CheckStrategy::Strict);
     }
@@ -283,7 +290,7 @@ impl EventHandler for MemoryController {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
         if let Err(e) = self.update_thermodynamics() {
-            log::warn!("Mem Logic Error: {}", e);
+            log::warn!("Mem Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
