@@ -1,10 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::daemon::types::QosError;
-use crate::hal::filesystem::open_file_for_read;
-
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use crate::hal::monitored_file::MonitoredFile;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoStats {
@@ -16,33 +13,22 @@ pub struct IoStats {
 }
 
 pub struct DiskMonitor {
-    file: File,
-    buffer: [u8; 512],
+    monitor: MonitoredFile<512>,
 }
 
 impl DiskMonitor {
     pub fn new(path: &str) -> Result<Self, QosError> {
-        let file = open_file_for_read(path)?;
         Ok(Self {
-            file,
-            buffer: [0u8; 512],
+            monitor: MonitoredFile::new(path)?,
         })
     }
     pub fn read_stats(&mut self) -> Result<IoStats, QosError> {
-        self.file
-            .seek(SeekFrom::Start(0))
-            .map_err(QosError::IoError)?;
-        let bytes_read = match self.file.read(&mut self.buffer) {
-            Ok(n) => n,
-            Err(e) => return Err(QosError::IoError(e)),
-        };
-        if bytes_read == 0 {
+        let content = self.monitor.read_value()?;
+        if content.is_empty() {
             return Err(QosError::SystemCheckFailed(
                 "Empty diskstats file".to_string(),
             ));
         }
-        let content = std::str::from_utf8(&self.buffer[..bytes_read])
-            .map_err(|_| QosError::InvalidInput("Invalid UTF-8 in diskstats".to_string()))?;
         let parts: Vec<&str> = content.split_whitespace().collect();
         if parts.len() < 10 {
             return Err(QosError::SystemCheckFailed(

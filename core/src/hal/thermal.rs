@@ -1,37 +1,28 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use crate::hal::monitored_file::MonitoredFile;
 
 pub struct ThermalSensor {
-    file: Option<File>,
-    buffer: [u8; 16],
+    monitor: Option<MonitoredFile<16>>,
     default_val: f64,
 }
 
 impl ThermalSensor {
     pub fn new(path: &str, default_val: f64) -> Self {
-        let file = File::open(path).ok();
+        let monitor = MonitoredFile::new(path).ok();
         Self {
-            file,
-            buffer: [0u8; 16],
+            monitor,
             default_val,
         }
     }
     pub fn read(&mut self) -> f64 {
-        let file = match self.file.as_mut() {
-            Some(f) => f,
+        let monitor = match self.monitor.as_mut() {
+            Some(m) => m,
             None => return self.default_val,
         };
-        if file.seek(SeekFrom::Start(0)).is_err() {
-            return self.default_val;
-        }
-        match file.read(&mut self.buffer) {
-            Ok(n) if n > 0 => {
-                let s = match std::str::from_utf8(&self.buffer[..n]) {
-                    Ok(v) => v.trim(),
-                    Err(_) => return self.default_val,
-                };
+        match monitor.read_value() {
+            Ok(content) => {
+                let s = content.trim();
                 match s.parse::<f64>() {
                     Ok(val) => {
                         let abs = val.abs();

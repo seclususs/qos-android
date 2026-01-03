@@ -1,14 +1,9 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::bindings::sys;
+use crate::bindings::{sys, to_cstring};
 use crate::daemon::types::QosError;
 
-use std::ffi::CString;
 use std::io;
-
-fn to_cstring(s: &str) -> Result<CString, QosError> {
-    CString::new(s).map_err(|e| QosError::InvalidInput(format!("String contains null byte: {}", e)))
-}
 
 pub fn register_psi_trigger(
     path: &str,

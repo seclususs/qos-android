@@ -2,13 +2,9 @@
 
 use crate::algorithms::kalman_math::{KalmanConfig, KalmanFilter};
 use crate::daemon::types::QosError;
-use crate::hal::filesystem::open_file_for_read;
+use crate::hal::monitored_file::MonitoredFile;
 
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::time::Instant;
-
-const BUFFER_SIZE: usize = 512;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PsiTrend {
@@ -38,8 +34,7 @@ pub struct PsiData {
 }
 
 pub struct PsiMonitor {
-    file: File,
-    buffer: [u8; BUFFER_SIZE],
+    monitor: MonitoredFile<512>,
     last_read_time: Instant,
     last_some_total: u64,
     last_full_total: u64,
@@ -50,15 +45,14 @@ pub struct PsiMonitor {
 
 impl PsiMonitor {
     pub fn new(path: &str) -> Result<Self, QosError> {
-        let file = open_file_for_read(path)?;
+        let monitor = MonitoredFile::new(path)?;
         let config = KalmanConfig {
             q_base: 2.0,
             r_base: 10.0,
             fading_factor: 1.05,
         };
         Ok(Self {
-            file,
-            buffer: [0u8; BUFFER_SIZE],
+            monitor,
             last_read_time: Instant::now(),
             last_some_total: 0,
             last_full_total: 0,
@@ -68,18 +62,10 @@ impl PsiMonitor {
         })
     }
     pub fn read_state(&mut self) -> Result<PsiData, QosError> {
-        self.file
-            .seek(SeekFrom::Start(0))
-            .map_err(QosError::IoError)?;
-        let bytes_read = match self.file.read(&mut self.buffer) {
-            Ok(n) => n,
-            Err(e) => return Err(QosError::IoError(e)),
-        };
-        if bytes_read == 0 {
+        let content = self.monitor.read_value()?;
+        if content.is_empty() {
             return Err(QosError::PsiParseError("Empty PSI file".to_string()));
         }
-        let content = std::str::from_utf8(&self.buffer[..bytes_read])
-            .map_err(|_| QosError::PsiParseError("Invalid UTF-8".to_string()))?;
         let now = Instant::now();
         let elapsed_duration = now.duration_since(self.last_read_time);
         let dt_sec = if self.first_run {
