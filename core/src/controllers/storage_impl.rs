@@ -61,6 +61,8 @@ impl StorageController {
             congestion_beta: 0.5,
             hysteresis_threshold: 0.15,
             panic_threshold_psi: 40.0,
+            urgent_poll_psi: 10.0,
+            urgent_poll_inflight: 4.0,
         };
         let poller = AdaptivePoller::new(1.0, 1.0);
         let mut controller = Self {
@@ -97,13 +99,11 @@ impl StorageController {
         let lambda_eff = storage_math::calculate_weighted_throughput(&delta, &self.tunables);
         let target_latency =
             storage_math::calculate_target_latency(psi_data.some.avg10, &self.tunables);
-        let current_latency = if delta.service_time_ms > 0.0 {
-            delta.service_time_ms
-        } else if lambda_eff > 0.0 {
-            (current_io_stats.in_flight as f64 / lambda_eff) * 1000.0
-        } else {
-            0.0
-        };
+        let current_latency = storage_math::calculate_effective_latency(
+            &delta,
+            lambda_eff,
+            current_io_stats.in_flight as f64,
+        );
         let calculated_nr = storage_math::calculate_next_queue_depth(
             lambda_eff,
             current_latency,
@@ -128,7 +128,9 @@ impl StorageController {
             storage_math::calculate_fifo_batch(self.current_nr_requests, &self.tunables);
         self.current_read_ahead = calculated_ra;
         self.current_fifo_batch = calculated_fifo;
-        if psi_data.some.avg10 > 10.0 || current_io_stats.in_flight > 4 {
+        if psi_data.some.avg10 > self.tunables.urgent_poll_psi
+            || current_io_stats.in_flight as f64 > self.tunables.urgent_poll_inflight
+        {
             self.next_wake_ms = MIN_POLLING_MS as i32;
         } else {
             self.next_wake_ms = self

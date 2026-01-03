@@ -15,6 +15,8 @@ pub struct StorageTunables {
     pub congestion_beta: f64,
     pub hysteresis_threshold: f64,
     pub panic_threshold_psi: f64,
+    pub urgent_poll_psi: f64,
+    pub urgent_poll_inflight: f64,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -48,6 +50,16 @@ pub fn calculate_io_deltas(current: &IoStats, prev: &IoStats, dt_sec: f64) -> Io
 
 pub fn calculate_weighted_throughput(delta: &IoDelta, tunables: &StorageTunables) -> f64 {
     delta.throughput_read + (tunables.write_cost_factor * delta.throughput_write)
+}
+
+pub fn calculate_effective_latency(delta: &IoDelta, lambda_eff: f64, in_flight: f64) -> f64 {
+    if delta.service_time_ms > 0.0 {
+        delta.service_time_ms
+    } else if lambda_eff > 0.0 {
+        (in_flight / lambda_eff) * 1000.0
+    } else {
+        0.0
+    }
 }
 
 pub fn calculate_target_latency(psi_some_avg10: f64, tunables: &StorageTunables) -> f64 {
