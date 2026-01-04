@@ -24,6 +24,7 @@ impl Default for KalmanConfig {
 pub struct KalmanFilter {
     x: f64,
     p: f64,
+    last_nis: f64,
     config: KalmanConfig,
     history: VecDeque<f64>,
     first_run: bool,
@@ -34,6 +35,7 @@ impl KalmanFilter {
         Self {
             x: 0.0,
             p: 1.0,
+            last_nis: 0.0,
             config,
             history: VecDeque::with_capacity(config.window_size),
             first_run: true,
@@ -43,6 +45,7 @@ impl KalmanFilter {
         self.first_run = true;
         self.p = self.config.r_base;
         self.x = 0.0;
+        self.last_nis = 0.0;
         self.history.clear();
     }
     pub fn update(&mut self, mut z_measured: f64, dt_sec: f64) -> f64 {
@@ -56,6 +59,7 @@ impl KalmanFilter {
         if self.first_run {
             self.x = z_measured;
             self.p = self.config.r_base;
+            self.last_nis = 0.0;
             self.first_run = false;
             return self.x;
         }
@@ -77,7 +81,12 @@ impl KalmanFilter {
         let r_adaptive = c_y - p_pred;
         let r_eff = r_adaptive.max(self.config.r_base);
         let s_temp = p_pred + r_eff;
-        let nis = (innovation * innovation) / s_temp;
+        let nis = if s_temp > 1e-6 {
+            (innovation * innovation) / s_temp
+        } else {
+            0.0
+        };
+        self.last_nis = nis;
         let q_adaptive = if nis > 2.0 {
             let scale = nis.min(10.0);
             q_k_base * scale
@@ -90,5 +99,8 @@ impl KalmanFilter {
         self.x = x_pred + (k_gain * innovation);
         self.p = (1.0 - k_gain) * p_pred_final;
         self.x.clamp(0.0, 100.0)
+    }
+    pub fn get_last_nis(&self) -> f64 {
+        self.last_nis
     }
 }

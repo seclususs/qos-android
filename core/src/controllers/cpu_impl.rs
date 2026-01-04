@@ -132,6 +132,7 @@ impl CpuController {
             safe_temp_limit: 70.0,
             max_temp_limit: 90.0,
             lyapunov_margin: 1.5,
+            nis_threshold: 5.0,
         };
         let thermal_tunables = ThermalTunables {
             pid_kp: 0.075,
@@ -189,6 +190,7 @@ impl CpuController {
         let memory_psi = get_memory_pressure();
         let io_psi = get_io_pressure();
         let target_psi = some.current.max(some.avg10);
+        let is_break = some.nis > self.tunables.nis_threshold;
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
         let bat_level = self.battery_capacity_sensor.read();
@@ -216,6 +218,7 @@ impl CpuController {
             stress_gain: trend_gain,
             lambda_total,
             lambda_dot,
+            is_structural_break: is_break,
         };
         let physics_urgency = cpu_math::calculate_physics_urgency(
             &mut self.physics_state,

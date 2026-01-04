@@ -75,6 +75,7 @@ pub struct CpuTunables {
     pub safe_temp_limit: f64,
     pub max_temp_limit: f64,
     pub lyapunov_margin: f64,
+    pub nis_threshold: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -85,6 +86,7 @@ pub struct UrgencyInput {
     pub stress_gain: f64,
     pub lambda_total: f64,
     pub lambda_dot: f64,
+    pub is_structural_break: bool,
 }
 
 fn calculate_regression_slope(state: &PhysicsState) -> f64 {
@@ -148,6 +150,11 @@ pub fn calculate_physics_urgency(
     input: UrgencyInput,
     tunables: &CpuTunables,
 ) -> f64 {
+    if input.is_structural_break {
+        for i in 0..8 {
+            state.psi_history[i] = input.target_psi;
+        }
+    }
     state.psi_history[state.history_idx] = input.target_psi;
     state.history_idx = (state.history_idx + 1) % 8;
     let mut sum = 0.0;

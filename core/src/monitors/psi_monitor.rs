@@ -13,6 +13,7 @@ pub struct PsiTrend {
     pub avg60: f64,
     pub avg300: f64,
     pub total: u64,
+    pub nis: f64,
 }
 
 impl Default for PsiTrend {
@@ -23,6 +24,7 @@ impl Default for PsiTrend {
             avg60: 0.0,
             avg300: 0.0,
             total: 0,
+            nis: 0.0,
         }
     }
 }
@@ -117,7 +119,9 @@ impl PsiMonitor {
             let raw_some = delta_some / dt_calc * 100.0;
             let raw_full = delta_full / dt_calc * 100.0;
             data.some.current = self.filter_some.update(raw_some, dt_sec);
+            data.some.nis = self.filter_some.get_last_nis();
             data.full.current = self.filter_full.update(raw_full, dt_sec);
+            data.full.nis = self.filter_full.get_last_nis();
         } else {
             data.some.current = data.some.avg10;
             data.full.current = data.full.avg10;
