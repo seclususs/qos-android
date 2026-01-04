@@ -50,6 +50,7 @@ impl PsiMonitor {
             q_base: 2.0,
             r_base: 10.0,
             fading_factor: 1.05,
+            window_size: 10,
         };
         Ok(Self {
             monitor,
