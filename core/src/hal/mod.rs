@@ -1,3 +1,4 @@
+pub mod battery;
 pub mod bridge;
 pub mod cached_file;
 pub mod filesystem;

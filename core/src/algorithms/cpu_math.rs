@@ -7,6 +7,10 @@ pub struct PhysicsState {
     pub last_psi: f64,
     pub psi_history: [f64; 8],
     pub history_idx: usize,
+    pub lambda_accum: f64,
+    pub prev_lambda: f64,
+    pub smoothed_lambda: f64,
+    pub first_run: bool,
 }
 
 impl Default for PhysicsState {
@@ -17,6 +21,10 @@ impl Default for PhysicsState {
             last_psi: 0.0,
             psi_history: [0.0; 8],
             history_idx: 0,
+            lambda_accum: 0.0,
+            prev_lambda: 0.0,
+            smoothed_lambda: 0.0,
+            first_run: true,
         }
     }
 }
@@ -60,6 +68,13 @@ pub struct CpuTunables {
     pub variance_sensitivity: f64,
     pub lookahead_time: f64,
     pub efficiency_gain: f64,
+    pub energy_cost_alpha: f64,
+    pub energy_cost_beta: f64,
+    pub energy_cost_gamma: f64,
+    pub constraint_learning_rate: f64,
+    pub safe_temp_limit: f64,
+    pub max_temp_limit: f64,
+    pub lyapunov_margin: f64,
 }
 
 fn calculate_regression_slope(state: &PhysicsState) -> f64 {
@@ -79,12 +94,53 @@ fn calculate_regression_slope(state: &PhysicsState) -> f64 {
     numerator / DENOMINATOR
 }
 
+pub fn update_hamiltonian_params(
+    state: &mut PhysicsState,
+    cpu_temp: f64,
+    bat_temp: f64,
+    bat_level: f64,
+    dt_sec: f64,
+    tunables: &CpuTunables,
+) -> (f64, f64) {
+    let temp_ratio = (cpu_temp / tunables.max_temp_limit).clamp(0.0, 1.5);
+    let term_cpu = tunables.energy_cost_alpha * temp_ratio.powi(2);
+    let bat_stress = (bat_temp / 45.0).clamp(0.0, 1.0);
+    let term_bat_temp = tunables.energy_cost_beta * bat_stress;
+    let depletion = (100.0 - bat_level).max(0.0) / 100.0;
+    let term_bat_cap = tunables.energy_cost_gamma * depletion.powi(3);
+    let lambda_heuristic = term_cpu + term_bat_temp + term_bat_cap;
+    let constraint_violation = (cpu_temp - tunables.safe_temp_limit).max(0.0);
+    let lambda_rate = tunables.constraint_learning_rate * constraint_violation;
+    state.lambda_accum += lambda_rate * dt_sec;
+    if constraint_violation <= 0.0 {
+        state.lambda_accum *= 0.98;
+    }
+    state.lambda_accum = state.lambda_accum.clamp(0.0, 200.0);
+    let lambda_raw = lambda_heuristic + state.lambda_accum;
+    if state.first_run {
+        state.smoothed_lambda = lambda_raw;
+        state.prev_lambda = lambda_raw;
+        state.first_run = false;
+        return (lambda_raw, 0.0);
+    }
+    state.smoothed_lambda = (state.smoothed_lambda * 0.8) + (lambda_raw * 0.2);
+    let lambda_dot = if dt_sec > 0.0 {
+        (state.smoothed_lambda - state.prev_lambda) / dt_sec
+    } else {
+        0.0
+    };
+    state.prev_lambda = state.smoothed_lambda;
+    (state.smoothed_lambda, lambda_dot)
+}
+
 pub fn calculate_physics_urgency(
     state: &mut PhysicsState,
     target_psi: f64,
     dt_sec: f64,
     damping_factor: f64,
     stress_gain: f64,
+    lambda_total: f64,
+    lambda_dot: f64,
     tunables: &CpuTunables,
 ) -> f64 {
     state.psi_history[state.history_idx] = target_psi;
@@ -109,13 +165,20 @@ pub fn calculate_physics_urgency(
     let k_base = tunables.spring_stiffness;
     let k_dynamic = k_base * (1.0 + (tunables.gain_scheduling_alpha * stress_gain));
     let k_final = k_dynamic * stiffness_mod * damping_factor.clamp(0.1, 1.0).powi(2);
-    let c_critical = 2.0 * k_final.sqrt();
-    let c_base = c_critical * tunables.damping_ratio;
-    let c_final = c_base / damping_factor.clamp(0.1, 1.0).sqrt();
     let displacement = ghost_target - state.pos;
     let spring_force = k_final * displacement;
-    let damping_force = -c_final * state.vel;
-    let total_force = spring_force + damping_force;
+    let mut hamiltonian_force = lambda_total * state.pos;
+    let max_possible_spring = k_final * 100.0;
+    hamiltonian_force = hamiltonian_force.min(max_possible_spring * 1.5);
+    let c_critical = 2.0 * k_final.sqrt();
+    let c_base = c_critical * tunables.damping_ratio;
+    let velocity_sq = state.vel.powi(2) + 0.001;
+    let lyapunov_damping_req = (0.5 * lambda_dot.abs() * state.pos.powi(2)) / velocity_sq;
+    let c_lyapunov = lyapunov_damping_req.clamp(0.0, c_base * 4.0) * tunables.lyapunov_margin;
+    let c_thermal_adjusted = c_base / damping_factor.clamp(0.1, 1.0).sqrt();
+    let c_final = c_thermal_adjusted.max(c_lyapunov);
+    let damping_force = c_final * state.vel;
+    let total_force = spring_force - damping_force - hamiltonian_force;
     let acceleration = total_force;
     state.vel += acceleration * dt_sec;
     state.pos += state.vel * dt_sec;

@@ -8,6 +8,7 @@ use crate::config::tunables::*;
 use crate::daemon::state::{get_io_pressure, get_memory_pressure, update_cpu_pressure};
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
+use crate::hal::battery::BatterySensor;
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
 use crate::hal::filesystem;
 use crate::hal::kernel;
@@ -34,6 +35,7 @@ pub struct CpuController {
     thermal_tunables: ThermalTunables,
     cpu_sensor: ThermalSensor,
     battery_sensor: ThermalSensor,
+    battery_capacity_sensor: BatterySensor,
     current_latency: f64,
     current_min_gran: f64,
     current_wakeup: f64,
@@ -83,6 +85,7 @@ impl CpuController {
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
         let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 70.0);
         let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
+        let battery_capacity_sensor = BatterySensor::new(K_BATTERY_CAPACITY_PATH);
         let tunables = CpuTunables {
             min_latency_ns: MIN_LATENCY_NS as f64,
             max_latency_ns: MAX_LATENCY_NS as f64,
@@ -122,6 +125,13 @@ impl CpuController {
             variance_sensitivity: 0.15,
             lookahead_time: 0.05,
             efficiency_gain: 1.5,
+            energy_cost_alpha: 3.0,
+            energy_cost_beta: 2.0,
+            energy_cost_gamma: 50.0,
+            constraint_learning_rate: 0.5,
+            safe_temp_limit: 70.0,
+            max_temp_limit: 90.0,
+            lyapunov_margin: 1.5,
         };
         let thermal_tunables = ThermalTunables {
             pid_kp: 0.075,
@@ -155,6 +165,7 @@ impl CpuController {
             thermal_tunables,
             cpu_sensor,
             battery_sensor,
+            battery_capacity_sensor,
             current_latency: MIN_LATENCY_NS as f64,
             current_min_gran: MIN_GRANULARITY_NS as f64,
             current_wakeup: MIN_WAKEUP_NS as f64,
@@ -180,6 +191,7 @@ impl CpuController {
         let target_psi = some.current.max(some.avg10);
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
+        let bat_level = self.battery_capacity_sensor.read();
         let damping_factor =
             self.thermal_manager
                 .update(cpu_temp, bat_temp, target_psi, &self.thermal_tunables);
@@ -189,12 +201,22 @@ impl CpuController {
         let dt_duration = now.duration_since(self.last_physics_tick);
         self.last_physics_tick = now;
         let dt_sec = dt_duration.as_secs_f64().clamp(0.000001, 0.1);
+        let (lambda_total, lambda_dot) = cpu_math::update_hamiltonian_params(
+            &mut self.physics_state,
+            cpu_temp,
+            bat_temp,
+            bat_level,
+            dt_sec,
+            &self.tunables,
+        );
         let physics_urgency = cpu_math::calculate_physics_urgency(
             &mut self.physics_state,
             target_psi,
             dt_sec,
             damping_factor,
             trend_gain,
+            lambda_total,
+            lambda_dot,
             &self.tunables,
         );
         let p_eff = cpu_math::calculate_effective_pressure(
