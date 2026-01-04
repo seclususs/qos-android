@@ -5,7 +5,7 @@ use crate::algorithms::poll_math::AdaptivePoller;
 use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
-use crate::daemon::state::{get_memory_pressure, update_cpu_pressure};
+use crate::daemon::state::{get_io_pressure, get_memory_pressure, update_cpu_pressure};
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
@@ -117,6 +117,11 @@ impl CpuController {
             animation_vel_threshold: 0.1,
             animation_pos_threshold: 0.5,
             animation_poll_interval: 20.0,
+            impulse_threshold: 30.0,
+            impulse_factor: 0.45,
+            variance_sensitivity: 0.15,
+            lookahead_time: 0.05,
+            efficiency_gain: 1.5,
         };
         let thermal_tunables = ThermalTunables {
             pid_kp: 0.075,
@@ -171,6 +176,7 @@ impl CpuController {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let memory_psi = get_memory_pressure();
+        let io_psi = get_io_pressure();
         let target_psi = some.current.max(some.avg10);
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
@@ -191,8 +197,13 @@ impl CpuController {
             trend_gain,
             &self.tunables,
         );
-        let p_eff =
-            cpu_math::calculate_effective_pressure(physics_urgency, trend_gain, &self.tunables);
+        let p_eff = cpu_math::calculate_effective_pressure(
+            physics_urgency,
+            trend_gain,
+            memory_psi,
+            io_psi,
+            &self.tunables,
+        );
         update_cpu_pressure(p_eff);
         let mut calculated_poll = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
         if cpu_math::is_animating(&self.physics_state, target_psi, &self.tunables) {

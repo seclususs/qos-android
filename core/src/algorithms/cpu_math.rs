@@ -4,11 +4,20 @@
 pub struct PhysicsState {
     pub pos: f64,
     pub vel: f64,
+    pub last_psi: f64,
+    pub psi_history: [f64; 8],
+    pub history_idx: usize,
 }
 
 impl Default for PhysicsState {
     fn default() -> Self {
-        Self { pos: 0.0, vel: 0.0 }
+        Self {
+            pos: 0.0,
+            vel: 0.0,
+            last_psi: 0.0,
+            psi_history: [0.0; 8],
+            history_idx: 0,
+        }
     }
 }
 
@@ -46,6 +55,28 @@ pub struct CpuTunables {
     pub animation_vel_threshold: f64,
     pub animation_pos_threshold: f64,
     pub animation_poll_interval: f64,
+    pub impulse_threshold: f64,
+    pub impulse_factor: f64,
+    pub variance_sensitivity: f64,
+    pub lookahead_time: f64,
+    pub efficiency_gain: f64,
+}
+
+fn calculate_regression_slope(state: &PhysicsState) -> f64 {
+    const N: f64 = 8.0;
+    const SUM_X: f64 = 28.0;
+    const DENOMINATOR: f64 = 336.0;
+    let mut sum_y = 0.0;
+    let mut sum_xy = 0.0;
+    for i in 0..8 {
+        let idx = (state.history_idx + i) % 8;
+        let y = state.psi_history[idx];
+        let x = i as f64;
+        sum_y += y;
+        sum_xy += x * y;
+    }
+    let numerator = (N * sum_xy) - (SUM_X * sum_y);
+    numerator / DENOMINATOR
 }
 
 pub fn calculate_physics_urgency(
@@ -56,20 +87,39 @@ pub fn calculate_physics_urgency(
     stress_gain: f64,
     tunables: &CpuTunables,
 ) -> f64 {
+    state.psi_history[state.history_idx] = target_psi;
+    state.history_idx = (state.history_idx + 1) % 8;
+    let mut sum = 0.0;
+    for val in state.psi_history.iter() {
+        sum += val;
+    }
+    let mean = sum / 8.0;
+    let mut variance_sum = 0.0;
+    for val in state.psi_history.iter() {
+        variance_sum += (val - mean).powi(2);
+    }
+    let std_dev = (variance_sum / 8.0).sqrt();
+    let stiffness_mod = 1.0 + (tunables.variance_sensitivity * std_dev);
+    let slope_per_tick = calculate_regression_slope(state);
+    let v_load = slope_per_tick / dt_sec.max(0.001);
+    if v_load.abs() > tunables.impulse_threshold {
+        state.vel += v_load * tunables.impulse_factor;
+    }
+    let ghost_target = target_psi + (v_load * tunables.lookahead_time);
     let k_base = tunables.spring_stiffness;
     let k_dynamic = k_base * (1.0 + (tunables.gain_scheduling_alpha * stress_gain));
-    let thermal_health = damping_factor.clamp(0.1, 1.0);
-    let k_final = k_dynamic * thermal_health.powi(2);
+    let k_final = k_dynamic * stiffness_mod * damping_factor.clamp(0.1, 1.0).powi(2);
     let c_critical = 2.0 * k_final.sqrt();
     let c_base = c_critical * tunables.damping_ratio;
-    let c_final = c_base / thermal_health.sqrt();
-    let displacement = target_psi - state.pos;
+    let c_final = c_base / damping_factor.clamp(0.1, 1.0).sqrt();
+    let displacement = ghost_target - state.pos;
     let spring_force = k_final * displacement;
     let damping_force = -c_final * state.vel;
     let total_force = spring_force + damping_force;
     let acceleration = total_force;
     state.vel += acceleration * dt_sec;
     state.pos += state.vel * dt_sec;
+    state.last_psi = target_psi;
     if state.pos < 0.0 {
         state.pos = 0.0;
         state.vel = 0.0;
@@ -179,9 +229,14 @@ pub fn smooth_delta(current_delta: f64, prev_smooth: f64, tunables: &CpuTunables
 pub fn calculate_effective_pressure(
     physics_urgency: f64,
     trend_gain: f64,
+    memory_psi: f64,
+    io_psi: f64,
     tunables: &CpuTunables,
 ) -> f64 {
-    physics_urgency * (1.0 + trend_gain * tunables.trend_boost_intensity)
+    let p_spring = physics_urgency * (1.0 + trend_gain * tunables.trend_boost_intensity);
+    let ratio_stall = (memory_psi + io_psi) / (physics_urgency + 1.0);
+    let eta_cpu = 1.0 / (1.0 + (ratio_stall * tunables.efficiency_gain));
+    p_spring * eta_cpu
 }
 
 pub fn is_animating(state: &PhysicsState, target_psi: f64, tunables: &CpuTunables) -> bool {
