@@ -6,8 +6,12 @@ use crate::hal::monitored_file::MonitoredFile;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoStats {
     pub read_ios: u64,
+    pub read_merges: u64,
+    pub read_sectors: u64,
     pub read_ticks: u64,
     pub write_ios: u64,
+    pub write_merges: u64,
+    pub write_sectors: u64,
     pub write_ticks: u64,
     pub in_flight: u64,
 }
@@ -30,22 +34,21 @@ impl DiskMonitor {
             ));
         }
         let parts: Vec<&str> = content.split_whitespace().collect();
-        if parts.len() < 10 {
+        if parts.len() < 11 {
             return Err(QosError::SystemCheckFailed(
                 "Incomplete diskstats format".to_string(),
             ));
         }
-        let read_ios = parts[0].parse::<u64>().unwrap_or(0);
-        let read_ticks = parts[3].parse::<u64>().unwrap_or(0);
-        let write_ios = parts[4].parse::<u64>().unwrap_or(0);
-        let write_ticks = parts[7].parse::<u64>().unwrap_or(0);
-        let in_flight = parts[8].parse::<u64>().unwrap_or(0);
         Ok(IoStats {
-            read_ios,
-            read_ticks,
-            write_ios,
-            write_ticks,
-            in_flight,
+            read_ios: parts[0].parse::<u64>().unwrap_or(0),
+            read_merges: parts[1].parse::<u64>().unwrap_or(0),
+            read_sectors: parts[2].parse::<u64>().unwrap_or(0),
+            read_ticks: parts[3].parse::<u64>().unwrap_or(0),
+            write_ios: parts[4].parse::<u64>().unwrap_or(0),
+            write_merges: parts[5].parse::<u64>().unwrap_or(0),
+            write_sectors: parts[6].parse::<u64>().unwrap_or(0),
+            write_ticks: parts[7].parse::<u64>().unwrap_or(0),
+            in_flight: parts[8].parse::<u64>().unwrap_or(0),
         })
     }
 }

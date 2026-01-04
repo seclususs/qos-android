@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::algorithms::storage_math::{self, StorageTunables};
+use crate::algorithms::storage_math::{self, FractalState, StorageTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
 use crate::daemon::state::{update_io_pressure, update_io_saturation};
@@ -27,6 +27,7 @@ pub struct StorageController {
     psi_monitor: PsiMonitor,
     disk_monitor: DiskMonitor,
     prev_io_stats: IoStats,
+    fractal_state: FractalState,
     last_tick: Instant,
     current_read_ahead: f64,
     current_nr_requests: f64,
@@ -63,6 +64,10 @@ impl StorageController {
             panic_threshold_psi: 40.0,
             urgent_poll_psi: 10.0,
             urgent_poll_inflight: 4.0,
+            hurst_window_size: 32,
+            cusum_threshold_h0: 0.5,
+            cusum_slack_k: 0.05,
+            cusum_decision_h: 1.5,
         };
         let poller = AdaptivePoller::new(1.0, 1.0);
         let mut controller = Self {
@@ -73,8 +78,9 @@ impl StorageController {
             psi_monitor,
             disk_monitor,
             prev_io_stats: initial_stats,
+            fractal_state: FractalState::default(),
             last_tick: Instant::now(),
-            current_read_ahead: MAX_READ_AHEAD as f64,
+            current_read_ahead: MIN_READ_AHEAD as f64,
             current_nr_requests: MAX_NR_REQUESTS as f64,
             current_fifo_batch: MAX_FIFO_BATCH as f64,
             tunables,
@@ -96,6 +102,14 @@ impl StorageController {
         self.last_tick = now;
         update_io_pressure(psi_data.some.avg10);
         update_io_saturation(current_io_stats.in_flight as f64);
+        let h_val = storage_math::calculate_hurst_exponent(
+            &mut self.fractal_state,
+            delta.avg_request_size_sectors,
+            &self.tunables,
+        );
+        storage_math::update_cusum_decision(&mut self.fractal_state, h_val, &self.tunables);
+        let calculated_ra =
+            storage_math::calculate_fractal_read_ahead(&self.fractal_state, &self.tunables);
         let lambda_eff = storage_math::calculate_weighted_throughput(&delta, &self.tunables);
         let target_latency =
             storage_math::calculate_target_latency(psi_data.some.avg10, &self.tunables);
@@ -110,11 +124,6 @@ impl StorageController {
             target_latency,
             self.current_nr_requests,
             psi_data.full.avg10,
-            &self.tunables,
-        );
-        let calculated_ra = storage_math::calculate_read_ahead(
-            delta.throughput_read,
-            psi_data.some.avg10,
             &self.tunables,
         );
         if storage_math::should_update_nr_requests(
