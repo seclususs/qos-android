@@ -19,6 +19,13 @@ pub struct ThermalTunables {
     pub bucket_leak_base: f64,
     pub psi_threshold: f64,
     pub psi_strength: f64,
+    pub mpc_horizon: usize,
+    pub rls_lambda: f64,
+    pub rls_sigma: f64,
+    pub rls_deadzone: f64,
+    pub model_alpha_init: f64,
+    pub model_beta_init: f64,
+    pub dob_smoothing: f64,
 }
 
 struct PidController {
@@ -53,8 +60,90 @@ impl PidController {
     }
 }
 
+struct RlsEstimator {
+    p: [[f64; 2]; 2],
+    theta: [f64; 2],
+    prev_u_temp: f64,
+    prev_load: f64,
+    dist_est: f64,
+    initialized: bool,
+}
+
+impl RlsEstimator {
+    fn new(alpha_init: f64, beta_init: f64) -> Self {
+        Self {
+            p: [[100.0, 0.0], [0.0, 100.0]],
+            theta: [alpha_init, beta_init],
+            prev_u_temp: 0.0,
+            prev_load: 0.0,
+            dist_est: 0.0,
+            initialized: false,
+        }
+    }
+    fn update(
+        &mut self,
+        current_temp: f64,
+        ambient_temp: f64,
+        current_load: f64,
+        _dt: f64,
+        tunables: &ThermalTunables,
+    ) -> (f64, f64, f64) {
+        let u_curr = current_temp - ambient_temp;
+        if !self.initialized {
+            self.prev_u_temp = u_curr;
+            self.prev_load = current_load;
+            self.initialized = true;
+            return (self.theta[0], self.theta[1], 0.0);
+        }
+        let phi = [self.prev_u_temp, self.prev_load];
+        let prediction = self.theta[0] * phi[0] + self.theta[1] * phi[1];
+        let error = u_curr - prediction;
+        let robust_error = if error.abs() <= tunables.rls_deadzone {
+            0.0
+        } else {
+            error - tunables.rls_deadzone * error.signum()
+        };
+        if robust_error.abs() > 0.0 {
+            let p_phi = [
+                self.p[0][0] * phi[0] + self.p[0][1] * phi[1],
+                self.p[1][0] * phi[0] + self.p[1][1] * phi[1],
+            ];
+            let phi_p_phi = phi[0] * p_phi[0] + phi[1] * p_phi[1];
+            let lambda = tunables.rls_lambda;
+            let denom = lambda + phi_p_phi;
+            let k = [p_phi[0] / denom, p_phi[1] / denom];
+            let sigma = tunables.rls_sigma;
+            let theta_default = [tunables.model_alpha_init, tunables.model_beta_init];
+            for i in 0..2 {
+                let leakage = sigma * (theta_default[i] - self.theta[i]);
+                let learning = k[i] * robust_error;
+                self.theta[i] += learning + leakage;
+            }
+            self.theta[0] = self.theta[0].clamp(0.80, 0.999);
+            self.theta[1] = self.theta[1].clamp(0.001, 2.0);
+            let term = [
+                [k[0] * p_phi[0], k[0] * p_phi[1]],
+                [k[1] * p_phi[0], k[1] * p_phi[1]],
+            ];
+            for i in 0..2 {
+                for j in 0..2 {
+                    self.p[i][j] = (self.p[i][j] - term[i][j]) / lambda;
+                }
+            }
+        }
+        let dynamic_load = (u_curr - self.theta[0] * self.prev_u_temp) / self.theta[1];
+        let raw_disturbance = dynamic_load - self.prev_load;
+        self.dist_est = tunables.dob_smoothing * self.dist_est
+            + (1.0 - tunables.dob_smoothing) * raw_disturbance;
+        self.prev_u_temp = u_curr;
+        self.prev_load = current_load;
+        (self.theta[0], self.theta[1], self.dist_est)
+    }
+}
+
 pub struct ThermalManager {
     pid: PidController,
+    rls: RlsEstimator,
     energy_bucket: f64,
     last_tick: Instant,
     tga_history: VecDeque<(Instant, f64)>,
@@ -70,6 +159,7 @@ impl ThermalManager {
     pub fn new() -> Self {
         Self {
             pid: PidController::new(),
+            rls: RlsEstimator::new(0.90, 0.3),
             energy_bucket: 0.0,
             last_tick: Instant::now(),
             tga_history: VecDeque::with_capacity(20),
@@ -86,6 +176,32 @@ impl ThermalManager {
         let dt = now.duration_since(self.last_tick).as_secs_f64();
         let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;
+        let (alpha, beta, dist) = self
+            .rls
+            .update(cpu_temp, bat_temp, psi_load, dt_safe, tunables);
+        let mut t_pred = cpu_temp;
+        let t_amb = bat_temp;
+        let effective_load = psi_load + dist;
+        let mut max_future_temp = t_pred;
+        for _ in 0..tunables.mpc_horizon {
+            let u_k = t_pred - t_amb;
+            let u_next = alpha * u_k + beta * effective_load;
+            t_pred = u_next + t_amb;
+            if t_pred > max_future_temp {
+                max_future_temp = t_pred;
+            }
+        }
+        let mpc_damping = if max_future_temp > tunables.hard_limit_cpu {
+            let headroom = tunables.hard_limit_cpu - t_amb;
+            let projected_excess = max_future_temp - t_amb;
+            if projected_excess > 0.0 {
+                (headroom / projected_excess).clamp(0.1, 1.0)
+            } else {
+                0.1
+            }
+        } else {
+            1.0
+        };
         while let Some(front) = self.tga_history.front() {
             if now.duration_since(front.0).as_secs_f64() > 10.0 {
                 self.tga_history.pop_front();
@@ -140,10 +256,11 @@ impl ThermalManager {
         let bucket_fill_ratio = self.energy_bucket / tunables.bucket_capacity;
         let sustained_penalty = bucket_fill_ratio * 0.5;
         let total_severity = phys_throttle + sustained_penalty;
-        let damping = 1.0 / (1.0 + total_severity);
+        let pid_damping = (1.0 / (1.0 + total_severity)).clamp(0.1, 1.0);
+        let final_damping = pid_damping.min(mpc_damping);
         if bat_temp >= tunables.hard_limit_bat {
-            return damping.min(0.2);
+            return final_damping.min(0.2);
         }
-        damping.clamp(0.1, 1.0)
+        final_damping
     }
 }

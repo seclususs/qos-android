@@ -149,6 +149,13 @@ impl CpuController {
             bucket_leak_base: 5.0,
             psi_threshold: 20.0,
             psi_strength: 0.40,
+            mpc_horizon: 8,
+            rls_lambda: 0.99,
+            rls_sigma: 0.001,
+            rls_deadzone: 0.3,
+            model_alpha_init: 0.90,
+            model_beta_init: 0.3,
+            dob_smoothing: 0.8,
         };
         let thermal_manager = ThermalManager::new();
         let poller = AdaptivePoller::new(1.0, 2.5);
