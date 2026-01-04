@@ -81,7 +81,7 @@ impl CpuController {
             MIN_UCLAMP_MIN,
         );
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
-        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 60.0);
+        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 70.0);
         let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
         let tunables = CpuTunables {
             min_latency_ns: MIN_LATENCY_NS as f64,
@@ -122,9 +122,11 @@ impl CpuController {
             pid_kp: 0.075,
             pid_ki: 0.003,
             pid_kd: 0.22,
-            target_headroom: 20.0,
-            hard_limit_cpu: 60.0,
+            hard_limit_cpu: 75.0,
             hard_limit_bat: 40.0,
+            dth_start_temp: 35.0,
+            dth_k_thermal: 3.0,
+            tga_k_anticipation: 8.0,
             leakage_k: 0.15,
             leakage_start_temp: 50.0,
             bucket_capacity: 400.0,

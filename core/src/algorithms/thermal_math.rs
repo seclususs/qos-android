@@ -1,5 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use std::collections::VecDeque;
 use std::time::Instant;
 
 #[derive(Clone, Copy)]
@@ -7,9 +8,11 @@ pub struct ThermalTunables {
     pub pid_kp: f64,
     pub pid_ki: f64,
     pub pid_kd: f64,
-    pub target_headroom: f64,
     pub hard_limit_cpu: f64,
     pub hard_limit_bat: f64,
+    pub dth_start_temp: f64,
+    pub dth_k_thermal: f64,
+    pub tga_k_anticipation: f64,
     pub leakage_k: f64,
     pub leakage_start_temp: f64,
     pub bucket_capacity: f64,
@@ -54,6 +57,7 @@ pub struct ThermalManager {
     pid: PidController,
     energy_bucket: f64,
     last_tick: Instant,
+    tga_history: VecDeque<(Instant, f64)>,
 }
 
 impl Default for ThermalManager {
@@ -68,6 +72,7 @@ impl ThermalManager {
             pid: PidController::new(),
             energy_bucket: 0.0,
             last_tick: Instant::now(),
+            tga_history: VecDeque::with_capacity(20),
         }
     }
     pub fn update(
@@ -81,31 +86,57 @@ impl ThermalManager {
         let dt = now.duration_since(self.last_tick).as_secs_f64();
         let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;
+        while let Some(front) = self.tga_history.front() {
+            if now.duration_since(front.0).as_secs_f64() > 10.0 {
+                self.tga_history.pop_front();
+            } else {
+                break;
+            }
+        }
+        self.tga_history.push_back((now, bat_temp));
+        let gradient_penalty = if let Some(oldest) = self.tga_history.front() {
+            let delta_t = now.duration_since(oldest.0).as_secs_f64();
+            if delta_t > 1.0 {
+                let delta_temp = bat_temp - oldest.1;
+                let g_bat = delta_temp / delta_t;
+                (tunables.tga_k_anticipation * g_bat).max(0.0)
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        let s_thermal = (bat_temp - tunables.dth_start_temp).max(0.0);
+        let dth_penalty = tunables.dth_k_thermal * s_thermal;
         let excess_load = (psi_load - tunables.psi_threshold).max(0.0);
-        let anticipatory_penalty = excess_load * tunables.psi_strength;
-        let bat_safety_margin = (tunables.hard_limit_bat - bat_temp).max(0.0);
-        let safety_scaling = (bat_safety_margin / 10.0).clamp(0.0, 1.0);
-        let base_headroom = tunables.target_headroom * safety_scaling;
-        let base_target = (bat_temp + base_headroom).min(tunables.hard_limit_cpu);
-        let dynamic_target = base_target - anticipatory_penalty;
-        let error = cpu_temp - dynamic_target;
+        let psi_penalty = excess_load * tunables.psi_strength;
+        let target_cpu_dynamic =
+            tunables.hard_limit_cpu - dth_penalty - gradient_penalty - psi_penalty;
+        let final_target = target_cpu_dynamic.max(45.0);
+        let error = cpu_temp - final_target;
         let pid_output = self.pid.update(error, dt_safe, tunables);
-        let leakage_penalty = if cpu_temp > tunables.leakage_start_temp {
+        let headroom_bat = tunables.hard_limit_bat - tunables.dth_start_temp;
+        let current_headroom = tunables.hard_limit_bat - bat_temp;
+        let eta_cooling = if headroom_bat > 0.0 {
+            (current_headroom / headroom_bat).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let adaptive_leak_rate = tunables.bucket_leak_base * eta_cooling;
+        if error > 0.0 {
+            self.energy_bucket += error * dt_safe * 5.0;
+        } else {
+            self.energy_bucket -= adaptive_leak_rate * dt_safe;
+        }
+        self.energy_bucket = self.energy_bucket.clamp(0.0, tunables.bucket_capacity);
+        let leakage_penalty_factor = if cpu_temp > tunables.leakage_start_temp {
             let excess = cpu_temp - tunables.leakage_start_temp;
             (excess * tunables.leakage_k).exp()
         } else {
             1.0
         };
-        let cooling_potential = (cpu_temp - bat_temp).max(1.0);
-        let leak_rate = tunables.bucket_leak_base * (cooling_potential / 20.0);
-        if error > 0.0 {
-            self.energy_bucket += error * dt_safe * 5.0;
-        } else {
-            self.energy_bucket -= leak_rate * dt_safe;
-        }
-        self.energy_bucket = self.energy_bucket.clamp(0.0, tunables.bucket_capacity);
         let base_throttle = pid_output.max(0.0);
-        let phys_throttle = base_throttle * leakage_penalty;
+        let phys_throttle = base_throttle * leakage_penalty_factor;
         let bucket_fill_ratio = self.energy_bucket / tunables.bucket_capacity;
         let sustained_penalty = bucket_fill_ratio * 0.5;
         let total_severity = phys_throttle + sustained_penalty;
