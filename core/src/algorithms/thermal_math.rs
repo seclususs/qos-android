@@ -125,9 +125,9 @@ impl RlsEstimator {
                 [k[0] * p_phi[0], k[0] * p_phi[1]],
                 [k[1] * p_phi[0], k[1] * p_phi[1]],
             ];
-            for i in 0..2 {
-                for j in 0..2 {
-                    self.p[i][j] = (self.p[i][j] - term[i][j]) / lambda;
+            for (i, row) in term.iter().enumerate() {
+                for (j, val) in row.iter().enumerate() {
+                    self.p[i][j] = (self.p[i][j] - val) / lambda;
                 }
             }
         }
