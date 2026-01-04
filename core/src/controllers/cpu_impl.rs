@@ -209,14 +209,17 @@ impl CpuController {
             dt_sec,
             &self.tunables,
         );
-        let physics_urgency = cpu_math::calculate_physics_urgency(
-            &mut self.physics_state,
+        let urgency_input = cpu_math::UrgencyInput {
             target_psi,
             dt_sec,
             damping_factor,
-            trend_gain,
+            stress_gain: trend_gain,
             lambda_total,
             lambda_dot,
+        };
+        let physics_urgency = cpu_math::calculate_physics_urgency(
+            &mut self.physics_state,
+            urgency_input,
             &self.tunables,
         );
         let p_eff = cpu_math::calculate_effective_pressure(

@@ -77,6 +77,16 @@ pub struct CpuTunables {
     pub lyapunov_margin: f64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct UrgencyInput {
+    pub target_psi: f64,
+    pub dt_sec: f64,
+    pub damping_factor: f64,
+    pub stress_gain: f64,
+    pub lambda_total: f64,
+    pub lambda_dot: f64,
+}
+
 fn calculate_regression_slope(state: &PhysicsState) -> f64 {
     const N: f64 = 8.0;
     const SUM_X: f64 = 28.0;
@@ -135,15 +145,10 @@ pub fn update_hamiltonian_params(
 
 pub fn calculate_physics_urgency(
     state: &mut PhysicsState,
-    target_psi: f64,
-    dt_sec: f64,
-    damping_factor: f64,
-    stress_gain: f64,
-    lambda_total: f64,
-    lambda_dot: f64,
+    input: UrgencyInput,
     tunables: &CpuTunables,
 ) -> f64 {
-    state.psi_history[state.history_idx] = target_psi;
+    state.psi_history[state.history_idx] = input.target_psi;
     state.history_idx = (state.history_idx + 1) % 8;
     let mut sum = 0.0;
     for val in state.psi_history.iter() {
@@ -157,32 +162,32 @@ pub fn calculate_physics_urgency(
     let std_dev = (variance_sum / 8.0).sqrt();
     let stiffness_mod = 1.0 + (tunables.variance_sensitivity * std_dev);
     let slope_per_tick = calculate_regression_slope(state);
-    let v_load = slope_per_tick / dt_sec.max(0.001);
+    let v_load = slope_per_tick / input.dt_sec.max(0.001);
     if v_load.abs() > tunables.impulse_threshold {
         state.vel += v_load * tunables.impulse_factor;
     }
-    let ghost_target = target_psi + (v_load * tunables.lookahead_time);
+    let ghost_target = input.target_psi + (v_load * tunables.lookahead_time);
     let k_base = tunables.spring_stiffness;
-    let k_dynamic = k_base * (1.0 + (tunables.gain_scheduling_alpha * stress_gain));
-    let k_final = k_dynamic * stiffness_mod * damping_factor.clamp(0.1, 1.0).powi(2);
+    let k_dynamic = k_base * (1.0 + (tunables.gain_scheduling_alpha * input.stress_gain));
+    let k_final = k_dynamic * stiffness_mod * input.damping_factor.clamp(0.1, 1.0).powi(2);
     let displacement = ghost_target - state.pos;
     let spring_force = k_final * displacement;
-    let mut hamiltonian_force = lambda_total * state.pos;
+    let mut hamiltonian_force = input.lambda_total * state.pos;
     let max_possible_spring = k_final * 100.0;
     hamiltonian_force = hamiltonian_force.min(max_possible_spring * 1.5);
     let c_critical = 2.0 * k_final.sqrt();
     let c_base = c_critical * tunables.damping_ratio;
     let velocity_sq = state.vel.powi(2) + 0.001;
-    let lyapunov_damping_req = (0.5 * lambda_dot.abs() * state.pos.powi(2)) / velocity_sq;
+    let lyapunov_damping_req = (0.5 * input.lambda_dot.abs() * state.pos.powi(2)) / velocity_sq;
     let c_lyapunov = lyapunov_damping_req.clamp(0.0, c_base * 4.0) * tunables.lyapunov_margin;
-    let c_thermal_adjusted = c_base / damping_factor.clamp(0.1, 1.0).sqrt();
+    let c_thermal_adjusted = c_base / input.damping_factor.clamp(0.1, 1.0).sqrt();
     let c_final = c_thermal_adjusted.max(c_lyapunov);
     let damping_force = c_final * state.vel;
     let total_force = spring_force - damping_force - hamiltonian_force;
     let acceleration = total_force;
-    state.vel += acceleration * dt_sec;
-    state.pos += state.vel * dt_sec;
-    state.last_psi = target_psi;
+    state.vel += acceleration * input.dt_sec;
+    state.pos += state.vel * input.dt_sec;
+    state.last_psi = input.target_psi;
     if state.pos < 0.0 {
         state.pos = 0.0;
         state.vel = 0.0;

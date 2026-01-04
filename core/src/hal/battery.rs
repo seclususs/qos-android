@@ -12,11 +12,10 @@ impl BatterySensor {
         Self { monitor }
     }
     pub fn read(&mut self) -> f64 {
-        if let Some(ref mut monitor) = self.monitor {
-            if let Ok(content) = monitor.read_value() {
-                return content.trim().parse::<f64>().unwrap_or(100.0);
-            }
-        }
-        100.0
+        self.monitor
+            .as_mut()
+            .and_then(|m| m.read_value().ok())
+            .and_then(|content| content.trim().parse::<f64>().ok())
+            .unwrap_or(100.0)
     }
 }
