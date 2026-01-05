@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::memory_math::{self, MemoryTunables};
+use crate::algorithms::memory_math::{self, MemoryTunables, QueueState};
 use crate::algorithms::poll_math::AdaptivePoller;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
@@ -50,6 +50,7 @@ pub struct MemoryController {
     current_page_cluster: f64,
     tunables: MemoryTunables,
     poller: AdaptivePoller,
+    queue_state: QueueState,
     next_wake_ms: i32,
 }
 
@@ -120,6 +121,11 @@ impl MemoryController {
             zram_thermal_penalty: 2.5,
             general_smooth_factor: 0.25,
             watermark_smooth_factor: 0.1,
+            little_law_history_size: 16,
+            little_law_alpha: 0.15,
+            residence_time_threshold: 60.0,
+            protection_curve_k: 2.5,
+            kingman_scaling_factor: 2.0,
         };
         let poller = AdaptivePoller::new(1.5, 0.5);
         let mut controller = Self {
@@ -152,6 +158,7 @@ impl MemoryController {
             current_page_cluster: MAX_PAGE_CLUSTER as f64,
             tunables,
             poller,
+            queue_state: QueueState::default(),
             next_wake_ms: MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
@@ -172,6 +179,16 @@ impl MemoryController {
         self.prev_psi_mem = p_mem;
         self.prev_vm_stats = vm_stats;
         update_memory_pressure(p_mem);
+        let inventory_l = (vm_stats.nr_active_anon
+            + vm_stats.nr_inactive_anon
+            + vm_stats.nr_active_file
+            + vm_stats.nr_inactive_file) as f64;
+        let queue_correction_factor = memory_math::update_queue_theory(
+            &mut self.queue_state,
+            inventory_l,
+            fluid_delta.scan_rate,
+            &self.tunables,
+        );
         self.next_wake_ms =
             self.poller
                 .calculate_next_interval(p_mem, psi_data.some.avg300) as i32;
@@ -181,6 +198,7 @@ impl MemoryController {
             &fluid_delta,
             cpu_temp,
             io_sat,
+            queue_correction_factor,
             &self.tunables,
         );
         let target_vfs = memory_math::calculate_vfs_thermodynamics(p_mem, &self.tunables);

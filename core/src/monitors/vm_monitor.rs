@@ -10,6 +10,10 @@ pub struct VmStats {
     pub pswpout: u64,
     pub workingset_refault: u64,
     pub fragmentation_index: f64,
+    pub nr_active_anon: u64,
+    pub nr_inactive_anon: u64,
+    pub nr_active_file: u64,
+    pub nr_inactive_file: u64,
 }
 
 pub struct VmMonitor {
@@ -42,6 +46,10 @@ impl VmMonitor {
                         "pgsteal_kswapd" => steal_kswapd = val,
                         "workingset_refault" => stats.workingset_refault = val,
                         "pswpout" => stats.pswpout = val,
+                        "nr_active_anon" => stats.nr_active_anon = val,
+                        "nr_inactive_anon" => stats.nr_inactive_anon = val,
+                        "nr_active_file" => stats.nr_active_file = val,
+                        "nr_inactive_file" => stats.nr_inactive_file = val,
                         _ => {}
                     }
                 }

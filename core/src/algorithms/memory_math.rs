@@ -2,6 +2,8 @@
 
 use crate::monitors::vm_monitor::VmStats;
 
+use std::collections::VecDeque;
+
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryTunables {
     pub min_swappiness: f64,
@@ -33,6 +35,11 @@ pub struct MemoryTunables {
     pub zram_thermal_penalty: f64,
     pub general_smooth_factor: f64,
     pub watermark_smooth_factor: f64,
+    pub little_law_history_size: usize,
+    pub little_law_alpha: f64,
+    pub residence_time_threshold: f64,
+    pub protection_curve_k: f64,
+    pub kingman_scaling_factor: f64,
 }
 
 #[derive(Default)]
@@ -40,6 +47,22 @@ pub struct FluidDelta {
     pub efficiency: f64,
     pub refault_index: f64,
     pub scan_rate: f64,
+}
+
+pub struct QueueState {
+    pub lambda_history: VecDeque<f64>,
+    pub smoothed_lambda: f64,
+    pub last_residence_time: f64,
+}
+
+impl Default for QueueState {
+    fn default() -> Self {
+        Self {
+            lambda_history: VecDeque::with_capacity(32),
+            smoothed_lambda: 0.0,
+            last_residence_time: 300.0,
+        }
+    }
 }
 
 pub fn calculate_fluid_dynamics(current: &VmStats, prev: &VmStats, dt_sec: f64) -> FluidDelta {
@@ -68,6 +91,50 @@ pub fn calculate_fluid_dynamics(current: &VmStats, prev: &VmStats, dt_sec: f64) 
     }
 }
 
+pub fn update_queue_theory(
+    state: &mut QueueState,
+    inventory_l: f64,
+    lambda_raw: f64,
+    tunables: &MemoryTunables,
+) -> f64 {
+    if state.smoothed_lambda == 0.0 {
+        state.smoothed_lambda = lambda_raw;
+    } else {
+        state.smoothed_lambda = tunables.little_law_alpha * lambda_raw
+            + (1.0 - tunables.little_law_alpha) * state.smoothed_lambda;
+    }
+    let safe_lambda = state.smoothed_lambda.max(1.0);
+    let residence_time = inventory_l / safe_lambda;
+    state.last_residence_time = residence_time;
+    if state.lambda_history.len() >= tunables.little_law_history_size {
+        state.lambda_history.pop_front();
+    }
+    state.lambda_history.push_back(lambda_raw);
+    let n = state.lambda_history.len() as f64;
+    let kingman_penalty = if n > 2.0 {
+        let mean: f64 = state.lambda_history.iter().sum::<f64>() / n;
+        let variance_sum: f64 = state
+            .lambda_history
+            .iter()
+            .map(|v| (v - mean).powi(2))
+            .sum();
+        let std_dev = (variance_sum / n).sqrt();
+        let cv = if mean > 0.0 { std_dev / mean } else { 0.0 };
+        1.0 + (cv * tunables.kingman_scaling_factor)
+    } else {
+        1.0
+    };
+    let thrash_threshold = tunables.residence_time_threshold;
+    let danger_ratio = if residence_time > 0.0 {
+        thrash_threshold / residence_time
+    } else {
+        100.0
+    };
+    let eta_protection = 1.0 / (1.0 + danger_ratio.powf(tunables.protection_curve_k));
+    let final_correction_factor = eta_protection / kingman_penalty;
+    final_correction_factor.clamp(0.0, 1.5)
+}
+
 pub fn calculate_pressure_derivative(current_psi: f64, prev_psi: f64, dt: f64) -> f64 {
     if dt <= 0.0 {
         0.0
@@ -82,20 +149,22 @@ pub fn calculate_swappiness_physics(
     fluid: &FluidDelta,
     cpu_temp: f64,
     io_sat: f64,
+    queue_correction: f64,
     tunables: &MemoryTunables,
 ) -> f64 {
     let base_swap = tunables.min_swappiness;
     let p_term = tunables.hydraulic_kp * p_mem;
     let d_term = tunables.hydraulic_kd * dp_dt;
     let turbulence = tunables.turbulence_factor * (1.0 - fluid.efficiency);
-    let mut target_swap = base_swap + p_term + d_term + turbulence;
+    let target_swap_fluid = base_swap + p_term + d_term + turbulence;
+    let target_swap_corrected = (target_swap_fluid - base_swap) * queue_correction + base_swap;
     let thermal_stress = (cpu_temp - 50.0).max(0.0) / 20.0;
     let thermal_throttle = (1.0 - (thermal_stress * tunables.zram_thermal_penalty)).clamp(0.0, 1.0);
     let io_throttle = (1.0 - (io_sat * 0.6)).clamp(0.2, 1.0);
-    target_swap = target_swap * thermal_throttle * io_throttle;
+    let mut final_swap = target_swap_corrected * thermal_throttle * io_throttle;
     let thrashing_penalty = (fluid.refault_index * tunables.wss_penalty_factor).powi(2);
     let wss_protection = (1.0 - thrashing_penalty).clamp(0.0, 1.0);
-    let final_swap = target_swap * wss_protection;
+    final_swap *= wss_protection;
     final_swap.clamp(tunables.min_swappiness, tunables.max_swappiness)
 }
 
