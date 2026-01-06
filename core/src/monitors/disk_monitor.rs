@@ -6,10 +6,10 @@ use crate::hal::monitored_file::MonitoredFile;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoStats {
     pub read_ios: u64,
+    pub read_merges: u64,
     pub read_sectors: u64,
     pub read_ticks: u64,
     pub write_ios: u64,
-    pub write_sectors: u64,
     pub write_ticks: u64,
     pub in_flight: u64,
 }
@@ -31,29 +31,31 @@ impl DiskMonitor {
                 "Empty diskstats file".to_string(),
             ));
         }
-        let mut parts = content.split_whitespace();
+        let mut parts = content.split_ascii_whitespace();
         let read_ios = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let read_merges = parts.next().and_then(|v| v.parse::<u64>().ok());
         let read_sectors = parts.next().and_then(|v| v.parse::<u64>().ok());
         let read_ticks = parts.next().and_then(|v| v.parse::<u64>().ok());
         let write_ios = parts.next().and_then(|v| v.parse::<u64>().ok());
-        let write_sectors = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let _ = parts.next();
+        let _ = parts.next();
         let write_ticks = parts.next().and_then(|v| v.parse::<u64>().ok());
         let in_flight = parts.next().and_then(|v| v.parse::<u64>().ok());
-        if let (Some(ri), Some(rs), Some(rt), Some(wi), Some(ws), Some(wt), Some(infl)) = (
+        if let (Some(ri), Some(rm), Some(rs), Some(rt), Some(wi), Some(wt), Some(infl)) = (
             read_ios,
+            read_merges,
             read_sectors,
             read_ticks,
             write_ios,
-            write_sectors,
             write_ticks,
             in_flight,
         ) {
             Ok(IoStats {
                 read_ios: ri,
+                read_merges: rm,
                 read_sectors: rs,
                 read_ticks: rt,
                 write_ios: wi,
-                write_sectors: ws,
                 write_ticks: wt,
                 in_flight: infl,
             })

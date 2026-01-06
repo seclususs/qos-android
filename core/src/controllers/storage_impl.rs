@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::poll_math::AdaptivePoller;
-use crate::algorithms::storage_math::{self, PatternState, StorageTunables};
+use crate::algorithms::storage_math::{self, StorageTunables, WorkloadState};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
 use crate::daemon::state::DaemonContext;
@@ -27,7 +27,7 @@ pub struct StorageController {
     psi_monitor: PsiMonitor,
     disk_monitor: DiskMonitor,
     prev_io_stats: IoStats,
-    pattern_state: PatternState,
+    workload_state: WorkloadState,
     last_tick: Instant,
     current_read_ahead: f64,
     current_nr_requests: f64,
@@ -61,12 +61,11 @@ impl StorageController {
             target_latency_base_ms: 75.0,
             hysteresis_threshold: 0.15,
             critical_threshold_psi: 40.0,
-            urgent_poll_psi: 10.0,
-            urgent_poll_inflight: 4.0,
-            pattern_window_size: 32,
-            pattern_threshold_h0: 0.5,
-            pattern_margin_k: 0.05,
-            pattern_decision_h: 1.5,
+            min_req_size_kb: 32.0,
+            max_req_size_kb: 256.0,
+            queue_pressure_low: 1.0,
+            queue_pressure_high: 4.0,
+            smoothing_factor: 0.25,
         };
         let poller = AdaptivePoller::new(1.0, 1.0);
         let mut controller = Self {
@@ -77,7 +76,7 @@ impl StorageController {
             psi_monitor,
             disk_monitor,
             prev_io_stats: initial_stats,
-            pattern_state: PatternState::default(),
+            workload_state: WorkloadState::default(),
             last_tick: Instant::now(),
             current_read_ahead: MIN_READ_AHEAD as f64,
             current_nr_requests: MAX_NR_REQUESTS as f64,
@@ -101,18 +100,21 @@ impl StorageController {
         self.last_tick = now;
         context.pressure.io_psi = psi_data.some.avg10;
         context.pressure.io_saturation = current_io_stats.in_flight as f64;
-        let variance_idx = storage_math::calculate_variance_index(
-            &mut self.pattern_state,
-            delta.avg_request_size_sectors,
+        let req_size_score = storage_math::calculate_request_size_score(&delta, &self.tunables);
+        let merge_ratio = storage_math::calculate_merge_ratio(&delta);
+        let pressure_score = storage_math::calculate_pressure_score(
+            current_io_stats.in_flight as f64,
             &self.tunables,
         );
-        storage_math::update_pattern_decision(
-            &mut self.pattern_state,
-            variance_idx,
+        let sequentiality = storage_math::resolve_sequentiality_factor(
+            &mut self.workload_state,
+            req_size_score,
+            merge_ratio,
+            pressure_score,
             &self.tunables,
         );
         let calculated_ra =
-            storage_math::calculate_adaptive_read_ahead(&self.pattern_state, &self.tunables);
+            storage_math::calculate_target_read_ahead(sequentiality, &self.tunables);
         let lambda_eff = storage_math::calculate_weighted_throughput(&delta, &self.tunables);
         let target_latency =
             storage_math::calculate_target_latency(psi_data.some.avg10, &self.tunables);
@@ -140,8 +142,8 @@ impl StorageController {
             storage_math::calculate_fifo_batch(self.current_nr_requests, &self.tunables);
         self.current_read_ahead = calculated_ra;
         self.current_fifo_batch = calculated_fifo;
-        if psi_data.some.avg10 > self.tunables.urgent_poll_psi
-            || current_io_stats.in_flight as f64 > self.tunables.urgent_poll_inflight
+        if psi_data.some.avg10 > self.tunables.critical_threshold_psi
+            || current_io_stats.in_flight as f64 > self.tunables.queue_pressure_high
         {
             self.next_wake_ms = MIN_POLLING_MS as i32;
         } else {

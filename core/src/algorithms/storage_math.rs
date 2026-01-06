@@ -2,8 +2,6 @@
 
 use crate::monitors::disk_monitor::IoStats;
 
-use std::collections::VecDeque;
-
 #[derive(Debug, Clone, Copy)]
 pub struct StorageTunables {
     pub min_read_ahead: f64,
@@ -16,12 +14,11 @@ pub struct StorageTunables {
     pub target_latency_base_ms: f64,
     pub hysteresis_threshold: f64,
     pub critical_threshold_psi: f64,
-    pub urgent_poll_psi: f64,
-    pub urgent_poll_inflight: f64,
-    pub pattern_window_size: usize,
-    pub pattern_threshold_h0: f64,
-    pub pattern_margin_k: f64,
-    pub pattern_decision_h: f64,
+    pub min_req_size_kb: f64,
+    pub max_req_size_kb: f64,
+    pub queue_pressure_low: f64,
+    pub queue_pressure_high: f64,
+    pub smoothing_factor: f64,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -29,23 +26,19 @@ pub struct IoDelta {
     pub throughput_read: f64,
     pub throughput_write: f64,
     pub service_time_ms: f64,
-    pub avg_request_size_sectors: f64,
+    pub delta_read_ios: f64,
+    pub delta_read_merges: f64,
+    pub delta_read_sectors: f64,
 }
 
-pub struct PatternState {
-    pub history: VecDeque<f64>,
-    pub c_plus: f64,
-    pub c_minus: f64,
-    pub is_sequential: bool,
+pub struct WorkloadState {
+    pub sequentiality_smoothed: f64,
 }
 
-impl Default for PatternState {
+impl Default for WorkloadState {
     fn default() -> Self {
         Self {
-            history: VecDeque::with_capacity(64),
-            c_plus: 0.0,
-            c_minus: 0.0,
-            is_sequential: false,
+            sequentiality_smoothed: 0.0,
         }
     }
 }
@@ -55,21 +48,15 @@ pub fn calculate_io_deltas(current: &IoStats, prev: &IoStats, dt_sec: f64) -> Io
         return IoDelta::default();
     }
     let delta_read_ios = current.read_ios.saturating_sub(prev.read_ios) as f64;
-    let delta_write_ios = current.write_ios.saturating_sub(prev.write_ios) as f64;
-    let delta_read_ticks = current.read_ticks.saturating_sub(prev.read_ticks) as f64;
-    let delta_write_ticks = current.write_ticks.saturating_sub(prev.write_ticks) as f64;
+    let delta_read_merges = current.read_merges.saturating_sub(prev.read_merges) as f64;
     let delta_read_sectors = current.read_sectors.saturating_sub(prev.read_sectors) as f64;
-    let delta_write_sectors = current.write_sectors.saturating_sub(prev.write_sectors) as f64;
+    let delta_write_ios = current.write_ios.saturating_sub(prev.write_ios) as f64;
+    let delta_write_ticks = current.write_ticks.saturating_sub(prev.write_ticks) as f64;
+    let delta_read_ticks = current.read_ticks.saturating_sub(prev.read_ticks) as f64;
     let total_ios = delta_read_ios + delta_write_ios;
     let total_ticks = delta_read_ticks + delta_write_ticks;
-    let total_sectors = delta_read_sectors + delta_write_sectors;
     let service_time_ms = if total_ios > 0.0 {
         total_ticks / total_ios
-    } else {
-        0.0
-    };
-    let avg_request_size_sectors = if total_ios > 0.0 {
-        total_sectors / total_ios
     } else {
         0.0
     };
@@ -77,93 +64,60 @@ pub fn calculate_io_deltas(current: &IoStats, prev: &IoStats, dt_sec: f64) -> Io
         throughput_read: delta_read_ios / dt_sec,
         throughput_write: delta_write_ios / dt_sec,
         service_time_ms,
-        avg_request_size_sectors,
+        delta_read_ios,
+        delta_read_merges,
+        delta_read_sectors,
     }
 }
 
-fn calculate_rs_statistic(data: &[f64]) -> f64 {
-    let n = data.len();
-    if n < 2 {
+pub fn calculate_request_size_score(delta: &IoDelta, tunables: &StorageTunables) -> f64 {
+    if delta.delta_read_ios <= 0.0 {
         return 0.0;
     }
-    let mean: f64 = data.iter().sum::<f64>() / n as f64;
-    let mut sum_sq_diff = 0.0;
-    let mut current_accum_dev = 0.0;
-    let mut max_y = 0.0;
-    let mut min_y = 0.0;
-    for &x in data {
-        let diff = x - mean;
-        sum_sq_diff += diff * diff;
-        current_accum_dev += diff;
-        if current_accum_dev > max_y {
-            max_y = current_accum_dev;
-        }
-        if current_accum_dev < min_y {
-            min_y = current_accum_dev;
-        }
-    }
-    let r = max_y - min_y;
-    let s = (sum_sq_diff / n as f64).sqrt();
-    if s < 1e-9 {
+    let avg_size_kb = (delta.delta_read_sectors / delta.delta_read_ios) * 0.5;
+    let range = tunables.max_req_size_kb - tunables.min_req_size_kb;
+    if range <= 0.0 {
         return 0.0;
     }
-    r / s
+    let score = (avg_size_kb - tunables.min_req_size_kb) / range;
+    score.clamp(0.0, 1.0)
 }
 
-pub fn calculate_variance_index(
-    state: &mut PatternState,
-    new_sample: f64,
+pub fn calculate_merge_ratio(delta: &IoDelta) -> f64 {
+    let total_submissions = delta.delta_read_merges + delta.delta_read_ios;
+    if total_submissions <= 0.0 {
+        return 0.0;
+    }
+    delta.delta_read_merges / total_submissions
+}
+
+pub fn calculate_pressure_score(in_flight: f64, tunables: &StorageTunables) -> f64 {
+    let range = tunables.queue_pressure_high - tunables.queue_pressure_low;
+    if range <= 0.0 {
+        return 0.0;
+    }
+    let score = (in_flight - tunables.queue_pressure_low) / range;
+    score.clamp(0.0, 1.0)
+}
+
+pub fn resolve_sequentiality_factor(
+    state: &mut WorkloadState,
+    req_size_score: f64,
+    merge_ratio: f64,
+    pressure_score: f64,
     tunables: &StorageTunables,
 ) -> f64 {
-    if new_sample > 0.1 {
-        if state.history.len() >= tunables.pattern_window_size {
-            state.history.pop_front();
-        }
-        state.history.push_back(new_sample);
-    }
-    let n = state.history.len();
-    if n < 16 {
-        return 0.5;
-    }
-    let data_vec: Vec<f64> = state.history.iter().copied().collect();
-    let rs_full = calculate_rs_statistic(&data_vec);
-    let half_n = n / 2;
-    let rs_half = calculate_rs_statistic(&data_vec[half_n..]);
-    if rs_full <= 0.0 || rs_half <= 0.0 {
-        return 0.5;
-    }
-    let log_rs_full = rs_full.ln();
-    let log_rs_half = rs_half.ln();
-    let log_n = (n as f64).ln();
-    let log_half_n = (half_n as f64).ln();
-    let h = (log_rs_full - log_rs_half) / (log_n - log_half_n);
-    h.clamp(0.0, 1.0)
+    let shape_factor = req_size_score.max(merge_ratio);
+    let raw_sequentiality = shape_factor * pressure_score;
+    let alpha = tunables.smoothing_factor;
+    let smoothed = (raw_sequentiality * alpha) + (state.sequentiality_smoothed * (1.0 - alpha));
+    state.sequentiality_smoothed = smoothed;
+    smoothed
 }
 
-pub fn update_pattern_decision(
-    state: &mut PatternState,
-    variance_val: f64,
-    tunables: &StorageTunables,
-) {
-    let target = tunables.pattern_threshold_h0;
-    let margin = tunables.pattern_margin_k;
-    let limit = tunables.pattern_decision_h;
-    state.c_plus = (state.c_plus + variance_val - (target + margin)).max(0.0);
-    state.c_minus = (state.c_minus + (target - margin) - variance_val).max(0.0);
-    if state.c_plus > limit {
-        state.is_sequential = true;
-        state.c_plus = 0.0;
-    } else if state.c_minus > limit {
-        state.is_sequential = false;
-        state.c_minus = 0.0;
-    }
-}
-
-pub fn calculate_adaptive_read_ahead(state: &PatternState, tunables: &StorageTunables) -> f64 {
-    let base = tunables.min_read_ahead;
+pub fn calculate_target_read_ahead(sequentiality: f64, tunables: &StorageTunables) -> f64 {
     let range = tunables.max_read_ahead - tunables.min_read_ahead;
-    let factor = if state.is_sequential { 1.0 } else { 0.0 };
-    base + (range * factor)
+    tunables.min_read_ahead + (range * sequentiality)
 }
 
 pub fn calculate_weighted_throughput(delta: &IoDelta, tunables: &StorageTunables) -> f64 {
