@@ -30,7 +30,6 @@ impl<const BUFFER_SIZE: usize> MonitoredFile<BUFFER_SIZE> {
         if bytes_read == 0 {
             return Ok("");
         }
-        std::str::from_utf8(&self.buffer[..bytes_read])
-            .map_err(|_| QosError::InvalidInput("Invalid UTF-8 content".to_string()))
+        unsafe { Ok(std::str::from_utf8_unchecked(&self.buffer[..bytes_read])) }
     }
 }

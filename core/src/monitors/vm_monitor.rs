@@ -17,7 +17,7 @@ pub struct VmStats {
 
 pub struct VmMonitor {
     vmstat_monitor: MonitoredFile<8192>,
-    buddy_monitor: MonitoredFile<8192>,
+    buddy_monitor: MonitoredFile<1024>,
 }
 
 impl VmMonitor {
@@ -31,7 +31,7 @@ impl VmMonitor {
         let mut stats = VmStats::default();
         if let Ok(content) = self.vmstat_monitor.read_value() {
             for line in content.lines() {
-                let mut parts = line.split_whitespace();
+                let mut parts = line.split_ascii_whitespace();
                 if let (Some(key), Some(val_str)) = (parts.next(), parts.next()) {
                     let val = val_str.parse::<u64>().unwrap_or(0);
                     match key {
@@ -57,7 +57,7 @@ impl VmMonitor {
             for line in content.lines() {
                 if let Some(pos) = line.find("Normal") {
                     let numbers_part = &line[pos + 6..];
-                    for (order, count_str) in numbers_part.split_whitespace().enumerate() {
+                    for (order, count_str) in numbers_part.split_ascii_whitespace().enumerate() {
                         let count = count_str.parse::<u64>().unwrap_or(0);
                         let pages = count * (1 << order);
                         total_free_pages += pages;

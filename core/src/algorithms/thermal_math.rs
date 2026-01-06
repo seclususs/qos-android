@@ -61,6 +61,7 @@ impl LeadLagFilter {
 struct SmithPredictor {
     model_output_no_delay: f64,
     delay_buffer: VecDeque<f64>,
+    capacity: usize,
 }
 
 impl SmithPredictor {
@@ -68,6 +69,7 @@ impl SmithPredictor {
         Self {
             model_output_no_delay: 0.0,
             delay_buffer: VecDeque::with_capacity(capacity),
+            capacity,
         }
     }
     fn update(
@@ -81,13 +83,15 @@ impl SmithPredictor {
         let alpha = dt / (tau + dt);
         let y_no_delay = alpha * (u_control * k_gain) + (1.0 - alpha) * self.model_output_no_delay;
         self.model_output_no_delay = y_no_delay;
-        let steps = (delay_sec / dt.max(0.001)).round() as usize;
-        if self.delay_buffer.len() > steps + 10 {
-            self.delay_buffer.truncate(steps + 5);
+        if self.delay_buffer.len() >= self.capacity {
+            self.delay_buffer.pop_front();
         }
         self.delay_buffer.push_back(y_no_delay);
-        let y_delayed = if self.delay_buffer.len() >= steps {
-            self.delay_buffer.pop_front().unwrap_or(0.0)
+        let steps_needed = (delay_sec / dt.max(0.001)).round() as usize;
+        let current_len = self.delay_buffer.len();
+        let y_delayed = if steps_needed < current_len {
+            let idx = current_len.saturating_sub(1).saturating_sub(steps_needed);
+            *self.delay_buffer.get(idx).unwrap_or(&0.0)
         } else {
             *self.delay_buffer.front().unwrap_or(&0.0)
         };

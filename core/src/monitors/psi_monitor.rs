@@ -92,7 +92,7 @@ impl PsiMonitor {
             } else {
                 &mut data.full
             };
-            for token in line.split_whitespace() {
+            for token in line.split_ascii_whitespace() {
                 if let Some(v) = token.strip_prefix("avg10=") {
                     target.avg10 = v.parse::<f64>().unwrap_or(0.0);
                 } else if let Some(v) = token.strip_prefix("avg60=") {
