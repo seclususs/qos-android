@@ -4,7 +4,7 @@ use crate::algorithms::poll_math::AdaptivePoller;
 use crate::algorithms::storage_math::{self, PatternState, StorageTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
-use crate::daemon::state::{update_io_pressure, update_io_saturation};
+use crate::daemon::state::DaemonContext;
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
@@ -89,7 +89,7 @@ impl StorageController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn update_io_logic(&mut self) -> Result<(), QosError> {
+    fn update_io_logic(&mut self, context: &mut DaemonContext) -> Result<(), QosError> {
         let psi_data = self.psi_monitor.read_state()?;
         let current_io_stats = self.disk_monitor.read_stats()?;
         let now = Instant::now();
@@ -99,8 +99,8 @@ impl StorageController {
             storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_safe);
         self.prev_io_stats = current_io_stats;
         self.last_tick = now;
-        update_io_pressure(psi_data.some.avg10);
-        update_io_saturation(current_io_stats.in_flight as f64);
+        context.pressure.io_psi = psi_data.some.avg10;
+        context.pressure.io_saturation = current_io_stats.in_flight as f64;
         let variance_idx = storage_math::calculate_variance_index(
             &mut self.pattern_state,
             delta.avg_request_size_sectors,
@@ -181,16 +181,16 @@ impl EventHandler for StorageController {
     fn as_raw_fd(&self) -> RawFd {
         self.fd.as_raw_fd()
     }
-    fn on_event(&mut self) -> Result<LoopAction, QosError> {
+    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
-        if let Err(e) = self.update_io_logic() {
+        if let Err(e) = self.update_io_logic(context) {
             log::warn!("Storage Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
-    fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
-        if let Err(e) = self.update_io_logic() {
+    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+        if let Err(e) = self.update_io_logic(context) {
             log::warn!("Storage Timeout Error: {}", e);
         }
         Ok(LoopAction::Continue)

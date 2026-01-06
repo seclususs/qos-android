@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::daemon::state::SHUTDOWN_REQUESTED;
+use crate::daemon::state::{DaemonContext, SHUTDOWN_REQUESTED};
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 
@@ -29,7 +29,7 @@ impl EventHandler for SignalController {
     fn as_raw_fd(&self) -> RawFd {
         self.file.as_raw_fd()
     }
-    fn on_event(&mut self) -> Result<LoopAction, QosError> {
+    fn on_event(&mut self, _context: &mut DaemonContext) -> Result<LoopAction, QosError> {
         log::info!("SignalController: Signal received from Kernel.");
         let mut buf = [0u8; 128];
         match self.file.read_exact(&mut buf) {

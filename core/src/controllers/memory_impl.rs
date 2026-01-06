@@ -4,7 +4,7 @@ use crate::algorithms::memory_math::{self, MemoryTunables, QueueState};
 use crate::algorithms::poll_math::AdaptivePoller;
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
-use crate::daemon::state::{get_cpu_pressure, get_io_saturation, update_memory_pressure};
+use crate::daemon::state::DaemonContext;
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 use crate::hal::cached_file::{CachedFile, CheckStrategy};
@@ -164,12 +164,12 @@ impl MemoryController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn update_pressure_state(&mut self) -> Result<(), QosError> {
+    fn update_pressure_state(&mut self, context: &mut DaemonContext) -> Result<(), QosError> {
         let psi_data = self.psi_monitor.read_state()?;
         let vm_stats = self.vm_monitor.read_stats()?;
         let cpu_temp = self.cpu_sensor.read();
-        let p_cpu = get_cpu_pressure();
-        let io_sat = get_io_saturation();
+        let p_cpu = context.pressure.cpu_psi;
+        let io_sat = context.pressure.io_saturation;
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64().max(0.001);
         self.last_tick = now;
@@ -179,7 +179,7 @@ impl MemoryController {
         let dp_dt = memory_math::calculate_pressure_derivative(p_mem, self.prev_psi_mem, dt);
         self.prev_psi_mem = p_mem;
         self.prev_vm_stats = vm_stats;
-        update_memory_pressure(p_mem);
+        context.pressure.memory_psi = p_mem;
         let active_set = (vm_stats.nr_active_anon
             + vm_stats.nr_inactive_anon
             + vm_stats.nr_active_file
@@ -305,16 +305,16 @@ impl EventHandler for MemoryController {
     fn as_raw_fd(&self) -> RawFd {
         self.fd.as_raw_fd()
     }
-    fn on_event(&mut self) -> Result<LoopAction, QosError> {
+    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
-        if let Err(e) = self.update_pressure_state() {
+        if let Err(e) = self.update_pressure_state(context) {
             log::warn!("Mem Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
-    fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
-        if let Err(e) = self.update_pressure_state() {
+    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+        if let Err(e) = self.update_pressure_state(context) {
             log::warn!("Mem Timeout Error: {}", e);
         }
         Ok(LoopAction::Continue)

@@ -1,5 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::daemon::state::DaemonContext;
 use crate::daemon::types::QosError;
 
 use std::os::fd::RawFd;
@@ -11,11 +12,12 @@ pub enum LoopAction {
 
 pub trait EventHandler {
     fn as_raw_fd(&self) -> RawFd;
-    fn on_event(&mut self) -> Result<LoopAction, QosError>;
+    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError>;
     fn get_timeout_ms(&self) -> i32 {
         -1
     }
-    fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
+    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+        let _ = context;
         Ok(LoopAction::Continue)
     }
     fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {

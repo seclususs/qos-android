@@ -4,7 +4,7 @@ use crate::config::loop_settings::{
     BOOT_POLL_INTERVAL_SEC, BOOT_WAIT_RETRY_LIMIT, COOLDOWN_DURATION_SEC, MAX_EPOLL_TIMEOUT_MS,
     MAX_EVENTS, STABILIZATION_DELAY_SEC,
 };
-use crate::daemon::state::SHUTDOWN_REQUESTED;
+use crate::daemon::state::{DaemonContext, SHUTDOWN_REQUESTED};
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 use crate::hal::properties::get_system_property;
@@ -194,6 +194,7 @@ pub fn wait_for_boot_completion(tag: &str) {
 pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), QosError> {
     let epoll_fd = epoll::create(epoll::CreateFlags::CLOEXEC)
         .map_err(|e| QosError::SystemCheckFailed(format!("Failed to create epoll: {}", e)))?;
+    let mut context = DaemonContext::new();
     let cooldown_dur = Duration::from_secs(COOLDOWN_DURATION_SEC);
     let mut events: [libc::epoll_event; MAX_EVENTS] =
         [libc::epoll_event { events: 0, u64: 0 }; MAX_EVENTS];
@@ -266,7 +267,7 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), QosEr
             if let Some(service) = services.get_mut(id)
                 && let Some(ref mut handler) = service.handler
             {
-                match handler.on_event() {
+                match handler.on_event(&mut context) {
                     Ok(LoopAction::Continue) => {}
                     Err(e) => {
                         log::error!("Service '{}' event error: {}", service.name, e);
@@ -294,7 +295,7 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), QosEr
                         now_after_wait.duration_since(service.last_tick).as_millis() as i32;
                     if elapsed >= interval_ms {
                         service.last_tick = now_after_wait;
-                        match handler.on_timeout() {
+                        match handler.on_timeout(&mut context) {
                             Ok(LoopAction::Continue) => {}
                             Err(e) => {
                                 log::error!("Service '{}' timeout error: {}", service.name, e);

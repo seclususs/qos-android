@@ -5,7 +5,7 @@ use crate::algorithms::poll_math::AdaptivePoller;
 use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
-use crate::daemon::state::{get_io_pressure, get_memory_pressure, update_cpu_pressure};
+use crate::daemon::state::DaemonContext;
 use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 use crate::hal::battery::BatterySensor;
@@ -190,11 +190,11 @@ impl CpuController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn update_dynamics(&mut self) -> Result<(), QosError> {
+    fn update_dynamics(&mut self, context: &mut DaemonContext) -> Result<(), QosError> {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
-        let memory_psi = get_memory_pressure();
-        let io_psi = get_io_pressure();
+        let memory_psi = context.pressure.memory_psi;
+        let io_psi = context.pressure.io_psi;
         let target_psi = some.current.max(some.avg10);
         let is_break = some.nis > self.tunables.nis_threshold;
         let cpu_temp = self.cpu_sensor.read();
@@ -235,7 +235,7 @@ impl CpuController {
             io_psi,
             &self.tunables,
         );
-        update_cpu_pressure(p_eff);
+        context.pressure.cpu_psi = p_eff;
         let mut calculated_poll = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
         if cpu_math::is_transient(&self.load_state, target_psi, &self.tunables) {
             calculated_poll = calculated_poll.min(self.tunables.transient_poll_interval as i32);
@@ -323,16 +323,16 @@ impl EventHandler for CpuController {
     fn as_raw_fd(&self) -> RawFd {
         self.fd.as_raw_fd()
     }
-    fn on_event(&mut self) -> Result<LoopAction, QosError> {
+    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
-        if let Err(e) = self.update_dynamics() {
+        if let Err(e) = self.update_dynamics(context) {
             log::warn!("Cpu Logic Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
-    fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
-        if let Err(e) = self.update_dynamics() {
+    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+        if let Err(e) = self.update_dynamics(context) {
             log::warn!("Cpu Timeout Error: {}", e);
         }
         Ok(LoopAction::Continue)
