@@ -14,15 +14,14 @@ pub struct StorageTunables {
     pub max_fifo_batch: f64,
     pub write_cost_factor: f64,
     pub target_latency_base_ms: f64,
-    pub congestion_beta: f64,
     pub hysteresis_threshold: f64,
-    pub panic_threshold_psi: f64,
+    pub critical_threshold_psi: f64,
     pub urgent_poll_psi: f64,
     pub urgent_poll_inflight: f64,
-    pub hurst_window_size: usize,
-    pub cusum_threshold_h0: f64,
-    pub cusum_slack_k: f64,
-    pub cusum_decision_h: f64,
+    pub pattern_window_size: usize,
+    pub pattern_threshold_h0: f64,
+    pub pattern_margin_k: f64,
+    pub pattern_decision_h: f64,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -33,22 +32,20 @@ pub struct IoDelta {
     pub avg_request_size_sectors: f64,
 }
 
-pub struct FractalState {
+pub struct PatternState {
     pub history: VecDeque<f64>,
     pub c_plus: f64,
     pub c_minus: f64,
     pub is_sequential: bool,
-    pub last_hurst: f64,
 }
 
-impl Default for FractalState {
+impl Default for PatternState {
     fn default() -> Self {
         Self {
             history: VecDeque::with_capacity(64),
             c_plus: 0.0,
             c_minus: 0.0,
             is_sequential: false,
-            last_hurst: 0.5,
         }
     }
 }
@@ -113,13 +110,13 @@ fn calculate_rs_statistic(data: &[f64]) -> f64 {
     r / s
 }
 
-pub fn calculate_hurst_exponent(
-    state: &mut FractalState,
+pub fn calculate_variance_index(
+    state: &mut PatternState,
     new_sample: f64,
     tunables: &StorageTunables,
 ) -> f64 {
     if new_sample > 0.1 {
-        if state.history.len() >= tunables.hurst_window_size {
+        if state.history.len() >= tunables.pattern_window_size {
             state.history.pop_front();
         }
         state.history.push_back(new_sample);
@@ -140,16 +137,19 @@ pub fn calculate_hurst_exponent(
     let log_n = (n as f64).ln();
     let log_half_n = (half_n as f64).ln();
     let h = (log_rs_full - log_rs_half) / (log_n - log_half_n);
-    state.last_hurst = h.clamp(0.0, 1.0);
-    state.last_hurst
+    h.clamp(0.0, 1.0)
 }
 
-pub fn update_cusum_decision(state: &mut FractalState, h_val: f64, tunables: &StorageTunables) {
-    let target = tunables.cusum_threshold_h0;
-    let slack = tunables.cusum_slack_k;
-    let limit = tunables.cusum_decision_h;
-    state.c_plus = (state.c_plus + h_val - (target + slack)).max(0.0);
-    state.c_minus = (state.c_minus + (target - slack) - h_val).max(0.0);
+pub fn update_pattern_decision(
+    state: &mut PatternState,
+    variance_val: f64,
+    tunables: &StorageTunables,
+) {
+    let target = tunables.pattern_threshold_h0;
+    let margin = tunables.pattern_margin_k;
+    let limit = tunables.pattern_decision_h;
+    state.c_plus = (state.c_plus + variance_val - (target + margin)).max(0.0);
+    state.c_minus = (state.c_minus + (target - margin) - variance_val).max(0.0);
     if state.c_plus > limit {
         state.is_sequential = true;
         state.c_plus = 0.0;
@@ -159,7 +159,7 @@ pub fn update_cusum_decision(state: &mut FractalState, h_val: f64, tunables: &St
     }
 }
 
-pub fn calculate_fractal_read_ahead(state: &FractalState, tunables: &StorageTunables) -> f64 {
+pub fn calculate_adaptive_read_ahead(state: &PatternState, tunables: &StorageTunables) -> f64 {
     let base = tunables.min_read_ahead;
     let range = tunables.max_read_ahead - tunables.min_read_ahead;
     let factor = if state.is_sequential { 1.0 } else { 0.0 };
@@ -194,7 +194,7 @@ pub fn calculate_next_queue_depth(
     psi_full_avg10: f64,
     tunables: &StorageTunables,
 ) -> f64 {
-    if psi_full_avg10 > tunables.panic_threshold_psi {
+    if psi_full_avg10 > tunables.critical_threshold_psi {
         return tunables.min_nr_requests;
     }
     if lambda_eff < 1.0 || current_latency_ms < 0.1 {

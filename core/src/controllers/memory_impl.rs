@@ -112,20 +112,20 @@ impl MemoryController {
             max_page_cluster: MAX_PAGE_CLUSTER as f64,
             min_vfs: MIN_VFS as f64,
             max_vfs: MAX_VFS as f64,
-            hydraulic_kp: 0.5,
-            hydraulic_kd: 0.25,
-            turbulence_factor: 20.0,
+            pressure_kp: 0.5,
+            pressure_kd: 0.25,
+            inefficiency_penalty: 20.0,
             thermal_vfs_k: 0.05,
-            entropy_watermark_k: 2.0,
+            fragmentation_impact_k: 2.0,
             wss_penalty_factor: 2.5,
             zram_thermal_penalty: 2.5,
             general_smooth_factor: 0.25,
             watermark_smooth_factor: 0.1,
-            little_law_history_size: 16,
-            little_law_alpha: 0.15,
+            queue_history_size: 16,
+            queue_smoothing_alpha: 0.15,
             residence_time_threshold: 60.0,
             protection_curve_k: 2.5,
-            kingman_scaling_factor: 2.0,
+            congestion_scaling_factor: 2.0,
         };
         let poller = AdaptivePoller::new(1.5, 0.5);
         let mut controller = Self {
@@ -164,7 +164,7 @@ impl MemoryController {
         controller.apply_values(true);
         Ok(controller)
     }
-    fn update_thermodynamics(&mut self) -> Result<(), QosError> {
+    fn update_pressure_state(&mut self) -> Result<(), QosError> {
         let psi_data = self.psi_monitor.read_state()?;
         let vm_stats = self.vm_monitor.read_stats()?;
         let cpu_temp = self.cpu_sensor.read();
@@ -173,47 +173,48 @@ impl MemoryController {
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64().max(0.001);
         self.last_tick = now;
-        let fluid_delta = memory_math::calculate_fluid_dynamics(&vm_stats, &self.prev_vm_stats, dt);
+        let activity_delta =
+            memory_math::calculate_activity_state(&vm_stats, &self.prev_vm_stats, dt);
         let p_mem = psi_data.some.current.max(psi_data.some.avg10);
         let dp_dt = memory_math::calculate_pressure_derivative(p_mem, self.prev_psi_mem, dt);
         self.prev_psi_mem = p_mem;
         self.prev_vm_stats = vm_stats;
         update_memory_pressure(p_mem);
-        let inventory_l = (vm_stats.nr_active_anon
+        let active_set = (vm_stats.nr_active_anon
             + vm_stats.nr_inactive_anon
             + vm_stats.nr_active_file
             + vm_stats.nr_inactive_file) as f64;
-        let queue_correction_factor = memory_math::update_queue_theory(
+        let queue_correction_factor = memory_math::update_congestion_model(
             &mut self.queue_state,
-            inventory_l,
-            fluid_delta.scan_rate,
+            active_set,
+            activity_delta.scan_rate,
             &self.tunables,
         );
         self.next_wake_ms =
             self.poller
                 .calculate_next_interval(p_mem, psi_data.some.avg300) as i32;
-        let target_swap = memory_math::calculate_swappiness_physics(
+        let target_swap = memory_math::calculate_swappiness(
             p_mem,
             dp_dt,
-            &fluid_delta,
+            &activity_delta,
             cpu_temp,
             io_sat,
             queue_correction_factor,
             &self.tunables,
         );
-        let target_vfs = memory_math::calculate_vfs_thermodynamics(p_mem, &self.tunables);
+        let target_vfs = memory_math::calculate_vfs_pressure(p_mem, &self.tunables);
         let (target_dirty, target_dirty_bg) =
-            memory_math::calculate_sediment_control(io_sat, &self.tunables);
-        let target_expire = memory_math::calculate_sediment_time(io_sat, &self.tunables);
+            memory_math::calculate_dirty_limits(io_sat, &self.tunables);
+        let target_expire = memory_math::calculate_dirty_time(io_sat, &self.tunables);
         let target_wb = memory_math::calculate_dirty_writeback(target_expire, &self.tunables);
-        let target_wm = memory_math::calculate_watermark_entropy(
+        let target_wm = memory_math::calculate_watermark_scale(
             p_mem,
             vm_stats.fragmentation_index,
             &self.tunables,
         );
         let target_stat = memory_math::calculate_sampling_rate(p_mem, &self.tunables);
-        let target_ext = memory_math::calculate_extfrag_physics(p_cpu, &self.tunables);
-        let target_pc = memory_math::calculate_viscosity(p_cpu, &self.tunables);
+        let target_ext = memory_math::calculate_extfrag_threshold(p_cpu, &self.tunables);
+        let target_pc = memory_math::calculate_clustering_factor(p_cpu, &self.tunables);
         self.current_swappiness = memory_math::smooth_value(
             self.current_swappiness,
             target_swap,
@@ -307,13 +308,13 @@ impl EventHandler for MemoryController {
     fn on_event(&mut self) -> Result<LoopAction, QosError> {
         let mut buf = [0u8; 8];
         let _ = self.fd.read(&mut buf);
-        if let Err(e) = self.update_thermodynamics() {
+        if let Err(e) = self.update_pressure_state() {
             log::warn!("Mem Error: {}", e);
         }
         Ok(LoopAction::Continue)
     }
     fn on_timeout(&mut self) -> Result<LoopAction, QosError> {
-        if let Err(e) = self.update_thermodynamics() {
+        if let Err(e) = self.update_pressure_state() {
             log::warn!("Mem Timeout Error: {}", e);
         }
         Ok(LoopAction::Continue)

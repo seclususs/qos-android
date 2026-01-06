@@ -7,8 +7,6 @@ use std::os::fd::RawFd;
 #[derive(Debug, PartialEq)]
 pub enum LoopAction {
     Continue,
-    Pause,
-    Resume,
 }
 
 pub trait EventHandler {

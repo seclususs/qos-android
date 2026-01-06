@@ -10,13 +10,13 @@ pub struct ThermalTunables {
     pub pid_kd: f64,
     pub hard_limit_cpu: f64,
     pub hard_limit_bat: f64,
-    pub dth_start_temp: f64,
-    pub dth_k_thermal: f64,
-    pub tga_k_anticipation: f64,
-    pub leakage_k: f64,
-    pub leakage_start_temp: f64,
-    pub bucket_capacity: f64,
-    pub bucket_leak_base: f64,
+    pub throttling_start_temp: f64,
+    pub throttling_k_thermal: f64,
+    pub temp_gradient_k: f64,
+    pub dissipation_k: f64,
+    pub dissipation_start_temp: f64,
+    pub budget_capacity: f64,
+    pub budget_recovery_base: f64,
     pub psi_threshold: f64,
     pub psi_strength: f64,
     pub mpc_horizon: usize,
@@ -85,7 +85,6 @@ impl RlsEstimator {
         current_temp: f64,
         ambient_temp: f64,
         current_load: f64,
-        _dt: f64,
         tunables: &ThermalTunables,
     ) -> (f64, f64, f64) {
         let u_curr = current_temp - ambient_temp;
@@ -144,9 +143,9 @@ impl RlsEstimator {
 pub struct ThermalManager {
     pid: PidController,
     rls: RlsEstimator,
-    energy_bucket: f64,
+    thermal_budget: f64,
     last_tick: Instant,
-    tga_history: VecDeque<(Instant, f64)>,
+    temp_history: VecDeque<(Instant, f64)>,
 }
 
 impl Default for ThermalManager {
@@ -160,9 +159,9 @@ impl ThermalManager {
         Self {
             pid: PidController::new(),
             rls: RlsEstimator::new(0.90, 0.3),
-            energy_bucket: 0.0,
+            thermal_budget: 0.0,
             last_tick: Instant::now(),
-            tga_history: VecDeque::with_capacity(20),
+            temp_history: VecDeque::with_capacity(20),
         }
     }
     pub fn update(
@@ -176,9 +175,7 @@ impl ThermalManager {
         let dt = now.duration_since(self.last_tick).as_secs_f64();
         let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;
-        let (alpha, beta, dist) = self
-            .rls
-            .update(cpu_temp, bat_temp, psi_load, dt_safe, tunables);
+        let (alpha, beta, dist) = self.rls.update(cpu_temp, bat_temp, psi_load, tunables);
         let mut t_pred = cpu_temp;
         let t_amb = bat_temp;
         let effective_load = psi_load + dist;
@@ -202,60 +199,60 @@ impl ThermalManager {
         } else {
             1.0
         };
-        while let Some(front) = self.tga_history.front() {
+        while let Some(front) = self.temp_history.front() {
             if now.duration_since(front.0).as_secs_f64() > 10.0 {
-                self.tga_history.pop_front();
+                self.temp_history.pop_front();
             } else {
                 break;
             }
         }
-        self.tga_history.push_back((now, bat_temp));
-        let gradient_penalty = if let Some(oldest) = self.tga_history.front() {
+        self.temp_history.push_back((now, bat_temp));
+        let gradient_penalty = if let Some(oldest) = self.temp_history.front() {
             let delta_t = now.duration_since(oldest.0).as_secs_f64();
             if delta_t > 1.0 {
                 let delta_temp = bat_temp - oldest.1;
                 let g_bat = delta_temp / delta_t;
-                (tunables.tga_k_anticipation * g_bat).max(0.0)
+                (tunables.temp_gradient_k * g_bat).max(0.0)
             } else {
                 0.0
             }
         } else {
             0.0
         };
-        let s_thermal = (bat_temp - tunables.dth_start_temp).max(0.0);
-        let dth_penalty = tunables.dth_k_thermal * s_thermal;
+        let s_thermal = (bat_temp - tunables.throttling_start_temp).max(0.0);
+        let throttling_penalty = tunables.throttling_k_thermal * s_thermal;
         let excess_load = (psi_load - tunables.psi_threshold).max(0.0);
         let psi_penalty = excess_load * tunables.psi_strength;
         let target_cpu_dynamic =
-            tunables.hard_limit_cpu - dth_penalty - gradient_penalty - psi_penalty;
+            tunables.hard_limit_cpu - throttling_penalty - gradient_penalty - psi_penalty;
         let final_target = target_cpu_dynamic.max(45.0);
         let error = cpu_temp - final_target;
         let pid_output = self.pid.update(error, dt_safe, tunables);
-        let headroom_bat = tunables.hard_limit_bat - tunables.dth_start_temp;
+        let headroom_bat = tunables.hard_limit_bat - tunables.throttling_start_temp;
         let current_headroom = tunables.hard_limit_bat - bat_temp;
-        let eta_cooling = if headroom_bat > 0.0 {
+        let cooling_ratio = if headroom_bat > 0.0 {
             (current_headroom / headroom_bat).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        let adaptive_leak_rate = tunables.bucket_leak_base * eta_cooling;
+        let adaptive_recovery = tunables.budget_recovery_base * cooling_ratio;
         if error > 0.0 {
-            self.energy_bucket += error * dt_safe * 5.0;
+            self.thermal_budget += error * dt_safe * 5.0;
         } else {
-            self.energy_bucket -= adaptive_leak_rate * dt_safe;
+            self.thermal_budget -= adaptive_recovery * dt_safe;
         }
-        self.energy_bucket = self.energy_bucket.clamp(0.0, tunables.bucket_capacity);
-        let leakage_penalty_factor = if cpu_temp > tunables.leakage_start_temp {
-            let excess = cpu_temp - tunables.leakage_start_temp;
-            (excess * tunables.leakage_k).exp()
+        self.thermal_budget = self.thermal_budget.clamp(0.0, tunables.budget_capacity);
+        let dissipation_penalty_factor = if cpu_temp > tunables.dissipation_start_temp {
+            let excess = cpu_temp - tunables.dissipation_start_temp;
+            (excess * tunables.dissipation_k).exp()
         } else {
             1.0
         };
         let base_throttle = pid_output.max(0.0);
-        let phys_throttle = base_throttle * leakage_penalty_factor;
-        let bucket_fill_ratio = self.energy_bucket / tunables.bucket_capacity;
-        let sustained_penalty = bucket_fill_ratio * 0.5;
-        let total_severity = phys_throttle + sustained_penalty;
+        let active_throttle = base_throttle * dissipation_penalty_factor;
+        let accum_fill_ratio = self.thermal_budget / tunables.budget_capacity;
+        let sustained_penalty = accum_fill_ratio * 0.5;
+        let total_severity = active_throttle + sustained_penalty;
         let pid_damping = (1.0 / (1.0 + total_severity)).clamp(0.1, 1.0);
         let final_damping = pid_damping.min(mpc_damping);
         if bat_temp >= tunables.hard_limit_bat {

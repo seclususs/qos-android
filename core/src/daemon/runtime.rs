@@ -267,22 +267,6 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), QosEr
                 && let Some(ref mut handler) = service.handler
             {
                 match handler.on_event() {
-                    Ok(LoopAction::Pause) => {
-                        service.unregister_if_active(epoll_fd.as_raw_fd(), id as u64)
-                    }
-                    Ok(LoopAction::Resume) => {
-                        if !service.registered_in_epoll {
-                            let flags = handler.get_poll_flags();
-                            epoll_mod(
-                                epoll_fd.as_raw_fd(),
-                                handler.as_raw_fd(),
-                                id as u64,
-                                libc::EPOLL_CTL_ADD,
-                                flags,
-                            );
-                            service.registered_in_epoll = true;
-                        }
-                    }
                     Ok(LoopAction::Continue) => {}
                     Err(e) => {
                         log::error!("Service '{}' event error: {}", service.name, e);
@@ -311,20 +295,7 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), QosEr
                     if elapsed >= interval_ms {
                         service.last_tick = now_after_wait;
                         match handler.on_timeout() {
-                            Ok(LoopAction::Resume) => {
-                                if !service.registered_in_epoll {
-                                    let flags = handler.get_poll_flags();
-                                    epoll_mod(
-                                        epoll_fd.as_raw_fd(),
-                                        handler.as_raw_fd(),
-                                        i as u64,
-                                        libc::EPOLL_CTL_ADD,
-                                        flags,
-                                    );
-                                    service.registered_in_epoll = true;
-                                }
-                            }
-                            Ok(_) => {}
+                            Ok(LoopAction::Continue) => {}
                             Err(e) => {
                                 log::error!("Service '{}' timeout error: {}", service.name, e);
                                 service.unregister_if_active(epoll_fd.as_raw_fd(), i as u64);

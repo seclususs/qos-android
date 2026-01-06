@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::cpu_math::{self, CpuTunables, PhysicsState};
+use crate::algorithms::cpu_math::{self, CpuTunables, LoadState};
 use crate::algorithms::poll_math::AdaptivePoller;
 use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
@@ -43,9 +43,9 @@ pub struct CpuController {
     current_nr_migrate: f64,
     current_walt_init: f64,
     current_uclamp_min: f64,
-    physics_state: PhysicsState,
-    last_physics_tick: Instant,
-    prev_impulse_smooth: f64,
+    load_state: LoadState,
+    last_tick: Instant,
+    prev_delta_smooth: f64,
     tunables: CpuTunables,
     poller: AdaptivePoller,
     next_wake_ms: i32,
@@ -104,10 +104,9 @@ impl CpuController {
             nr_migrate_k: 0.15,
             uclamp_k: 0.35,
             uclamp_mid: 45.0,
-            trend_factor: 0.3,
             alpha_smooth: 0.5,
-            spring_stiffness: 92.0,
-            damping_ratio: 1.15,
+            response_gain: 92.0,
+            stability_ratio: 1.15,
             gain_scheduling_alpha: 1.85,
             sigmoid_k: 0.20,
             sigmoid_mid: 25.0,
@@ -117,36 +116,36 @@ impl CpuController {
             memory_granularity_scaling: 0.6,
             memory_burst_penalty: 1.0,
             trend_boost_intensity: 0.2,
-            animation_vel_threshold: 0.1,
-            animation_pos_threshold: 0.5,
-            animation_poll_interval: 20.0,
-            impulse_threshold: 30.0,
-            impulse_factor: 0.45,
+            transient_rate_threshold: 0.1,
+            transient_diff_threshold: 0.5,
+            transient_poll_interval: 20.0,
+            spike_threshold: 30.0,
+            spike_gain: 0.45,
             variance_sensitivity: 0.15,
             lookahead_time: 0.05,
             efficiency_gain: 1.5,
-            energy_cost_alpha: 3.0,
-            energy_cost_beta: 2.0,
-            energy_cost_gamma: 50.0,
-            constraint_learning_rate: 0.5,
+            temp_cost_weight: 3.0,
+            bat_temp_weight: 2.0,
+            bat_level_weight: 50.0,
+            integral_learning_rate: 0.5,
             safe_temp_limit: 70.0,
             max_temp_limit: 90.0,
-            lyapunov_margin: 1.5,
+            stability_margin: 1.5,
             nis_threshold: 5.0,
         };
         let thermal_tunables = ThermalTunables {
             pid_kp: 0.075,
             pid_ki: 0.003,
             pid_kd: 0.22,
-            hard_limit_cpu: 75.0,
+            hard_limit_cpu: 70.0,
             hard_limit_bat: 40.0,
-            dth_start_temp: 35.0,
-            dth_k_thermal: 3.0,
-            tga_k_anticipation: 8.0,
-            leakage_k: 0.15,
-            leakage_start_temp: 50.0,
-            bucket_capacity: 400.0,
-            bucket_leak_base: 5.0,
+            throttling_start_temp: 35.0,
+            throttling_k_thermal: 3.0,
+            temp_gradient_k: 8.0,
+            dissipation_k: 0.15,
+            dissipation_start_temp: 50.0,
+            budget_capacity: 400.0,
+            budget_recovery_base: 5.0,
             psi_threshold: 20.0,
             psi_strength: 0.40,
             mpc_horizon: 8,
@@ -157,7 +156,7 @@ impl CpuController {
             model_beta_init: 0.3,
             dob_smoothing: 0.8,
         };
-        let thermal_manager = ThermalManager::new();
+        let thermal_manager = ThermalManager::default();
         let poller = AdaptivePoller::new(1.0, 2.5);
         let mut controller = Self {
             fd,
@@ -181,9 +180,9 @@ impl CpuController {
             current_nr_migrate: MAX_NR_MIGRATE as f64,
             current_walt_init: MIN_WALT_INIT_PCT as f64,
             current_uclamp_min: MIN_UCLAMP_MIN as f64,
-            physics_state: PhysicsState::default(),
-            last_physics_tick: Instant::now(),
-            prev_impulse_smooth: 0.0,
+            load_state: LoadState::default(),
+            last_tick: Instant::now(),
+            prev_delta_smooth: 0.0,
             tunables,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
@@ -201,68 +200,65 @@ impl CpuController {
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
         let bat_level = self.battery_capacity_sensor.read();
-        let damping_factor =
+        let thermal_scale =
             self.thermal_manager
                 .update(cpu_temp, bat_temp, target_psi, &self.thermal_tunables);
-        let trend_gain =
+        let trend_factor =
             cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
         let now = Instant::now();
-        let dt_duration = now.duration_since(self.last_physics_tick);
-        self.last_physics_tick = now;
+        let dt_duration = now.duration_since(self.last_tick);
+        self.last_tick = now;
         let dt_sec = dt_duration.as_secs_f64().clamp(0.000001, 0.1);
-        let (lambda_total, lambda_dot) = cpu_math::update_hamiltonian_params(
-            &mut self.physics_state,
+        let (integral_total, integral_dot) = cpu_math::update_integral_params(
+            &mut self.load_state,
             cpu_temp,
             bat_temp,
             bat_level,
             dt_sec,
             &self.tunables,
         );
-        let urgency_input = cpu_math::UrgencyInput {
+        let demand_input = cpu_math::DemandInput {
             target_psi,
             dt_sec,
-            damping_factor,
-            stress_gain: trend_gain,
-            lambda_total,
-            lambda_dot,
+            thermal_scale,
+            trend_factor,
+            integral_total,
+            integral_dot,
             is_structural_break: is_break,
         };
-        let physics_urgency = cpu_math::calculate_physics_urgency(
-            &mut self.physics_state,
-            urgency_input,
-            &self.tunables,
-        );
+        let load_demand =
+            cpu_math::calculate_load_demand(&mut self.load_state, demand_input, &self.tunables);
         let p_eff = cpu_math::calculate_effective_pressure(
-            physics_urgency,
-            trend_gain,
+            load_demand,
+            trend_factor,
             memory_psi,
             io_psi,
             &self.tunables,
         );
         update_cpu_pressure(p_eff);
         let mut calculated_poll = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
-        if cpu_math::is_animating(&self.physics_state, target_psi, &self.tunables) {
-            calculated_poll = calculated_poll.min(self.tunables.animation_poll_interval as i32);
+        if cpu_math::is_transient(&self.load_state, target_psi, &self.tunables) {
+            calculated_poll = calculated_poll.min(self.tunables.transient_poll_interval as i32);
         }
         self.next_wake_ms = calculated_poll;
-        let thermal_floor_ns = cpu_math::calculate_thermal_floor(damping_factor, &self.tunables);
+        let thermal_floor_ns = cpu_math::calculate_thermal_floor(thermal_scale, &self.tunables);
         let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(
             p_eff,
-            physics_urgency,
+            load_demand,
             thermal_floor_ns,
             memory_psi,
             &self.tunables,
         );
         let delta_raw = some.current - some.avg10;
         let delta_smooth =
-            cpu_math::smooth_delta(delta_raw, self.prev_impulse_smooth, &self.tunables);
-        self.prev_impulse_smooth = delta_smooth;
+            cpu_math::smooth_delta(delta_raw, self.prev_delta_smooth, &self.tunables);
+        self.prev_delta_smooth = delta_smooth;
         let target_migration =
             cpu_math::calculate_migration_cost(delta_smooth, p_eff, memory_psi, &self.tunables);
         let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
         let target_nr_migrate = cpu_math::calculate_nr_migrate(p_eff, &self.tunables);
         let target_walt_init = cpu_math::calculate_walt_init(p_eff, &self.tunables);
-        let target_uclamp = cpu_math::calculate_uclamp_min(p_eff, damping_factor, &self.tunables);
+        let target_uclamp = cpu_math::calculate_uclamp_min(p_eff, thermal_scale, &self.tunables);
         self.current_latency = target_latency;
         self.current_min_gran = target_min_gran;
         self.current_wakeup = target_wakeup;

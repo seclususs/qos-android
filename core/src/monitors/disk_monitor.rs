@@ -6,11 +6,9 @@ use crate::hal::monitored_file::MonitoredFile;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoStats {
     pub read_ios: u64,
-    pub read_merges: u64,
     pub read_sectors: u64,
     pub read_ticks: u64,
     pub write_ios: u64,
-    pub write_merges: u64,
     pub write_sectors: u64,
     pub write_ticks: u64,
     pub in_flight: u64,
@@ -33,22 +31,36 @@ impl DiskMonitor {
                 "Empty diskstats file".to_string(),
             ));
         }
-        let parts: Vec<&str> = content.split_whitespace().collect();
-        if parts.len() < 11 {
-            return Err(QosError::SystemCheckFailed(
+        let mut parts = content.split_whitespace();
+        let read_ios = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let read_sectors = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let read_ticks = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let write_ios = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let write_sectors = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let write_ticks = parts.next().and_then(|v| v.parse::<u64>().ok());
+        let in_flight = parts.next().and_then(|v| v.parse::<u64>().ok());
+        if let (Some(ri), Some(rs), Some(rt), Some(wi), Some(ws), Some(wt), Some(infl)) = (
+            read_ios,
+            read_sectors,
+            read_ticks,
+            write_ios,
+            write_sectors,
+            write_ticks,
+            in_flight,
+        ) {
+            Ok(IoStats {
+                read_ios: ri,
+                read_sectors: rs,
+                read_ticks: rt,
+                write_ios: wi,
+                write_sectors: ws,
+                write_ticks: wt,
+                in_flight: infl,
+            })
+        } else {
+            Err(QosError::SystemCheckFailed(
                 "Incomplete diskstats format".to_string(),
-            ));
+            ))
         }
-        Ok(IoStats {
-            read_ios: parts[0].parse::<u64>().unwrap_or(0),
-            read_merges: parts[1].parse::<u64>().unwrap_or(0),
-            read_sectors: parts[2].parse::<u64>().unwrap_or(0),
-            read_ticks: parts[3].parse::<u64>().unwrap_or(0),
-            write_ios: parts[4].parse::<u64>().unwrap_or(0),
-            write_merges: parts[5].parse::<u64>().unwrap_or(0),
-            write_sectors: parts[6].parse::<u64>().unwrap_or(0),
-            write_ticks: parts[7].parse::<u64>().unwrap_or(0),
-            in_flight: parts[8].parse::<u64>().unwrap_or(0),
-        })
     }
 }

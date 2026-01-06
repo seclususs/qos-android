@@ -7,7 +7,6 @@ use crate::hal::monitored_file::MonitoredFile;
 pub struct VmStats {
     pub pgscan: u64,
     pub pgsteal: u64,
-    pub pswpout: u64,
     pub workingset_refault: u64,
     pub fragmentation_index: f64,
     pub nr_active_anon: u64,
@@ -31,21 +30,18 @@ impl VmMonitor {
     pub fn read_stats(&mut self) -> Result<VmStats, QosError> {
         let mut stats = VmStats::default();
         if let Ok(content) = self.vmstat_monitor.read_value() {
-            let mut scan_direct = 0;
-            let mut scan_kswapd = 0;
-            let mut steal_direct = 0;
-            let mut steal_kswapd = 0;
             for line in content.lines() {
                 let mut parts = line.split_whitespace();
                 if let (Some(key), Some(val_str)) = (parts.next(), parts.next()) {
                     let val = val_str.parse::<u64>().unwrap_or(0);
                     match key {
-                        "pgscan_direct" => scan_direct = val,
-                        "pgscan_kswapd" => scan_kswapd = val,
-                        "pgsteal_direct" => steal_direct = val,
-                        "pgsteal_kswapd" => steal_kswapd = val,
+                        "pgscan_direct" | "pgscan_kswapd" => {
+                            stats.pgscan = stats.pgscan.saturating_add(val);
+                        }
+                        "pgsteal_direct" | "pgsteal_kswapd" => {
+                            stats.pgsteal = stats.pgsteal.saturating_add(val);
+                        }
                         "workingset_refault" => stats.workingset_refault = val,
-                        "pswpout" => stats.pswpout = val,
                         "nr_active_anon" => stats.nr_active_anon = val,
                         "nr_inactive_anon" => stats.nr_inactive_anon = val,
                         "nr_active_file" => stats.nr_active_file = val,
@@ -54,8 +50,6 @@ impl VmMonitor {
                     }
                 }
             }
-            stats.pgscan = scan_direct + scan_kswapd;
-            stats.pgsteal = steal_direct + steal_kswapd;
         }
         if let Ok(content) = self.buddy_monitor.read_value() {
             let mut total_free_pages = 0u64;

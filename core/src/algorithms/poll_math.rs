@@ -68,13 +68,13 @@ impl AdaptivePoller {
         };
         let effective_dt_ms = elapsed_ms.max(MIN_EFFECTIVE_DT_MS);
         let dt_sec = effective_dt_ms as f64 / 1000.0;
-        let velocity = (current_pressure - self.last_pressure) / dt_sec;
-        let prediction = current_pressure + (velocity * ATTACK_COEFF);
+        let rate_change = (current_pressure - self.last_pressure) / dt_sec;
+        let prediction = current_pressure + (rate_change * ATTACK_COEFF);
         let p_term = prediction * self.weight_pressure;
-        let d_term = velocity.abs() * self.weight_derivative;
-        let urgency_score = (p_term + d_term).clamp(0.0, 100.0);
+        let d_term = rate_change.abs() * self.weight_derivative;
+        let priority_score = (p_term + d_term).clamp(0.0, 100.0);
         let raw_interval =
-            dynamic_max as f64 - ((urgency_score / 100.0) * (dynamic_max - dynamic_min) as f64);
+            dynamic_max as f64 - ((priority_score / 100.0) * (dynamic_max - dynamic_min) as f64);
         let target = if raw_interval < self.target_interval as f64 {
             raw_interval
         } else {

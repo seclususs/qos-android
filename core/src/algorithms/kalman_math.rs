@@ -96,9 +96,9 @@ impl KalmanFilter {
         let p_pred_final = p_pred + (q_adaptive - q_k_base).max(0.0);
         let s_k = p_pred_final + r_eff;
         let k_gain = if s_k > 1e-6 { p_pred_final / s_k } else { 0.0 };
-        self.x = x_pred + (k_gain * innovation);
+        self.x = (x_pred + (k_gain * innovation)).clamp(0.0, 100.0);
         self.p = (1.0 - k_gain) * p_pred_final;
-        self.x.clamp(0.0, 100.0)
+        self.x
     }
     pub fn get_last_nis(&self) -> f64 {
         self.last_nis
