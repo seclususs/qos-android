@@ -13,21 +13,21 @@ fn check_absolute(current: u64, target: u64, threshold: u64) -> bool {
 }
 
 #[inline(always)]
-fn check_relative(current: u64, target: u64, tolerance_pct: f64) -> bool {
+fn check_relative(current: u64, target: u64, tolerance_pct: f32) -> bool {
     if current == target {
         return false;
     }
     if current == 0 {
         return target != 0;
     }
-    let diff = current.abs_diff(target) as f64;
-    let change_ratio = diff / current as f64;
+    let diff = current.abs_diff(target) as f32;
+    let change_ratio = diff / current as f32;
     change_ratio >= tolerance_pct
 }
 
 pub enum CheckStrategy {
     Absolute(u64),
-    Relative(f64),
+    Relative(f32),
     Strict,
 }
 

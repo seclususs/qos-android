@@ -4,9 +4,9 @@ use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy)]
 pub struct KalmanConfig {
-    pub q_base: f64,
-    pub r_base: f64,
-    pub fading_factor: f64,
+    pub q_base: f32,
+    pub r_base: f32,
+    pub fading_factor: f32,
     pub window_size: usize,
 }
 
@@ -22,11 +22,11 @@ impl Default for KalmanConfig {
 }
 
 pub struct KalmanFilter {
-    x: f64,
-    p: f64,
-    last_nis: f64,
+    x: f32,
+    p: f32,
+    last_nis: f32,
     config: KalmanConfig,
-    history: VecDeque<f64>,
+    history: VecDeque<f32>,
     first_run: bool,
 }
 
@@ -48,7 +48,7 @@ impl KalmanFilter {
         self.last_nis = 0.0;
         self.history.clear();
     }
-    pub fn update(&mut self, mut z_measured: f64, dt_sec: f64) -> f64 {
+    pub fn update(&mut self, mut z_measured: f32, dt_sec: f32) -> f32 {
         if !z_measured.is_finite() {
             return self.x;
         }
@@ -71,8 +71,8 @@ impl KalmanFilter {
             self.history.pop_front();
         }
         self.history.push_back(innovation);
-        let sum_sq_innov: f64 = self.history.iter().map(|&y| y * y).sum();
-        let count = self.history.len() as f64;
+        let sum_sq_innov: f32 = self.history.iter().map(|&y| y * y).sum();
+        let count = self.history.len() as f32;
         let c_y = if count > 0.0 {
             sum_sq_innov / count
         } else {
@@ -100,7 +100,7 @@ impl KalmanFilter {
         self.p = (1.0 - k_gain) * p_pred_final;
         self.x
     }
-    pub fn get_last_nis(&self) -> f64 {
+    pub fn get_last_nis(&self) -> f32 {
         self.last_nis
     }
 }

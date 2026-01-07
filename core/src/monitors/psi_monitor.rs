@@ -8,12 +8,12 @@ use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PsiTrend {
-    pub current: f64,
-    pub avg10: f64,
-    pub avg60: f64,
-    pub avg300: f64,
+    pub current: f32,
+    pub avg10: f32,
+    pub avg60: f32,
+    pub avg300: f32,
     pub total: u64,
-    pub nis: f64,
+    pub nis: f32,
 }
 
 impl Default for PsiTrend {
@@ -65,12 +65,12 @@ impl PsiMonitor {
         let dt_sec = if self.first_run {
             1.0
         } else {
-            elapsed_duration.as_secs_f64().max(0.001)
+            elapsed_duration.as_secs_f32().max(0.001)
         };
         let elapsed_micros = if self.first_run {
             1_000_000.0
         } else {
-            elapsed_duration.as_micros() as f64
+            elapsed_duration.as_micros() as f32
         };
         let dt_calc = if elapsed_micros < 1000.0 {
             1000.0
@@ -94,18 +94,18 @@ impl PsiMonitor {
             };
             for token in line.split_ascii_whitespace() {
                 if let Some(v) = token.strip_prefix("avg10=") {
-                    target.avg10 = v.parse::<f64>().unwrap_or(0.0);
+                    target.avg10 = v.parse::<f32>().unwrap_or(0.0);
                 } else if let Some(v) = token.strip_prefix("avg60=") {
-                    target.avg60 = v.parse::<f64>().unwrap_or(0.0);
+                    target.avg60 = v.parse::<f32>().unwrap_or(0.0);
                 } else if let Some(v) = token.strip_prefix("avg300=") {
-                    target.avg300 = v.parse::<f64>().unwrap_or(0.0);
+                    target.avg300 = v.parse::<f32>().unwrap_or(0.0);
                 } else if let Some(v) = token.strip_prefix("total=") {
                     target.total = v.parse::<u64>().unwrap_or(0);
                 }
             }
         }
         if !self.first_run {
-            let delta_some = data.some.total.saturating_sub(self.last_some_total) as f64;
+            let delta_some = data.some.total.saturating_sub(self.last_some_total) as f32;
             let raw_some = delta_some / dt_calc * 100.0;
             data.some.current = self.filter_some.update(raw_some, dt_sec);
             data.some.nis = self.filter_some.get_last_nis();

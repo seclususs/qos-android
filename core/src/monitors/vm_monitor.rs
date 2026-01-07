@@ -8,7 +8,7 @@ pub struct VmStats {
     pub pgscan: u64,
     pub pgsteal: u64,
     pub workingset_refault: u64,
-    pub fragmentation_index: f64,
+    pub fragmentation_index: f32,
     pub nr_active_anon: u64,
     pub nr_inactive_anon: u64,
     pub nr_active_file: u64,
@@ -68,7 +68,7 @@ impl VmMonitor {
                 }
             }
             if total_free_pages > 0 {
-                stats.fragmentation_index = 1.0 - (huge_pages as f64 / total_free_pages as f64);
+                stats.fragmentation_index = 1.0 - (huge_pages as f32 / total_free_pages as f32);
             }
         }
         Ok(stats)

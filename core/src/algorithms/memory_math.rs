@@ -6,52 +6,52 @@ use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryTunables {
-    pub min_swappiness: f64,
-    pub max_swappiness: f64,
-    pub min_dirty_expire: f64,
-    pub max_dirty_expire: f64,
-    pub min_stat_interval: f64,
-    pub max_stat_interval: f64,
-    pub min_watermark_scale: f64,
-    pub max_watermark_scale: f64,
-    pub min_extfrag_threshold: f64,
-    pub max_extfrag_threshold: f64,
-    pub min_dirty: f64,
-    pub max_dirty: f64,
-    pub min_dirty_bg: f64,
-    pub max_dirty_bg: f64,
-    pub min_dirty_writeback: f64,
-    pub max_dirty_writeback: f64,
-    pub min_page_cluster: f64,
-    pub max_page_cluster: f64,
-    pub min_vfs: f64,
-    pub max_vfs: f64,
-    pub pressure_kp: f64,
-    pub pressure_kd: f64,
-    pub inefficiency_penalty: f64,
-    pub thermal_vfs_k: f64,
-    pub fragmentation_impact_k: f64,
-    pub wss_penalty_factor: f64,
-    pub zram_thermal_penalty: f64,
-    pub general_smooth_factor: f64,
-    pub watermark_smooth_factor: f64,
+    pub min_swappiness: f32,
+    pub max_swappiness: f32,
+    pub min_dirty_expire: f32,
+    pub max_dirty_expire: f32,
+    pub min_stat_interval: f32,
+    pub max_stat_interval: f32,
+    pub min_watermark_scale: f32,
+    pub max_watermark_scale: f32,
+    pub min_extfrag_threshold: f32,
+    pub max_extfrag_threshold: f32,
+    pub min_dirty: f32,
+    pub max_dirty: f32,
+    pub min_dirty_bg: f32,
+    pub max_dirty_bg: f32,
+    pub min_dirty_writeback: f32,
+    pub max_dirty_writeback: f32,
+    pub min_page_cluster: f32,
+    pub max_page_cluster: f32,
+    pub min_vfs: f32,
+    pub max_vfs: f32,
+    pub pressure_kp: f32,
+    pub pressure_kd: f32,
+    pub inefficiency_penalty: f32,
+    pub thermal_vfs_k: f32,
+    pub fragmentation_impact_k: f32,
+    pub wss_penalty_factor: f32,
+    pub zram_thermal_penalty: f32,
+    pub general_smooth_factor: f32,
+    pub watermark_smooth_factor: f32,
     pub queue_history_size: usize,
-    pub queue_smoothing_alpha: f64,
-    pub residence_time_threshold: f64,
-    pub protection_curve_k: f64,
-    pub congestion_scaling_factor: f64,
+    pub queue_smoothing_alpha: f32,
+    pub residence_time_threshold: f32,
+    pub protection_curve_k: f32,
+    pub congestion_scaling_factor: f32,
 }
 
 #[derive(Default)]
 pub struct ActivityState {
-    pub efficiency: f64,
-    pub refault_index: f64,
-    pub scan_rate: f64,
+    pub efficiency: f32,
+    pub refault_index: f32,
+    pub scan_rate: f32,
 }
 
 pub struct QueueState {
-    pub lambda_history: VecDeque<f64>,
-    pub smoothed_lambda: f64,
+    pub lambda_history: VecDeque<f32>,
+    pub smoothed_lambda: f32,
 }
 
 impl Default for QueueState {
@@ -63,16 +63,16 @@ impl Default for QueueState {
     }
 }
 
-pub fn calculate_active_set(stats: &VmStats) -> f64 {
+pub fn calculate_active_set(stats: &VmStats) -> f32 {
     (stats.nr_active_anon + stats.nr_inactive_anon + stats.nr_active_file + stats.nr_inactive_file)
-        as f64
+        as f32
 }
 
-pub fn calculate_pressure_level(current: f64, avg10: f64) -> f64 {
+pub fn calculate_pressure_level(current: f32, avg10: f32) -> f32 {
     current.max(avg10)
 }
 
-pub fn calculate_pressure_derivative(current_psi: f64, prev_psi: f64, dt: f64) -> f64 {
+pub fn calculate_pressure_derivative(current_psi: f32, prev_psi: f32, dt: f32) -> f32 {
     if dt <= 0.0 {
         0.0
     } else {
@@ -80,19 +80,19 @@ pub fn calculate_pressure_derivative(current_psi: f64, prev_psi: f64, dt: f64) -
     }
 }
 
-pub fn smooth_value(current: f64, target: f64, alpha: f64) -> f64 {
+pub fn smooth_value(current: f32, target: f32, alpha: f32) -> f32 {
     current * (1.0 - alpha) + target * alpha
 }
 
-pub fn calculate_activity_state(current: &VmStats, prev: &VmStats, dt_sec: f64) -> ActivityState {
+pub fn calculate_activity_state(current: &VmStats, prev: &VmStats, dt_sec: f32) -> ActivityState {
     if dt_sec <= 0.0 {
         return ActivityState::default();
     }
-    let delta_scan = current.pgscan.saturating_sub(prev.pgscan) as f64;
-    let delta_steal = current.pgsteal.saturating_sub(prev.pgsteal) as f64;
+    let delta_scan = current.pgscan.saturating_sub(prev.pgscan) as f32;
+    let delta_steal = current.pgsteal.saturating_sub(prev.pgsteal) as f32;
     let delta_refault = current
         .workingset_refault
-        .saturating_sub(prev.workingset_refault) as f64;
+        .saturating_sub(prev.workingset_refault) as f32;
     let efficiency = if delta_scan > 0.0 {
         delta_steal / (delta_scan + 0.001)
     } else {
@@ -112,10 +112,10 @@ pub fn calculate_activity_state(current: &VmStats, prev: &VmStats, dt_sec: f64) 
 
 pub fn update_congestion_model(
     state: &mut QueueState,
-    active_set: f64,
-    lambda_raw: f64,
+    active_set: f32,
+    lambda_raw: f32,
     tunables: &MemoryTunables,
-) -> f64 {
+) -> f32 {
     if state.smoothed_lambda == 0.0 {
         state.smoothed_lambda = lambda_raw;
     } else {
@@ -128,10 +128,10 @@ pub fn update_congestion_model(
         state.lambda_history.pop_front();
     }
     state.lambda_history.push_back(lambda_raw);
-    let n = state.lambda_history.len() as f64;
+    let n = state.lambda_history.len() as f32;
     let variability_penalty = if n > 2.0 {
-        let mean: f64 = state.lambda_history.iter().sum::<f64>() / n;
-        let variance_sum: f64 = state
+        let mean: f32 = state.lambda_history.iter().sum::<f32>() / n;
+        let variance_sum: f32 = state
             .lambda_history
             .iter()
             .map(|v| (v - mean).powi(2))
@@ -154,14 +154,14 @@ pub fn update_congestion_model(
 }
 
 pub fn calculate_swappiness(
-    p_mem: f64,
-    dp_dt: f64,
+    p_mem: f32,
+    dp_dt: f32,
     activity: &ActivityState,
-    cpu_temp: f64,
-    io_sat: f64,
-    queue_correction: f64,
+    cpu_temp: f32,
+    io_sat: f32,
+    queue_correction: f32,
     tunables: &MemoryTunables,
-) -> f64 {
+) -> f32 {
     let base_swap = tunables.min_swappiness;
     let p_term = tunables.pressure_kp * p_mem;
     let d_term = tunables.pressure_kd * dp_dt;
@@ -178,7 +178,7 @@ pub fn calculate_swappiness(
     final_swap.clamp(tunables.min_swappiness, tunables.max_swappiness)
 }
 
-pub fn calculate_vfs_pressure(p_mem: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_vfs_pressure(p_mem: f32, tunables: &MemoryTunables) -> f32 {
     let range = tunables.max_vfs - tunables.min_vfs;
     let decay = (-tunables.thermal_vfs_k * p_mem).exp();
     let inverse_decay = 1.0 - decay;
@@ -186,7 +186,7 @@ pub fn calculate_vfs_pressure(p_mem: f64, tunables: &MemoryTunables) -> f64 {
     vfs.clamp(tunables.min_vfs, tunables.max_vfs)
 }
 
-pub fn calculate_dirty_limits(io_sat: f64, tunables: &MemoryTunables) -> (f64, f64) {
+pub fn calculate_dirty_limits(io_sat: f32, tunables: &MemoryTunables) -> (f32, f32) {
     let throughput_capacity = (1.0 - io_sat).clamp(0.1, 1.0);
     let target_dirty = tunables.max_dirty * throughput_capacity;
     let target_dirty_bg = tunables.max_dirty_bg * throughput_capacity;
@@ -196,28 +196,28 @@ pub fn calculate_dirty_limits(io_sat: f64, tunables: &MemoryTunables) -> (f64, f
     )
 }
 
-pub fn calculate_dirty_time(io_sat: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_dirty_time(io_sat: f32, tunables: &MemoryTunables) -> f32 {
     let t = io_sat.clamp(0.0, 1.0);
     let expire =
         tunables.min_dirty_expire + (tunables.max_dirty_expire - tunables.min_dirty_expire) * t;
     expire.clamp(tunables.min_dirty_expire, tunables.max_dirty_expire)
 }
 
-pub fn calculate_sampling_rate(p_mem: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_sampling_rate(p_mem: f32, tunables: &MemoryTunables) -> f32 {
     let urgency = (p_mem / 50.0).clamp(0.0, 1.0);
     let interval = tunables.max_stat_interval
         - (urgency * (tunables.max_stat_interval - tunables.min_stat_interval));
     interval.clamp(tunables.min_stat_interval, tunables.max_stat_interval)
 }
 
-pub fn calculate_watermark_scale(p_mem: f64, fragmentation: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_watermark_scale(p_mem: f32, fragmentation: f32, tunables: &MemoryTunables) -> f32 {
     let pressure_factor = (p_mem / 100.0).clamp(0.0, 1.0);
     let fragmentation_impact = tunables.fragmentation_impact_k * fragmentation * pressure_factor;
     let target_wm = tunables.min_watermark_scale * (1.0 + fragmentation_impact);
     target_wm.clamp(tunables.min_watermark_scale, tunables.max_watermark_scale)
 }
 
-pub fn calculate_extfrag_threshold(p_cpu: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_extfrag_threshold(p_cpu: f32, tunables: &MemoryTunables) -> f32 {
     if p_cpu > 50.0 {
         tunables.max_extfrag_threshold
     } else {
@@ -225,7 +225,7 @@ pub fn calculate_extfrag_threshold(p_cpu: f64, tunables: &MemoryTunables) -> f64
     }
 }
 
-pub fn calculate_dirty_writeback(target_expire: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_dirty_writeback(target_expire: f32, tunables: &MemoryTunables) -> f32 {
     let t_wb = (target_expire - tunables.min_dirty_expire)
         / (tunables.max_dirty_expire - tunables.min_dirty_expire);
     let wb = tunables.min_dirty_writeback
@@ -233,7 +233,7 @@ pub fn calculate_dirty_writeback(target_expire: f64, tunables: &MemoryTunables) 
     wb.clamp(tunables.min_dirty_writeback, tunables.max_dirty_writeback)
 }
 
-pub fn calculate_clustering_factor(p_cpu: f64, tunables: &MemoryTunables) -> f64 {
+pub fn calculate_clustering_factor(p_cpu: f32, tunables: &MemoryTunables) -> f32 {
     if p_cpu > 25.0 {
         tunables.min_page_cluster
     } else {

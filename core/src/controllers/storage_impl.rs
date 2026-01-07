@@ -29,9 +29,9 @@ pub struct StorageController {
     prev_io_stats: IoStats,
     workload_state: WorkloadState,
     last_tick: Instant,
-    current_read_ahead: f64,
-    current_nr_requests: f64,
-    current_fifo_batch: f64,
+    current_read_ahead: f32,
+    current_nr_requests: f32,
+    current_fifo_batch: f32,
     tunables: StorageTunables,
     poller: AdaptivePoller,
     next_wake_ms: i32,
@@ -51,12 +51,12 @@ impl StorageController {
         let mut disk_monitor = DiskMonitor::new(K_MMC_DISKSTATS_PATH)?;
         let initial_stats = disk_monitor.read_stats().unwrap_or(IoStats::default());
         let tunables = StorageTunables {
-            min_read_ahead: MIN_READ_AHEAD as f64,
-            max_read_ahead: MAX_READ_AHEAD as f64,
-            min_nr_requests: MIN_NR_REQUESTS as f64,
-            max_nr_requests: MAX_NR_REQUESTS as f64,
-            min_fifo_batch: MIN_FIFO_BATCH as f64,
-            max_fifo_batch: MAX_FIFO_BATCH as f64,
+            min_read_ahead: MIN_READ_AHEAD as f32,
+            max_read_ahead: MAX_READ_AHEAD as f32,
+            min_nr_requests: MIN_NR_REQUESTS as f32,
+            max_nr_requests: MAX_NR_REQUESTS as f32,
+            min_fifo_batch: MIN_FIFO_BATCH as f32,
+            max_fifo_batch: MAX_FIFO_BATCH as f32,
             write_cost_factor: 5.0,
             target_latency_base_ms: 75.0,
             hysteresis_threshold: 0.15,
@@ -78,9 +78,9 @@ impl StorageController {
             prev_io_stats: initial_stats,
             workload_state: WorkloadState::default(),
             last_tick: Instant::now(),
-            current_read_ahead: MIN_READ_AHEAD as f64,
-            current_nr_requests: MAX_NR_REQUESTS as f64,
-            current_fifo_batch: MAX_FIFO_BATCH as f64,
+            current_read_ahead: MIN_READ_AHEAD as f32,
+            current_nr_requests: MAX_NR_REQUESTS as f32,
+            current_fifo_batch: MAX_FIFO_BATCH as f32,
             tunables,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
@@ -92,18 +92,18 @@ impl StorageController {
         let psi_data = self.psi_monitor.read_state()?;
         let current_io_stats = self.disk_monitor.read_stats()?;
         let now = Instant::now();
-        let dt = now.duration_since(self.last_tick).as_secs_f64();
+        let dt = now.duration_since(self.last_tick).as_secs_f32();
         let dt_safe = dt.max(0.001);
         let delta =
             storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_safe);
         self.prev_io_stats = current_io_stats;
         self.last_tick = now;
         context.pressure.io_psi = psi_data.some.avg10;
-        context.pressure.io_saturation = current_io_stats.in_flight as f64;
+        context.pressure.io_saturation = current_io_stats.in_flight as f32;
         let req_size_score = storage_math::calculate_request_size_score(&delta, &self.tunables);
         let merge_ratio = storage_math::calculate_merge_ratio(&delta);
         let pressure_score = storage_math::calculate_pressure_score(
-            current_io_stats.in_flight as f64,
+            current_io_stats.in_flight as f32,
             &self.tunables,
         );
         let sequentiality = storage_math::resolve_sequentiality_factor(
@@ -121,7 +121,7 @@ impl StorageController {
         let current_latency = storage_math::calculate_effective_latency(
             &delta,
             lambda_eff,
-            current_io_stats.in_flight as f64,
+            current_io_stats.in_flight as f32,
         );
         let calculated_nr = storage_math::calculate_next_queue_depth(
             lambda_eff,
@@ -144,7 +144,7 @@ impl StorageController {
         self.current_fifo_batch = calculated_fifo;
         if storage_math::is_congestion_critical(
             psi_data.some.avg10,
-            current_io_stats.in_flight as f64,
+            current_io_stats.in_flight as f32,
             &self.tunables,
         ) {
             self.next_wake_ms = MIN_POLLING_MS as i32;

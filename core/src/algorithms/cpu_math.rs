@@ -2,13 +2,13 @@
 
 #[derive(Debug, Clone, Copy)]
 pub struct LoadState {
-    pub psi_value: f64,
-    pub rate: f64,
-    pub load_history: [f64; 8],
+    pub psi_value: f32,
+    pub rate: f32,
+    pub load_history: [f32; 8],
     pub history_idx: usize,
-    pub integral_accum: f64,
-    pub prev_integral: f64,
-    pub smoothed_integral: f64,
+    pub integral_accum: f32,
+    pub prev_integral: f32,
+    pub smoothed_integral: f32,
     pub first_run: bool,
 }
 
@@ -28,78 +28,78 @@ impl Default for LoadState {
 }
 
 pub struct CpuTunables {
-    pub min_latency_ns: f64,
-    pub max_latency_ns: f64,
-    pub min_granularity_ns: f64,
-    pub max_granularity_ns: f64,
-    pub min_wakeup_ns: f64,
-    pub max_wakeup_ns: f64,
-    pub min_migration_cost: f64,
-    pub max_migration_cost: f64,
-    pub min_nr_migrate: f64,
-    pub max_nr_migrate: f64,
-    pub nr_migrate_k: f64,
-    pub min_walt_init_pct: f64,
-    pub max_walt_init_pct: f64,
-    pub min_uclamp_min: f64,
-    pub max_uclamp_min: f64,
-    pub uclamp_k: f64,
-    pub uclamp_mid: f64,
-    pub alpha_smooth: f64,
-    pub response_gain: f64,
-    pub stability_ratio: f64,
-    pub gain_scheduling_alpha: f64,
-    pub sigmoid_k: f64,
-    pub sigmoid_mid: f64,
-    pub decay_coeff: f64,
-    pub latency_gran_ratio: f64,
-    pub memory_migration_alpha: f64,
-    pub memory_granularity_scaling: f64,
-    pub memory_burst_penalty: f64,
-    pub trend_boost_intensity: f64,
-    pub transient_rate_threshold: f64,
-    pub transient_diff_threshold: f64,
-    pub transient_poll_interval: f64,
-    pub spike_threshold: f64,
-    pub spike_gain: f64,
-    pub variance_sensitivity: f64,
-    pub lookahead_time: f64,
-    pub efficiency_gain: f64,
-    pub temp_cost_weight: f64,
-    pub bat_temp_weight: f64,
-    pub bat_level_weight: f64,
-    pub integral_learning_rate: f64,
-    pub safe_temp_limit: f64,
-    pub max_temp_limit: f64,
-    pub stability_margin: f64,
-    pub nis_threshold: f64,
+    pub min_latency_ns: f32,
+    pub max_latency_ns: f32,
+    pub min_granularity_ns: f32,
+    pub max_granularity_ns: f32,
+    pub min_wakeup_ns: f32,
+    pub max_wakeup_ns: f32,
+    pub min_migration_cost: f32,
+    pub max_migration_cost: f32,
+    pub min_nr_migrate: f32,
+    pub max_nr_migrate: f32,
+    pub nr_migrate_k: f32,
+    pub min_walt_init_pct: f32,
+    pub max_walt_init_pct: f32,
+    pub min_uclamp_min: f32,
+    pub max_uclamp_min: f32,
+    pub uclamp_k: f32,
+    pub uclamp_mid: f32,
+    pub alpha_smooth: f32,
+    pub response_gain: f32,
+    pub stability_ratio: f32,
+    pub gain_scheduling_alpha: f32,
+    pub sigmoid_k: f32,
+    pub sigmoid_mid: f32,
+    pub decay_coeff: f32,
+    pub latency_gran_ratio: f32,
+    pub memory_migration_alpha: f32,
+    pub memory_granularity_scaling: f32,
+    pub memory_burst_penalty: f32,
+    pub trend_boost_intensity: f32,
+    pub transient_rate_threshold: f32,
+    pub transient_diff_threshold: f32,
+    pub transient_poll_interval: f32,
+    pub spike_threshold: f32,
+    pub spike_gain: f32,
+    pub variance_sensitivity: f32,
+    pub lookahead_time: f32,
+    pub efficiency_gain: f32,
+    pub temp_cost_weight: f32,
+    pub bat_temp_weight: f32,
+    pub bat_level_weight: f32,
+    pub integral_learning_rate: f32,
+    pub safe_temp_limit: f32,
+    pub max_temp_limit: f32,
+    pub stability_margin: f32,
+    pub nis_threshold: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct DemandInput {
-    pub target_psi: f64,
-    pub dt_sec: f64,
-    pub thermal_scale: f64,
-    pub trend_factor: f64,
-    pub integral_total: f64,
-    pub integral_dot: f64,
+    pub target_psi: f32,
+    pub dt_sec: f32,
+    pub thermal_scale: f32,
+    pub trend_factor: f32,
+    pub integral_total: f32,
+    pub integral_dot: f32,
     pub is_structural_break: bool,
 }
 
-pub fn sanitize_dt(secs: f64) -> f64 {
+pub fn sanitize_dt(secs: f32) -> f32 {
     secs.clamp(0.000001, 0.1)
 }
 
-fn calculate_regression_slope(state: &LoadState) -> f64 {
-    const N: f64 = 8.0;
-    const SUM_X: f64 = 28.0;
-    const DENOMINATOR: f64 = 336.0;
+fn calculate_regression_slope(state: &LoadState) -> f32 {
+    const N: f32 = 8.0;
+    const SUM_X: f32 = 28.0;
+    const DENOMINATOR: f32 = 336.0;
     let mut sum_y = 0.0;
     let mut sum_xy = 0.0;
     for i in 0..8 {
         let idx = (state.history_idx + i) % 8;
         let y = state.load_history[idx];
-        let x = i as f64;
+        let x = i as f32;
         sum_y += y;
         sum_xy += x * y;
     }
@@ -107,23 +107,23 @@ fn calculate_regression_slope(state: &LoadState) -> f64 {
     numerator / DENOMINATOR
 }
 
-pub fn smooth_delta(current_delta: f64, prev_smooth: f64, tunables: &CpuTunables) -> f64 {
+pub fn smooth_delta(current_delta: f32, prev_smooth: f32, tunables: &CpuTunables) -> f32 {
     tunables.alpha_smooth * current_delta + (1.0 - tunables.alpha_smooth) * prev_smooth
 }
 
-pub fn is_transient(state: &LoadState, target_psi: f64, tunables: &CpuTunables) -> bool {
+pub fn is_transient(state: &LoadState, target_psi: f32, tunables: &CpuTunables) -> bool {
     state.rate.abs() > tunables.transient_rate_threshold
         || (state.psi_value - target_psi).abs() > tunables.transient_diff_threshold
 }
 
 pub fn update_integral_params(
     state: &mut LoadState,
-    cpu_temp: f64,
-    bat_temp: f64,
-    bat_level: f64,
-    dt_sec: f64,
+    cpu_temp: f32,
+    bat_temp: f32,
+    bat_level: f32,
+    dt_sec: f32,
     tunables: &CpuTunables,
-) -> (f64, f64) {
+) -> (f32, f32) {
     let temp_ratio = (cpu_temp / tunables.max_temp_limit).clamp(0.0, 1.5);
     let term_cpu = tunables.temp_cost_weight * temp_ratio.powi(2);
     let bat_stress = (bat_temp / 45.0).clamp(0.0, 1.0);
@@ -159,7 +159,7 @@ pub fn calculate_load_demand(
     state: &mut LoadState,
     input: DemandInput,
     tunables: &CpuTunables,
-) -> f64 {
+) -> f32 {
     if input.is_structural_break {
         for i in 0..8 {
             state.load_history[i] = input.target_psi;
@@ -217,11 +217,11 @@ pub fn calculate_load_demand(
 }
 
 pub fn calculate_trend_gain(
-    avg10: f64,
-    avg60: f64,
-    memory_psi: f64,
+    avg10: f32,
+    avg60: f32,
+    memory_psi: f32,
     tunables: &CpuTunables,
-) -> f64 {
+) -> f32 {
     let delta = avg10 - avg60;
     let base_gain = if delta > 0.0 { delta.tanh() } else { 0.0 };
     let memory_penalty = (memory_psi / 100.0) * tunables.memory_burst_penalty;
@@ -229,30 +229,30 @@ pub fn calculate_trend_gain(
 }
 
 pub fn calculate_effective_pressure(
-    load_demand: f64,
-    trend_factor: f64,
-    memory_psi: f64,
-    io_psi: f64,
+    load_demand: f32,
+    trend_factor: f32,
+    memory_psi: f32,
+    io_psi: f32,
     tunables: &CpuTunables,
-) -> f64 {
+) -> f32 {
     let p_response = load_demand * (1.0 + trend_factor * tunables.trend_boost_intensity);
     let ratio_stall = (memory_psi + io_psi) / (load_demand + 1.0);
     let throughput_ratio = 1.0 / (1.0 + (ratio_stall * tunables.efficiency_gain));
     p_response * throughput_ratio
 }
 
-pub fn calculate_thermal_floor(thermal_scale: f64, tunables: &CpuTunables) -> f64 {
+pub fn calculate_thermal_floor(thermal_scale: f32, tunables: &CpuTunables) -> f32 {
     let limit_ratio = (1.0 - thermal_scale).clamp(0.0, 1.0);
     tunables.min_latency_ns + (tunables.max_latency_ns - tunables.min_latency_ns) * limit_ratio
 }
 
 pub fn calculate_latency_and_granularity(
-    p_eff: f64,
-    load_demand: f64,
-    thermal_floor_ns: f64,
-    memory_psi: f64,
+    p_eff: f32,
+    load_demand: f32,
+    thermal_floor_ns: f32,
+    memory_psi: f32,
     tunables: &CpuTunables,
-) -> (f64, f64) {
+) -> (f32, f32) {
     let denom = 1.0 + (tunables.sigmoid_k * (p_eff - tunables.sigmoid_mid)).exp();
     let normal_latency =
         tunables.min_latency_ns + ((tunables.max_latency_ns - tunables.min_latency_ns) / denom);
@@ -271,7 +271,7 @@ pub fn calculate_latency_and_granularity(
     (adjusted_latency, final_gran)
 }
 
-pub fn calculate_wakeup_granularity(p_eff: f64, tunables: &CpuTunables) -> f64 {
+pub fn calculate_wakeup_granularity(p_eff: f32, tunables: &CpuTunables) -> f32 {
     let decay = (-tunables.decay_coeff * p_eff).exp();
     let raw_wake =
         tunables.min_wakeup_ns + (tunables.max_wakeup_ns - tunables.min_wakeup_ns) * decay;
@@ -279,11 +279,11 @@ pub fn calculate_wakeup_granularity(p_eff: f64, tunables: &CpuTunables) -> f64 {
 }
 
 pub fn calculate_migration_cost(
-    delta_smooth: f64,
-    p_eff: f64,
-    memory_psi: f64,
+    delta_smooth: f32,
+    p_eff: f32,
+    memory_psi: f32,
     tunables: &CpuTunables,
-) -> f64 {
+) -> f32 {
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
     let raw_mig = tunables.min_migration_cost
         + (tunables.max_migration_cost - tunables.min_migration_cost) * (x * x);
@@ -293,13 +293,13 @@ pub fn calculate_migration_cost(
     (dynamic_cost * pressure_scale).clamp(tunables.min_migration_cost, tunables.max_migration_cost)
 }
 
-pub fn calculate_nr_migrate(pressure: f64, tunables: &CpuTunables) -> f64 {
+pub fn calculate_nr_migrate(pressure: f32, tunables: &CpuTunables) -> f32 {
     let denominator = 1.0 + (tunables.nr_migrate_k * pressure);
     let range = tunables.max_nr_migrate - tunables.min_nr_migrate;
     tunables.min_nr_migrate + (range / denominator)
 }
 
-pub fn calculate_walt_init(pressure: f64, tunables: &CpuTunables) -> f64 {
+pub fn calculate_walt_init(pressure: f32, tunables: &CpuTunables) -> f32 {
     let ratio = pressure / 100.0;
     let load_curve = ratio * ratio;
     let range = tunables.max_walt_init_pct - tunables.min_walt_init_pct;
@@ -307,7 +307,7 @@ pub fn calculate_walt_init(pressure: f64, tunables: &CpuTunables) -> f64 {
     val.clamp(tunables.min_walt_init_pct, tunables.max_walt_init_pct)
 }
 
-pub fn calculate_uclamp_min(pressure: f64, thermal_scale: f64, tunables: &CpuTunables) -> f64 {
+pub fn calculate_uclamp_min(pressure: f32, thermal_scale: f32, tunables: &CpuTunables) -> f32 {
     let exponent = -tunables.uclamp_k * (pressure - tunables.uclamp_mid);
     let denominator = 1.0 + exponent.exp();
     let range = tunables.max_uclamp_min - tunables.min_uclamp_min;

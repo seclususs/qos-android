@@ -10,10 +10,10 @@ pub static TWEAKS_ENABLED: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GlobalPressure {
-    pub cpu_psi: f64,
-    pub memory_psi: f64,
-    pub io_psi: f64,
-    pub io_saturation: f64,
+    pub cpu_psi: f32,
+    pub memory_psi: f32,
+    pub io_psi: f32,
+    pub io_saturation: f32,
 }
 
 #[derive(Debug, Default)]

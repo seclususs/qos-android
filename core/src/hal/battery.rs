@@ -11,11 +11,11 @@ impl BatterySensor {
         let monitor = MonitoredFile::new(path).ok();
         Self { monitor }
     }
-    pub fn read(&mut self) -> f64 {
+    pub fn read(&mut self) -> f32 {
         self.monitor
             .as_mut()
             .and_then(|m| m.read_value().ok())
-            .and_then(|content| content.trim().parse::<f64>().ok())
+            .and_then(|content| content.trim().parse::<f32>().ok())
             .unwrap_or(100.0)
     }
 }

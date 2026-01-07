@@ -5,30 +5,30 @@ use std::time::Instant;
 
 #[derive(Clone, Copy)]
 pub struct ThermalTunables {
-    pub hard_limit_cpu: f64,
-    pub hard_limit_bat: f64,
-    pub throttling_start_temp: f64,
-    pub sched_temp_cool: f64,
-    pub sched_temp_hot: f64,
-    pub anti_windup_k: f64,
-    pub deriv_filter_n: f64,
-    pub kp_base: f64,
-    pub ki_base: f64,
-    pub kd_base: f64,
-    pub kp_agg: f64,
-    pub ki_agg: f64,
-    pub kd_agg: f64,
-    pub ff_gain: f64,
-    pub ff_lead_time: f64,
-    pub ff_lag_time: f64,
-    pub smith_delay_sec: f64,
-    pub smith_tau: f64,
-    pub smith_gain: f64,
+    pub hard_limit_cpu: f32,
+    pub hard_limit_bat: f32,
+    pub throttling_start_temp: f32,
+    pub sched_temp_cool: f32,
+    pub sched_temp_hot: f32,
+    pub anti_windup_k: f32,
+    pub deriv_filter_n: f32,
+    pub kp_base: f32,
+    pub ki_base: f32,
+    pub kd_base: f32,
+    pub kp_agg: f32,
+    pub ki_agg: f32,
+    pub kd_agg: f32,
+    pub ff_gain: f32,
+    pub ff_lead_time: f32,
+    pub ff_lag_time: f32,
+    pub smith_delay_sec: f32,
+    pub smith_tau: f32,
+    pub smith_gain: f32,
 }
 
 struct LeadLagFilter {
-    prev_y: f64,
-    prev_u: f64,
+    prev_y: f32,
+    prev_u: f32,
     first_run: bool,
 }
 
@@ -40,7 +40,7 @@ impl LeadLagFilter {
             first_run: true,
         }
     }
-    fn update(&mut self, u: f64, dt: f64, k: f64, t_lead: f64, t_lag: f64) -> f64 {
+    fn update(&mut self, u: f32, dt: f32, k: f32, t_lead: f32, t_lag: f32) -> f32 {
         if self.first_run {
             self.prev_u = u;
             self.prev_y = u * k;
@@ -59,8 +59,8 @@ impl LeadLagFilter {
 }
 
 struct SmithPredictor {
-    model_output_no_delay: f64,
-    delay_buffer: VecDeque<f64>,
+    model_output_no_delay: f32,
+    delay_buffer: VecDeque<f32>,
     capacity: usize,
 }
 
@@ -74,12 +74,12 @@ impl SmithPredictor {
     }
     fn update(
         &mut self,
-        u_control: f64,
-        dt: f64,
-        k_gain: f64,
-        tau: f64,
-        delay_sec: f64,
-    ) -> (f64, f64) {
+        u_control: f32,
+        dt: f32,
+        k_gain: f32,
+        tau: f32,
+        delay_sec: f32,
+    ) -> (f32, f32) {
         let alpha = dt / (tau + dt);
         let y_no_delay = alpha * (u_control * k_gain) + (1.0 - alpha) * self.model_output_no_delay;
         self.model_output_no_delay = y_no_delay;
@@ -101,10 +101,10 @@ impl SmithPredictor {
 
 pub struct ThermalManager {
     last_tick: Instant,
-    integral_accum: f64,
-    prev_adjusted_pv: f64,
-    prev_deriv_output: f64,
-    prev_output_sat: f64,
+    integral_accum: f32,
+    prev_adjusted_pv: f32,
+    prev_deriv_output: f32,
+    prev_output_sat: f32,
     feedforward: LeadLagFilter,
     smith_predictor: SmithPredictor,
 }
@@ -129,13 +129,13 @@ impl ThermalManager {
     }
     pub fn update(
         &mut self,
-        cpu_temp: f64,
-        bat_temp: f64,
-        psi_load: f64,
+        cpu_temp: f32,
+        bat_temp: f32,
+        psi_load: f32,
         tunables: &ThermalTunables,
-    ) -> f64 {
+    ) -> f32 {
         let now = Instant::now();
-        let dt = now.duration_since(self.last_tick).as_secs_f64();
+        let dt = now.duration_since(self.last_tick).as_secs_f32();
         let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;
         let sigma = ((bat_temp - tunables.sched_temp_cool)
