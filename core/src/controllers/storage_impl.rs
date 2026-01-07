@@ -142,9 +142,11 @@ impl StorageController {
             storage_math::calculate_fifo_batch(self.current_nr_requests, &self.tunables);
         self.current_read_ahead = calculated_ra;
         self.current_fifo_batch = calculated_fifo;
-        if psi_data.some.avg10 > self.tunables.critical_threshold_psi
-            || current_io_stats.in_flight as f64 > self.tunables.queue_pressure_high
-        {
+        if storage_math::is_congestion_critical(
+            psi_data.some.avg10,
+            current_io_stats.in_flight as f64,
+            &self.tunables,
+        ) {
             self.next_wake_ms = MIN_POLLING_MS as i32;
         } else {
             self.next_wake_ms = self

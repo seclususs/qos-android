@@ -63,6 +63,27 @@ impl Default for QueueState {
     }
 }
 
+pub fn calculate_active_set(stats: &VmStats) -> f64 {
+    (stats.nr_active_anon + stats.nr_inactive_anon + stats.nr_active_file + stats.nr_inactive_file)
+        as f64
+}
+
+pub fn calculate_pressure_level(current: f64, avg10: f64) -> f64 {
+    current.max(avg10)
+}
+
+pub fn calculate_pressure_derivative(current_psi: f64, prev_psi: f64, dt: f64) -> f64 {
+    if dt <= 0.0 {
+        0.0
+    } else {
+        (current_psi - prev_psi) / dt
+    }
+}
+
+pub fn smooth_value(current: f64, target: f64, alpha: f64) -> f64 {
+    current * (1.0 - alpha) + target * alpha
+}
+
 pub fn calculate_activity_state(current: &VmStats, prev: &VmStats, dt_sec: f64) -> ActivityState {
     if dt_sec <= 0.0 {
         return ActivityState::default();
@@ -132,14 +153,6 @@ pub fn update_congestion_model(
     final_correction_factor.clamp(0.0, 1.5)
 }
 
-pub fn calculate_pressure_derivative(current_psi: f64, prev_psi: f64, dt: f64) -> f64 {
-    if dt <= 0.0 {
-        0.0
-    } else {
-        (current_psi - prev_psi) / dt
-    }
-}
-
 pub fn calculate_swappiness(
     p_mem: f64,
     dp_dt: f64,
@@ -190,12 +203,11 @@ pub fn calculate_dirty_time(io_sat: f64, tunables: &MemoryTunables) -> f64 {
     expire.clamp(tunables.min_dirty_expire, tunables.max_dirty_expire)
 }
 
-pub fn calculate_dirty_writeback(target_expire: f64, tunables: &MemoryTunables) -> f64 {
-    let t_wb = (target_expire - tunables.min_dirty_expire)
-        / (tunables.max_dirty_expire - tunables.min_dirty_expire);
-    let wb = tunables.min_dirty_writeback
-        + (tunables.max_dirty_writeback - tunables.min_dirty_writeback) * t_wb;
-    wb.clamp(tunables.min_dirty_writeback, tunables.max_dirty_writeback)
+pub fn calculate_sampling_rate(p_mem: f64, tunables: &MemoryTunables) -> f64 {
+    let urgency = (p_mem / 50.0).clamp(0.0, 1.0);
+    let interval = tunables.max_stat_interval
+        - (urgency * (tunables.max_stat_interval - tunables.min_stat_interval));
+    interval.clamp(tunables.min_stat_interval, tunables.max_stat_interval)
 }
 
 pub fn calculate_watermark_scale(p_mem: f64, fragmentation: f64, tunables: &MemoryTunables) -> f64 {
@@ -213,21 +225,18 @@ pub fn calculate_extfrag_threshold(p_cpu: f64, tunables: &MemoryTunables) -> f64
     }
 }
 
+pub fn calculate_dirty_writeback(target_expire: f64, tunables: &MemoryTunables) -> f64 {
+    let t_wb = (target_expire - tunables.min_dirty_expire)
+        / (tunables.max_dirty_expire - tunables.min_dirty_expire);
+    let wb = tunables.min_dirty_writeback
+        + (tunables.max_dirty_writeback - tunables.min_dirty_writeback) * t_wb;
+    wb.clamp(tunables.min_dirty_writeback, tunables.max_dirty_writeback)
+}
+
 pub fn calculate_clustering_factor(p_cpu: f64, tunables: &MemoryTunables) -> f64 {
     if p_cpu > 25.0 {
         tunables.min_page_cluster
     } else {
         1.0
     }
-}
-
-pub fn calculate_sampling_rate(p_mem: f64, tunables: &MemoryTunables) -> f64 {
-    let urgency = (p_mem / 50.0).clamp(0.0, 1.0);
-    let interval = tunables.max_stat_interval
-        - (urgency * (tunables.max_stat_interval - tunables.min_stat_interval));
-    interval.clamp(tunables.min_stat_interval, tunables.max_stat_interval)
-}
-
-pub fn smooth_value(current: f64, target: f64, alpha: f64) -> f64 {
-    current * (1.0 - alpha) + target * alpha
 }

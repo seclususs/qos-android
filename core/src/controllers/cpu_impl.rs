@@ -206,7 +206,7 @@ impl CpuController {
         let now = Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
-        let dt_sec = dt_duration.as_secs_f64().clamp(0.000001, 0.1);
+        let dt_sec = cpu_math::sanitize_dt(dt_duration.as_secs_f64());
         let (integral_total, integral_dot) = cpu_math::update_integral_params(
             &mut self.load_state,
             cpu_temp,

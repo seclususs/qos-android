@@ -175,15 +175,13 @@ impl MemoryController {
         self.last_tick = now;
         let activity_delta =
             memory_math::calculate_activity_state(&vm_stats, &self.prev_vm_stats, dt);
-        let p_mem = psi_data.some.current.max(psi_data.some.avg10);
+        let p_mem =
+            memory_math::calculate_pressure_level(psi_data.some.current, psi_data.some.avg10);
         let dp_dt = memory_math::calculate_pressure_derivative(p_mem, self.prev_psi_mem, dt);
         self.prev_psi_mem = p_mem;
         self.prev_vm_stats = vm_stats;
         context.pressure.memory_psi = p_mem;
-        let active_set = (vm_stats.nr_active_anon
-            + vm_stats.nr_inactive_anon
-            + vm_stats.nr_active_file
-            + vm_stats.nr_inactive_file) as f64;
+        let active_set = memory_math::calculate_active_set(&vm_stats);
         let queue_correction_factor = memory_math::update_congestion_model(
             &mut self.queue_state,
             active_set,

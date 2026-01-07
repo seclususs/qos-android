@@ -43,6 +43,22 @@ impl Default for WorkloadState {
     }
 }
 
+pub fn is_congestion_critical(psi_avg10: f64, in_flight: f64, tunables: &StorageTunables) -> bool {
+    psi_avg10 > tunables.critical_threshold_psi || in_flight > tunables.queue_pressure_high
+}
+
+pub fn should_update_nr_requests(
+    calculated: f64,
+    current: f64,
+    tunables: &StorageTunables,
+) -> bool {
+    let diff = (calculated - current).abs();
+    let error_ratio = diff / current;
+    error_ratio > tunables.hysteresis_threshold
+        || calculated <= tunables.min_nr_requests
+        || calculated >= tunables.max_nr_requests
+}
+
 pub fn calculate_io_deltas(current: &IoStats, prev: &IoStats, dt_sec: f64) -> IoDelta {
     if dt_sec <= 0.0 {
         return IoDelta::default();
@@ -115,11 +131,6 @@ pub fn resolve_sequentiality_factor(
     smoothed
 }
 
-pub fn calculate_target_read_ahead(sequentiality: f64, tunables: &StorageTunables) -> f64 {
-    let range = tunables.max_read_ahead - tunables.min_read_ahead;
-    tunables.min_read_ahead + (range * sequentiality)
-}
-
 pub fn calculate_weighted_throughput(delta: &IoDelta, tunables: &StorageTunables) -> f64 {
     delta.throughput_read + (tunables.write_cost_factor * delta.throughput_write)
 }
@@ -138,6 +149,11 @@ pub fn calculate_target_latency(psi_some_avg10: f64, tunables: &StorageTunables)
     let psi_ratio = (psi_some_avg10 / 100.0).clamp(0.0, 1.0);
     let target = tunables.target_latency_base_ms * (1.0 - psi_ratio);
     target.max(1.0)
+}
+
+pub fn calculate_target_read_ahead(sequentiality: f64, tunables: &StorageTunables) -> f64 {
+    let range = tunables.max_read_ahead - tunables.min_read_ahead;
+    tunables.min_read_ahead + (range * sequentiality)
 }
 
 pub fn calculate_next_queue_depth(
@@ -165,18 +181,6 @@ pub fn calculate_next_queue_depth(
         next_nr = current_nr_requests;
     }
     next_nr.clamp(tunables.min_nr_requests, tunables.max_nr_requests)
-}
-
-pub fn should_update_nr_requests(
-    calculated: f64,
-    current: f64,
-    tunables: &StorageTunables,
-) -> bool {
-    let diff = (calculated - current).abs();
-    let error_ratio = diff / current;
-    error_ratio > tunables.hysteresis_threshold
-        || calculated <= tunables.min_nr_requests
-        || calculated >= tunables.max_nr_requests
 }
 
 pub fn calculate_fifo_batch(current_nr_requests: f64, tunables: &StorageTunables) -> f64 {

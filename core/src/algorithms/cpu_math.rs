@@ -86,6 +86,10 @@ pub struct DemandInput {
     pub is_structural_break: bool,
 }
 
+pub fn sanitize_dt(secs: f64) -> f64 {
+    secs.clamp(0.000001, 0.1)
+}
+
 fn calculate_regression_slope(state: &LoadState) -> f64 {
     const N: f64 = 8.0;
     const SUM_X: f64 = 28.0;
@@ -101,6 +105,15 @@ fn calculate_regression_slope(state: &LoadState) -> f64 {
     }
     let numerator = (N * sum_xy) - (SUM_X * sum_y);
     numerator / DENOMINATOR
+}
+
+pub fn smooth_delta(current_delta: f64, prev_smooth: f64, tunables: &CpuTunables) -> f64 {
+    tunables.alpha_smooth * current_delta + (1.0 - tunables.alpha_smooth) * prev_smooth
+}
+
+pub fn is_transient(state: &LoadState, target_psi: f64, tunables: &CpuTunables) -> bool {
+    state.rate.abs() > tunables.transient_rate_threshold
+        || (state.psi_value - target_psi).abs() > tunables.transient_diff_threshold
 }
 
 pub fn update_integral_params(
@@ -215,27 +228,22 @@ pub fn calculate_trend_gain(
     base_gain / (1.0 + memory_penalty)
 }
 
+pub fn calculate_effective_pressure(
+    load_demand: f64,
+    trend_factor: f64,
+    memory_psi: f64,
+    io_psi: f64,
+    tunables: &CpuTunables,
+) -> f64 {
+    let p_response = load_demand * (1.0 + trend_factor * tunables.trend_boost_intensity);
+    let ratio_stall = (memory_psi + io_psi) / (load_demand + 1.0);
+    let throughput_ratio = 1.0 / (1.0 + (ratio_stall * tunables.efficiency_gain));
+    p_response * throughput_ratio
+}
+
 pub fn calculate_thermal_floor(thermal_scale: f64, tunables: &CpuTunables) -> f64 {
     let limit_ratio = (1.0 - thermal_scale).clamp(0.0, 1.0);
     tunables.min_latency_ns + (tunables.max_latency_ns - tunables.min_latency_ns) * limit_ratio
-}
-
-pub fn calculate_migration_cost(
-    delta_smooth: f64,
-    p_eff: f64,
-    memory_psi: f64,
-    tunables: &CpuTunables,
-) -> f64 {
-    let x = (p_eff / 100.0).clamp(0.0, 1.0);
-    let raw_mig = tunables.min_migration_cost
-        + (tunables.max_migration_cost - tunables.min_migration_cost) * (x * x);
-    let burst_factor = (delta_smooth / 50.0).clamp(0.0, 1.0);
-    let dynamic_cost = raw_mig * (1.0 - (burst_factor * 0.5));
-    let pressure_scale = 1.0 + (tunables.memory_migration_alpha * (memory_psi / 100.0));
-    (dynamic_cost * pressure_scale).clamp(
-        tunables.min_migration_cost,
-        tunables.max_migration_cost * 3.0,
-    )
 }
 
 pub fn calculate_latency_and_granularity(
@@ -254,14 +262,11 @@ pub fn calculate_latency_and_granularity(
     let ideal_latency = normal_latency.min(low_latency_target);
     let final_latency = ideal_latency.max(thermal_floor_ns);
     let memory_dilation = 1.0 + (tunables.memory_granularity_scaling * (memory_psi / 100.0));
-    let adjusted_latency = (final_latency * memory_dilation)
-        .clamp(tunables.min_latency_ns, tunables.max_latency_ns * 1.5);
+    let adjusted_latency =
+        (final_latency * memory_dilation).clamp(tunables.min_latency_ns, tunables.max_latency_ns);
     let raw_gran = adjusted_latency * tunables.latency_gran_ratio;
     let final_gran = raw_gran
-        .clamp(
-            tunables.min_granularity_ns,
-            tunables.max_granularity_ns * 1.5,
-        )
+        .clamp(tunables.min_granularity_ns, tunables.max_granularity_ns)
         .min(adjusted_latency);
     (adjusted_latency, final_gran)
 }
@@ -271,6 +276,21 @@ pub fn calculate_wakeup_granularity(p_eff: f64, tunables: &CpuTunables) -> f64 {
     let raw_wake =
         tunables.min_wakeup_ns + (tunables.max_wakeup_ns - tunables.min_wakeup_ns) * decay;
     raw_wake.clamp(tunables.min_wakeup_ns, tunables.max_wakeup_ns)
+}
+
+pub fn calculate_migration_cost(
+    delta_smooth: f64,
+    p_eff: f64,
+    memory_psi: f64,
+    tunables: &CpuTunables,
+) -> f64 {
+    let x = (p_eff / 100.0).clamp(0.0, 1.0);
+    let raw_mig = tunables.min_migration_cost
+        + (tunables.max_migration_cost - tunables.min_migration_cost) * (x * x);
+    let burst_factor = (delta_smooth / 50.0).clamp(0.0, 1.0);
+    let dynamic_cost = raw_mig * (1.0 - (burst_factor * 0.5));
+    let pressure_scale = 1.0 + (tunables.memory_migration_alpha * (memory_psi / 100.0));
+    (dynamic_cost * pressure_scale).clamp(tunables.min_migration_cost, tunables.max_migration_cost)
 }
 
 pub fn calculate_nr_migrate(pressure: f64, tunables: &CpuTunables) -> f64 {
@@ -283,7 +303,8 @@ pub fn calculate_walt_init(pressure: f64, tunables: &CpuTunables) -> f64 {
     let ratio = pressure / 100.0;
     let load_curve = ratio * ratio;
     let range = tunables.max_walt_init_pct - tunables.min_walt_init_pct;
-    tunables.min_walt_init_pct + (range * load_curve)
+    let val = tunables.min_walt_init_pct + (range * load_curve);
+    val.clamp(tunables.min_walt_init_pct, tunables.max_walt_init_pct)
 }
 
 pub fn calculate_uclamp_min(pressure: f64, thermal_scale: f64, tunables: &CpuTunables) -> f64 {
@@ -291,27 +312,5 @@ pub fn calculate_uclamp_min(pressure: f64, thermal_scale: f64, tunables: &CpuTun
     let denominator = 1.0 + exponent.exp();
     let range = tunables.max_uclamp_min - tunables.min_uclamp_min;
     let ideal_uclamp = tunables.min_uclamp_min + (range / denominator);
-    ideal_uclamp * thermal_scale
-}
-
-pub fn smooth_delta(current_delta: f64, prev_smooth: f64, tunables: &CpuTunables) -> f64 {
-    tunables.alpha_smooth * current_delta + (1.0 - tunables.alpha_smooth) * prev_smooth
-}
-
-pub fn calculate_effective_pressure(
-    load_demand: f64,
-    trend_factor: f64,
-    memory_psi: f64,
-    io_psi: f64,
-    tunables: &CpuTunables,
-) -> f64 {
-    let p_response = load_demand * (1.0 + trend_factor * tunables.trend_boost_intensity);
-    let ratio_stall = (memory_psi + io_psi) / (load_demand + 1.0);
-    let throughput_ratio = 1.0 / (1.0 + (ratio_stall * tunables.efficiency_gain));
-    p_response * throughput_ratio
-}
-
-pub fn is_transient(state: &LoadState, target_psi: f64, tunables: &CpuTunables) -> bool {
-    state.rate.abs() > tunables.transient_rate_threshold
-        || (state.psi_value - target_psi).abs() > tunables.transient_diff_threshold
+    (ideal_uclamp * thermal_scale).clamp(tunables.min_uclamp_min, tunables.max_uclamp_min)
 }
