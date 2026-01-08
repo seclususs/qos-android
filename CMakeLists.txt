@@ -49,6 +49,7 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/lib.rs
             ${RUST_CRATE_PATH}/src/algorithms/mod.rs
             ${RUST_CRATE_PATH}/src/algorithms/cpu_math.rs
+            ${RUST_CRATE_PATH}/src/algorithms/kalman_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/memory_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/poll_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/storage_math.rs
@@ -71,13 +72,18 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/daemon/state.rs
             ${RUST_CRATE_PATH}/src/daemon/types.rs
             ${RUST_CRATE_PATH}/src/hal/mod.rs
+            ${RUST_CRATE_PATH}/src/hal/battery.rs
             ${RUST_CRATE_PATH}/src/hal/bridge.rs
             ${RUST_CRATE_PATH}/src/hal/cached_file.rs
             ${RUST_CRATE_PATH}/src/hal/filesystem.rs
             ${RUST_CRATE_PATH}/src/hal/kernel.rs
+            ${RUST_CRATE_PATH}/src/hal/monitored_file.rs
             ${RUST_CRATE_PATH}/src/hal/properties.rs
+            ${RUST_CRATE_PATH}/src/hal/thermal.rs
             ${RUST_CRATE_PATH}/src/monitors/mod.rs
+            ${RUST_CRATE_PATH}/src/monitors/disk_monitor.rs
             ${RUST_CRATE_PATH}/src/monitors/psi_monitor.rs
+            ${RUST_CRATE_PATH}/src/monitors/vm_monitor.rs
             ${RUST_CRATE_PATH}/src/registry/mod.rs
             ${RUST_CRATE_PATH}/src/registry/boot_tweaks.rs
             ${RUST_CRATE_PATH}/src/resources/mod.rs
