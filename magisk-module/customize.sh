@@ -34,34 +34,21 @@ ui_print_log() { ui_print "  ● $1"; }
 ui_print_info() { ui_print "    ➜ $1"; }
 ui_print_warn() { ui_print "    ! $1"; }
 
-keytest() {
-  ui_print "    - Press Vol Up (+) to CONTINUE (Risk)"
-  ui_print "    - Press Vol Down (-) to CANCEL"
-  (/system/bin/getevent -lc 1 2>&1 | /system/bin/grep DELAY | /system/bin/awk '{ print $3 }') &
-  while true; do
-    sleep 0.1
-    if [ -z "$(pidof getevent)" ]; then
-        return 1
-    fi
-  done
-}
-
+# Original concept by Chainfire, modernized for new Android versions
 chooseport() {
-  # Original idea by chainfire @xda-developers, improved by various magisk devs
+  rm -f "$TMPDIR/events"
+  touch "$TMPDIR/events"
   while true; do
-    /system/bin/getevent -lc 1 2>&1 | /system/bin/grep DELAY | /system/bin/awk '{ print $3 }' > $TMPDIR/events
-    if [ -s $TMPDIR/events ]; then
-        case $(cat $TMPDIR/events) in
-        "0073"|"KEY_VOLUMEUP")
+    timeout 5 /system/bin/getevent -lc 1 2>&1 > "$TMPDIR/events"
+    if [ -s "$TMPDIR/events" ]; then
+        if grep -q "KEY_VOLUMEUP" "$TMPDIR/events" || grep -q "0073" "$TMPDIR/events"; then
             return 0
-            ;;
-        "0072"|"KEY_VOLUMEDOWN")
+        fi
+        if grep -q "KEY_VOLUMEDOWN" "$TMPDIR/events" || grep -q "0072" "$TMPDIR/events"; then
             return 1
-            ;;
-        esac
+        fi
     fi
-    rm -f $TMPDIR/events
-    sleep 0.2
+    > "$TMPDIR/events"
   done
 }
 
@@ -88,7 +75,7 @@ check_strict_paths() {
   for path in $ALL_PATHS; do
     if [ ! -e "$path" ]; then
       MISSING_COUNT=$((MISSING_COUNT + 1))
-      MISSING_LIST="$MISSING_LIST\n    [x] $path"
+      MISSING_LIST="$MISSING_LIST    [x] $path"
     fi
   done
 
