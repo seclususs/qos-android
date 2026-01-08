@@ -1,6 +1,20 @@
 # Changelog
 
-## v1.9 (Latest)
+## v2.0 (Latest)
+- **Core:** Shifted control flow toward unified predictive–reactive state-driven logic
+- **Thermal:** Refined thermal regulation with combined predictive handling and reactive correction
+- **Monitoring:** Expanded low-level system telemetry coverage for disk and virtual memory
+- **CPU:** Improved load evaluation with trend-aware and transient-sensitive control logic
+- **Memory:** Adjusted memory control behavior to better track reclaim activity and allocation pressure
+- **Storage:** Extended I/O control logic with saturation and queue state awareness
+- **Architecture:** Simplified runtime state handling by reducing global state dependencies
+- **Memory Usage:** Reduced steady-state runtime memory footprint through tighter state management
+- **Precision:** Standardized control calculations on single-precision floating point
+- **Polling:** Tuned adaptive polling behavior for faster response and stable decay
+
+---
+
+### v1.9
 - **Core:** Implemented Closed-Loop PID Thermal Regulation
 - **Scheduling:** Enforced Daemon UClamp & Timer Slack Coalescing
 - **Polling:** Added Stochastic Polling Jitter with Quantization
