@@ -38,41 +38,41 @@ pub struct CpuTunables {
     pub max_migration_cost: f32,
     pub min_nr_migrate: f32,
     pub max_nr_migrate: f32,
-    pub nr_migrate_k: f32,
     pub min_walt_init_pct: f32,
     pub max_walt_init_pct: f32,
     pub min_uclamp_min: f32,
     pub max_uclamp_min: f32,
+    pub latency_gran_ratio: f32,
+    pub decay_coeff: f32,
+    pub nr_migrate_k: f32,
     pub uclamp_k: f32,
     pub uclamp_mid: f32,
-    pub alpha_smooth: f32,
     pub response_gain: f32,
     pub stability_ratio: f32,
+    pub stability_margin: f32,
     pub gain_scheduling_alpha: f32,
+    pub alpha_smooth: f32,
     pub sigmoid_k: f32,
     pub sigmoid_mid: f32,
-    pub decay_coeff: f32,
-    pub latency_gran_ratio: f32,
-    pub memory_migration_alpha: f32,
-    pub memory_granularity_scaling: f32,
-    pub memory_burst_penalty: f32,
-    pub trend_boost_intensity: f32,
+    pub lookahead_time: f32,
+    pub variance_sensitivity: f32,
+    pub efficiency_gain: f32,
+    pub trend_amplification: f32,
+    pub surge_threshold: f32,
+    pub surge_gain: f32,
     pub transient_rate_threshold: f32,
     pub transient_diff_threshold: f32,
     pub transient_poll_interval: f32,
-    pub spike_threshold: f32,
-    pub spike_gain: f32,
-    pub variance_sensitivity: f32,
-    pub lookahead_time: f32,
-    pub efficiency_gain: f32,
+    pub nis_threshold: f32,
+    pub safe_temp_limit: f32,
+    pub max_temp_limit: f32,
     pub temp_cost_weight: f32,
     pub bat_temp_weight: f32,
     pub bat_level_weight: f32,
-    pub integral_learning_rate: f32,
-    pub safe_temp_limit: f32,
-    pub max_temp_limit: f32,
-    pub stability_margin: f32,
-    pub nis_threshold: f32,
+    pub integral_acc_rate: f32,
+    pub memory_migration_alpha: f32,
+    pub memory_granularity_scaling: f32,
+    pub memory_volatility_cost: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -132,7 +132,7 @@ pub fn update_integral_params(
     let term_bat_cap = tunables.bat_level_weight * depletion.powi(3);
     let cost_heuristic = term_cpu + term_bat_temp + term_bat_cap;
     let limit_violation = (cpu_temp - tunables.safe_temp_limit).max(0.0);
-    let integration_rate = tunables.integral_learning_rate * limit_violation;
+    let integration_rate = tunables.integral_acc_rate * limit_violation;
     state.integral_accum += integration_rate * dt_sec;
     if limit_violation <= 0.0 {
         state.integral_accum *= 0.98;
@@ -180,8 +180,8 @@ pub fn calculate_load_demand(
     let deviation_gain = 1.0 + (tunables.variance_sensitivity * std_dev);
     let slope_per_tick = calculate_regression_slope(state);
     let load_rate = slope_per_tick / input.dt_sec.max(0.001);
-    if load_rate.abs() > tunables.spike_threshold {
-        state.rate += load_rate * tunables.spike_gain;
+    if load_rate.abs() > tunables.surge_threshold {
+        state.rate += load_rate * tunables.surge_gain;
     }
     let prediction_target = input.target_psi + (load_rate * tunables.lookahead_time);
     let k_base = tunables.response_gain;
@@ -201,8 +201,8 @@ pub fn calculate_load_demand(
     let c_thermal_adjusted = base_damp / input.thermal_scale.clamp(0.1, 1.0).sqrt();
     let c_final = c_thermal_adjusted.max(c_stability);
     let deriv_term = c_final * state.rate;
-    let net_drive = prop_term - deriv_term - limit_term;
-    let rate_delta = net_drive;
+    let net_correction = prop_term - deriv_term - limit_term;
+    let rate_delta = net_correction;
     state.rate += rate_delta * input.dt_sec;
     state.psi_value += state.rate * input.dt_sec;
     if state.psi_value < 0.0 {
@@ -224,7 +224,7 @@ pub fn calculate_trend_gain(
 ) -> f32 {
     let delta = avg10 - avg60;
     let base_gain = if delta > 0.0 { delta.tanh() } else { 0.0 };
-    let memory_penalty = (memory_psi / 100.0) * tunables.memory_burst_penalty;
+    let memory_penalty = (memory_psi / 100.0) * tunables.memory_volatility_cost;
     base_gain / (1.0 + memory_penalty)
 }
 
@@ -235,13 +235,13 @@ pub fn calculate_effective_pressure(
     io_psi: f32,
     tunables: &CpuTunables,
 ) -> f32 {
-    let p_response = load_demand * (1.0 + trend_factor * tunables.trend_boost_intensity);
+    let p_response = load_demand * (1.0 + trend_factor * tunables.trend_amplification);
     let ratio_stall = (memory_psi + io_psi) / (load_demand + 1.0);
     let throughput_ratio = 1.0 / (1.0 + (ratio_stall * tunables.efficiency_gain));
     p_response * throughput_ratio
 }
 
-pub fn calculate_thermal_floor(thermal_scale: f32, tunables: &CpuTunables) -> f32 {
+pub fn calculate_thermal_latency_limit(thermal_scale: f32, tunables: &CpuTunables) -> f32 {
     let limit_ratio = (1.0 - thermal_scale).clamp(0.0, 1.0);
     tunables.min_latency_ns + (tunables.max_latency_ns - tunables.min_latency_ns) * limit_ratio
 }
@@ -249,7 +249,7 @@ pub fn calculate_thermal_floor(thermal_scale: f32, tunables: &CpuTunables) -> f3
 pub fn calculate_latency_and_granularity(
     p_eff: f32,
     load_demand: f32,
-    thermal_floor_ns: f32,
+    thermal_min_latency_ns: f32,
     memory_psi: f32,
     tunables: &CpuTunables,
 ) -> (f32, f32) {
@@ -260,7 +260,7 @@ pub fn calculate_latency_and_granularity(
     let effective_demand = (load_demand / 100.0).clamp(0.0, 1.0);
     let low_latency_target = tunables.max_latency_ns - (effective_demand * latency_range);
     let ideal_latency = normal_latency.min(low_latency_target);
-    let final_latency = ideal_latency.max(thermal_floor_ns);
+    let final_latency = ideal_latency.max(thermal_min_latency_ns);
     let memory_dilation = 1.0 + (tunables.memory_granularity_scaling * (memory_psi / 100.0));
     let adjusted_latency =
         (final_latency * memory_dilation).clamp(tunables.min_latency_ns, tunables.max_latency_ns);
@@ -287,8 +287,8 @@ pub fn calculate_migration_cost(
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
     let raw_mig = tunables.min_migration_cost
         + (tunables.max_migration_cost - tunables.min_migration_cost) * (x * x);
-    let burst_factor = (delta_smooth / 50.0).clamp(0.0, 1.0);
-    let dynamic_cost = raw_mig * (1.0 - (burst_factor * 0.5));
+    let volatility_ratio = (delta_smooth / 50.0).clamp(0.0, 1.0);
+    let dynamic_cost = raw_mig * (1.0 - (volatility_ratio * 0.5));
     let pressure_scale = 1.0 + (tunables.memory_migration_alpha * (memory_psi / 100.0));
     (dynamic_cost * pressure_scale).clamp(tunables.min_migration_cost, tunables.max_migration_cost)
 }

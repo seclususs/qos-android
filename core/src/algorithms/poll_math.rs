@@ -7,10 +7,10 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 const SLEEP_TOLERANCE_MS: u64 = 500;
 const MIN_EFFECTIVE_DT_MS: u64 = 500;
 const QUANTIZATION_STEP_MS: u64 = 100;
-const HYSTERESIS_THRESHOLD_MS: u64 = 200;
-const JITTER_PERCENT: u64 = 5;
-const ATTACK_COEFF: f32 = 1.0;
-const DECAY_COEFF: f32 = 0.1;
+const HYSTERESIS_THRESHOLD_MS: u64 = 500;
+const NOISE_PERCENT: u64 = 5;
+const RISE_FACTOR: f32 = 1.0;
+const FALL_FACTOR: f32 = 0.2;
 
 pub struct AdaptivePoller {
     current_interval: u64,
@@ -60,16 +60,16 @@ impl AdaptivePoller {
             return MIN_POLLING_MS;
         }
         let (dynamic_min, dynamic_max) = if avg300 < 2.0 && current_pressure < 10.0 {
-            (8000u64, MAX_POLLING_MS)
+            (10000u64, MAX_POLLING_MS)
         } else if avg300 > 20.0 {
-            (MIN_POLLING_MS, 5000u64)
+            (MIN_POLLING_MS, 6000u64)
         } else {
             (MIN_POLLING_MS, MAX_POLLING_MS)
         };
         let effective_dt_ms = elapsed_ms.max(MIN_EFFECTIVE_DT_MS);
         let dt_sec = effective_dt_ms as f32 / 1000.0;
         let rate_change = (current_pressure - self.last_pressure) / dt_sec;
-        let prediction = current_pressure + (rate_change * ATTACK_COEFF);
+        let prediction = current_pressure + (rate_change * RISE_FACTOR);
         let p_term = prediction * self.weight_pressure;
         let d_term = rate_change.abs() * self.weight_derivative;
         let priority_score = (p_term + d_term).clamp(0.0, 100.0);
@@ -78,8 +78,8 @@ impl AdaptivePoller {
         let target = if raw_interval < self.target_interval as f32 {
             raw_interval
         } else {
-            (raw_interval * DECAY_COEFF)
-                + (self.target_interval as f32 * (ATTACK_COEFF - DECAY_COEFF))
+            (raw_interval * FALL_FACTOR)
+                + (self.target_interval as f32 * (RISE_FACTOR - FALL_FACTOR))
         };
         self.target_interval = target as u64;
         let diff = (self.target_interval as i64 - self.current_interval as i64).abs();
@@ -95,12 +95,12 @@ impl AdaptivePoller {
         let quantized = ((interval as f32 / QUANTIZATION_STEP_MS as f32).round()
             * QUANTIZATION_STEP_MS as f32) as u64;
         let clamped = quantized.clamp(min_limit, max_limit);
-        let jitter_range = (clamped * JITTER_PERCENT) / 100;
-        let noise = self.next_random(jitter_range);
-        let final_val = if noise > jitter_range {
-            clamped + (noise - jitter_range)
+        let noise_amplitude = (clamped * NOISE_PERCENT) / 100;
+        let noise = self.next_random(noise_amplitude);
+        let final_val = if noise > noise_amplitude {
+            clamped + (noise - noise_amplitude)
         } else {
-            clamped.saturating_sub(jitter_range - noise)
+            clamped.saturating_sub(noise_amplitude - noise)
         };
         final_val.clamp(min_limit, max_limit)
     }

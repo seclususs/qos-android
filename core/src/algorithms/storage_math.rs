@@ -10,12 +10,12 @@ pub struct StorageTunables {
     pub max_nr_requests: f32,
     pub min_fifo_batch: f32,
     pub max_fifo_batch: f32,
+    pub min_req_size_kb: f32,
+    pub max_req_size_kb: f32,
     pub write_cost_factor: f32,
     pub target_latency_base_ms: f32,
     pub hysteresis_threshold: f32,
     pub critical_threshold_psi: f32,
-    pub min_req_size_kb: f32,
-    pub max_req_size_kb: f32,
     pub queue_pressure_low: f32,
     pub queue_pressure_high: f32,
     pub smoothing_factor: f32,
@@ -86,7 +86,7 @@ pub fn calculate_io_deltas(current: &IoStats, prev: &IoStats, dt_sec: f32) -> Io
     }
 }
 
-pub fn calculate_request_size_score(delta: &IoDelta, tunables: &StorageTunables) -> f32 {
+pub fn calculate_request_size_ratio(delta: &IoDelta, tunables: &StorageTunables) -> f32 {
     if delta.delta_read_ios <= 0.0 {
         return 0.0;
     }
@@ -95,8 +95,8 @@ pub fn calculate_request_size_score(delta: &IoDelta, tunables: &StorageTunables)
     if range <= 0.0 {
         return 0.0;
     }
-    let score = (avg_size_kb - tunables.min_req_size_kb) / range;
-    score.clamp(0.0, 1.0)
+    let ratio = (avg_size_kb - tunables.min_req_size_kb) / range;
+    ratio.clamp(0.0, 1.0)
 }
 
 pub fn calculate_merge_ratio(delta: &IoDelta) -> f32 {
@@ -107,24 +107,24 @@ pub fn calculate_merge_ratio(delta: &IoDelta) -> f32 {
     delta.delta_read_merges / total_submissions
 }
 
-pub fn calculate_pressure_score(in_flight: f32, tunables: &StorageTunables) -> f32 {
+pub fn calculate_pressure_ratio(in_flight: f32, tunables: &StorageTunables) -> f32 {
     let range = tunables.queue_pressure_high - tunables.queue_pressure_low;
     if range <= 0.0 {
         return 0.0;
     }
-    let score = (in_flight - tunables.queue_pressure_low) / range;
-    score.clamp(0.0, 1.0)
+    let ratio = (in_flight - tunables.queue_pressure_low) / range;
+    ratio.clamp(0.0, 1.0)
 }
 
 pub fn resolve_sequentiality_factor(
     state: &mut WorkloadState,
-    req_size_score: f32,
+    req_size_ratio: f32,
     merge_ratio: f32,
-    pressure_score: f32,
+    pressure_ratio: f32,
     tunables: &StorageTunables,
 ) -> f32 {
-    let shape_factor = req_size_score.max(merge_ratio);
-    let raw_sequentiality = shape_factor * pressure_score;
+    let pattern_factor = req_size_ratio.max(merge_ratio);
+    let raw_sequentiality = pattern_factor * pressure_ratio;
     let alpha = tunables.smoothing_factor;
     let smoothed = (raw_sequentiality * alpha) + (state.sequentiality_smoothed * (1.0 - alpha));
     state.sequentiality_smoothed = smoothed;

@@ -8,6 +8,12 @@ use std::collections::VecDeque;
 pub struct MemoryTunables {
     pub min_swappiness: f32,
     pub max_swappiness: f32,
+    pub min_vfs: f32,
+    pub max_vfs: f32,
+    pub min_dirty: f32,
+    pub max_dirty: f32,
+    pub min_dirty_bg: f32,
+    pub max_dirty_bg: f32,
     pub min_dirty_expire: f32,
     pub max_dirty_expire: f32,
     pub min_stat_interval: f32,
@@ -16,23 +22,17 @@ pub struct MemoryTunables {
     pub max_watermark_scale: f32,
     pub min_extfrag_threshold: f32,
     pub max_extfrag_threshold: f32,
-    pub min_dirty: f32,
-    pub max_dirty: f32,
-    pub min_dirty_bg: f32,
-    pub max_dirty_bg: f32,
     pub min_dirty_writeback: f32,
     pub max_dirty_writeback: f32,
     pub min_page_cluster: f32,
     pub max_page_cluster: f32,
-    pub min_vfs: f32,
-    pub max_vfs: f32,
     pub pressure_kp: f32,
     pub pressure_kd: f32,
-    pub inefficiency_penalty: f32,
-    pub thermal_vfs_k: f32,
+    pub inefficiency_cost: f32,
+    pub pressure_vfs_k: f32,
     pub fragmentation_impact_k: f32,
-    pub wss_penalty_factor: f32,
-    pub zram_thermal_penalty: f32,
+    pub wss_cost_factor: f32,
+    pub zram_thermal_cost: f32,
     pub general_smooth_factor: f32,
     pub watermark_smooth_factor: f32,
     pub queue_history_size: usize,
@@ -50,15 +50,15 @@ pub struct ActivityState {
 }
 
 pub struct QueueState {
-    pub lambda_history: VecDeque<f32>,
-    pub smoothed_lambda: f32,
+    pub rate_history: VecDeque<f32>,
+    pub smoothed_rate: f32,
 }
 
 impl Default for QueueState {
     fn default() -> Self {
         Self {
-            lambda_history: VecDeque::with_capacity(32),
-            smoothed_lambda: 0.0,
+            rate_history: VecDeque::with_capacity(32),
+            smoothed_rate: 0.0,
         }
     }
 }
@@ -113,29 +113,25 @@ pub fn calculate_activity_state(current: &VmStats, prev: &VmStats, dt_sec: f32) 
 pub fn update_congestion_model(
     state: &mut QueueState,
     active_set: f32,
-    lambda_raw: f32,
+    rate_raw: f32,
     tunables: &MemoryTunables,
 ) -> f32 {
-    if state.smoothed_lambda == 0.0 {
-        state.smoothed_lambda = lambda_raw;
+    if state.smoothed_rate == 0.0 {
+        state.smoothed_rate = rate_raw;
     } else {
-        state.smoothed_lambda = tunables.queue_smoothing_alpha * lambda_raw
-            + (1.0 - tunables.queue_smoothing_alpha) * state.smoothed_lambda;
+        state.smoothed_rate = tunables.queue_smoothing_alpha * rate_raw
+            + (1.0 - tunables.queue_smoothing_alpha) * state.smoothed_rate;
     }
-    let safe_lambda = state.smoothed_lambda.max(1.0);
-    let residence_time = active_set / safe_lambda;
-    if state.lambda_history.len() >= tunables.queue_history_size {
-        state.lambda_history.pop_front();
+    let safe_rate = state.smoothed_rate.max(1.0);
+    let residence_time = active_set / safe_rate;
+    if state.rate_history.len() >= tunables.queue_history_size {
+        state.rate_history.pop_front();
     }
-    state.lambda_history.push_back(lambda_raw);
-    let n = state.lambda_history.len() as f32;
-    let variability_penalty = if n > 2.0 {
-        let mean: f32 = state.lambda_history.iter().sum::<f32>() / n;
-        let variance_sum: f32 = state
-            .lambda_history
-            .iter()
-            .map(|v| (v - mean).powi(2))
-            .sum();
+    state.rate_history.push_back(rate_raw);
+    let n = state.rate_history.len() as f32;
+    let variability_factor = if n > 2.0 {
+        let mean: f32 = state.rate_history.iter().sum::<f32>() / n;
+        let variance_sum: f32 = state.rate_history.iter().map(|v| (v - mean).powi(2)).sum();
         let std_dev = (variance_sum / n).sqrt();
         let cv = if mean > 0.0 { std_dev / mean } else { 0.0 };
         1.0 + (cv * tunables.congestion_scaling_factor)
@@ -149,7 +145,7 @@ pub fn update_congestion_model(
         100.0
     };
     let protection_factor = 1.0 / (1.0 + risk_ratio.powf(tunables.protection_curve_k));
-    let final_correction_factor = protection_factor / variability_penalty;
+    let final_correction_factor = protection_factor / variability_factor;
     final_correction_factor.clamp(0.0, 1.5)
 }
 
@@ -165,22 +161,22 @@ pub fn calculate_swappiness(
     let base_swap = tunables.min_swappiness;
     let p_term = tunables.pressure_kp * p_mem;
     let d_term = tunables.pressure_kd * dp_dt;
-    let inefficiency = tunables.inefficiency_penalty * (1.0 - activity.efficiency);
+    let inefficiency = tunables.inefficiency_cost * (1.0 - activity.efficiency);
     let target_swap_raw = base_swap + p_term + d_term + inefficiency;
     let target_swap_corrected = (target_swap_raw - base_swap) * queue_correction + base_swap;
     let thermal_stress = (cpu_temp - 50.0).max(0.0) / 20.0;
-    let thermal_throttle = (1.0 - (thermal_stress * tunables.zram_thermal_penalty)).clamp(0.0, 1.0);
+    let thermal_throttle = (1.0 - (thermal_stress * tunables.zram_thermal_cost)).clamp(0.0, 1.0);
     let io_throttle = (1.0 - (io_sat * 0.6)).clamp(0.2, 1.0);
     let mut final_swap = target_swap_corrected * thermal_throttle * io_throttle;
-    let thrashing_penalty = (activity.refault_index * tunables.wss_penalty_factor).powi(2);
-    let wss_protection = (1.0 - thrashing_penalty).clamp(0.0, 1.0);
-    final_swap *= wss_protection;
+    let thrashing_cost = (activity.refault_index * tunables.wss_cost_factor).powi(2);
+    let wss_preservation = (1.0 - thrashing_cost).clamp(0.0, 1.0);
+    final_swap *= wss_preservation;
     final_swap.clamp(tunables.min_swappiness, tunables.max_swappiness)
 }
 
 pub fn calculate_vfs_pressure(p_mem: f32, tunables: &MemoryTunables) -> f32 {
     let range = tunables.max_vfs - tunables.min_vfs;
-    let decay = (-tunables.thermal_vfs_k * p_mem).exp();
+    let decay = (-tunables.pressure_vfs_k * p_mem).exp();
     let inverse_decay = 1.0 - decay;
     let vfs = tunables.min_vfs + (range * inverse_decay);
     vfs.clamp(tunables.min_vfs, tunables.max_vfs)
@@ -204,9 +200,9 @@ pub fn calculate_dirty_time(io_sat: f32, tunables: &MemoryTunables) -> f32 {
 }
 
 pub fn calculate_sampling_rate(p_mem: f32, tunables: &MemoryTunables) -> f32 {
-    let urgency = (p_mem / 50.0).clamp(0.0, 1.0);
+    let pressure_intensity = (p_mem / 50.0).clamp(0.0, 1.0);
     let interval = tunables.max_stat_interval
-        - (urgency * (tunables.max_stat_interval - tunables.min_stat_interval));
+        - (pressure_intensity * (tunables.max_stat_interval - tunables.min_stat_interval));
     interval.clamp(tunables.min_stat_interval, tunables.max_stat_interval)
 }
 

@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-pub const MIN_POLLING_MS: u64 = 3000;
+pub const MIN_POLLING_MS: u64 = 4000;
 pub const MAX_POLLING_MS: u64 = 15000;
 pub const MAX_EPOLL_TIMEOUT_MS: i32 = 10000;
 pub const MAX_EVENTS: usize = 16;

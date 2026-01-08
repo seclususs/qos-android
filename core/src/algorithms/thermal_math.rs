@@ -7,23 +7,22 @@ use std::time::Instant;
 pub struct ThermalTunables {
     pub hard_limit_cpu: f32,
     pub hard_limit_bat: f32,
-    pub throttling_start_temp: f32,
     pub sched_temp_cool: f32,
     pub sched_temp_hot: f32,
-    pub anti_windup_k: f32,
-    pub deriv_filter_n: f32,
     pub kp_base: f32,
     pub ki_base: f32,
     pub kd_base: f32,
-    pub kp_agg: f32,
-    pub ki_agg: f32,
-    pub kd_agg: f32,
+    pub kp_fast: f32,
+    pub ki_fast: f32,
+    pub kd_fast: f32,
+    pub anti_windup_k: f32,
+    pub deriv_filter_n: f32,
     pub ff_gain: f32,
     pub ff_lead_time: f32,
     pub ff_lag_time: f32,
-    pub smith_delay_sec: f32,
-    pub smith_tau: f32,
     pub smith_gain: f32,
+    pub smith_tau: f32,
+    pub smith_delay_sec: f32,
 }
 
 struct LeadLagFilter {
@@ -141,16 +140,16 @@ impl ThermalManager {
         let sigma = ((bat_temp - tunables.sched_temp_cool)
             / (tunables.sched_temp_hot - tunables.sched_temp_cool))
             .clamp(0.0, 1.0);
-        let k_p = tunables.kp_base + sigma * (tunables.kp_agg - tunables.kp_base);
-        let k_i = tunables.ki_base + sigma * (tunables.ki_agg - tunables.ki_base);
-        let k_d = tunables.kd_base + sigma * (tunables.kd_agg - tunables.kd_base);
-        let bat_headroom = (tunables.hard_limit_bat - bat_temp).max(0.0);
-        let safety_margin = if bat_headroom < 5.0 {
-            5.0 - bat_headroom
+        let k_p = tunables.kp_base + sigma * (tunables.kp_fast - tunables.kp_base);
+        let k_i = tunables.ki_base + sigma * (tunables.ki_fast - tunables.ki_base);
+        let k_d = tunables.kd_base + sigma * (tunables.kd_fast - tunables.kd_base);
+        let bat_margin = (tunables.hard_limit_bat - bat_temp).max(0.0);
+        let control_margin = if bat_margin < 5.0 {
+            5.0 - bat_margin
         } else {
             0.0
         };
-        let setpoint = tunables.hard_limit_cpu - safety_margin;
+        let setpoint = tunables.hard_limit_cpu - control_margin;
         let u_ff = self.feedforward.update(
             psi_load,
             dt_safe,
@@ -193,8 +192,8 @@ impl ThermalManager {
             self.integral_accum -= excess * tunables.anti_windup_k * dt_safe;
         }
         self.prev_output_sat = u_sat;
-        let pid_severity = u_sat / 100.0;
-        let final_scale = 1.0 - pid_severity;
+        let pid_saturation = u_sat / 100.0;
+        let final_scale = 1.0 - pid_saturation;
         if bat_temp >= tunables.hard_limit_bat {
             return final_scale.min(0.2);
         }

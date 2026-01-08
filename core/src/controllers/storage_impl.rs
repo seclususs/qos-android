@@ -57,12 +57,12 @@ impl StorageController {
             max_nr_requests: MAX_NR_REQUESTS as f32,
             min_fifo_batch: MIN_FIFO_BATCH as f32,
             max_fifo_batch: MAX_FIFO_BATCH as f32,
+            min_req_size_kb: 32.0,
+            max_req_size_kb: 256.0,
             write_cost_factor: 5.0,
             target_latency_base_ms: 75.0,
             hysteresis_threshold: 0.15,
             critical_threshold_psi: 40.0,
-            min_req_size_kb: 32.0,
-            max_req_size_kb: 256.0,
             queue_pressure_low: 1.0,
             queue_pressure_high: 4.0,
             smoothing_factor: 0.25,
@@ -100,17 +100,17 @@ impl StorageController {
         self.last_tick = now;
         context.pressure.io_psi = psi_data.some.avg10;
         context.pressure.io_saturation = current_io_stats.in_flight as f32;
-        let req_size_score = storage_math::calculate_request_size_score(&delta, &self.tunables);
+        let req_size_ratio = storage_math::calculate_request_size_ratio(&delta, &self.tunables);
         let merge_ratio = storage_math::calculate_merge_ratio(&delta);
-        let pressure_score = storage_math::calculate_pressure_score(
+        let pressure_ratio = storage_math::calculate_pressure_ratio(
             current_io_stats.in_flight as f32,
             &self.tunables,
         );
         let sequentiality = storage_math::resolve_sequentiality_factor(
             &mut self.workload_state,
-            req_size_score,
+            req_size_ratio,
             merge_ratio,
-            pressure_score,
+            pressure_ratio,
             &self.tunables,
         );
         let calculated_ra =
