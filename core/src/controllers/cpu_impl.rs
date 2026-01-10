@@ -27,7 +27,6 @@ pub struct CpuController {
     min_gran: CachedFile,
     wakeup: CachedFile,
     migration: CachedFile,
-    nr_migrate: CachedFile,
     walt_init: CachedFile,
     uclamp_min: CachedFile,
     psi_monitor: PsiMonitor,
@@ -40,7 +39,6 @@ pub struct CpuController {
     current_min_gran: f32,
     current_wakeup: f32,
     current_migration: f32,
-    current_nr_migrate: f32,
     current_walt_init: f32,
     current_uclamp_min: f32,
     load_state: LoadState,
@@ -70,10 +68,6 @@ impl CpuController {
             filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(),
             0,
         );
-        let nr_migrate = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_SCHED_NR_MIGRATE).ok(),
-            MAX_NR_MIGRATE,
-        );
         let walt_init = CachedFile::new_opt(
             filesystem::open_file_for_write(K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
             MIN_WALT_INIT_PCT,
@@ -95,15 +89,12 @@ impl CpuController {
             max_wakeup_ns: MAX_WAKEUP_NS as f32,
             min_migration_cost: MIN_MIGRATION_COST as f32,
             max_migration_cost: MAX_MIGRATION_COST as f32,
-            min_nr_migrate: MIN_NR_MIGRATE as f32,
-            max_nr_migrate: MAX_NR_MIGRATE as f32,
             min_walt_init_pct: MIN_WALT_INIT_PCT as f32,
             max_walt_init_pct: MAX_WALT_INIT_PCT as f32,
             min_uclamp_min: MIN_UCLAMP_MIN as f32,
             max_uclamp_min: MAX_UCLAMP_MIN as f32,
             latency_gran_ratio: 0.65,
             decay_coeff: 0.10,
-            nr_migrate_k: 0.20,
             uclamp_k: 0.12,
             uclamp_mid: 25.0,
             response_gain: 50.0,
@@ -161,7 +152,6 @@ impl CpuController {
             min_gran,
             wakeup,
             migration,
-            nr_migrate,
             walt_init,
             uclamp_min,
             psi_monitor,
@@ -174,7 +164,6 @@ impl CpuController {
             current_min_gran: MIN_GRANULARITY_NS as f32,
             current_wakeup: MIN_WAKEUP_NS as f32,
             current_migration: MIN_MIGRATION_COST as f32,
-            current_nr_migrate: MAX_NR_MIGRATE as f32,
             current_walt_init: MIN_WALT_INIT_PCT as f32,
             current_uclamp_min: MIN_UCLAMP_MIN as f32,
             load_state: LoadState::default(),
@@ -254,14 +243,12 @@ impl CpuController {
         let target_migration =
             cpu_math::calculate_migration_cost(delta_smooth, p_eff, memory_psi, &self.tunables);
         let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
-        let target_nr_migrate = cpu_math::calculate_nr_migrate(p_eff, &self.tunables);
         let target_walt_init = cpu_math::calculate_walt_init(p_eff, &self.tunables);
         let target_uclamp = cpu_math::calculate_uclamp_min(p_eff, thermal_scale, &self.tunables);
         self.current_latency = target_latency;
         self.current_min_gran = target_min_gran;
         self.current_wakeup = target_wakeup;
         self.current_migration = target_migration;
-        self.current_nr_migrate = target_nr_migrate;
         self.current_walt_init = target_walt_init;
         self.current_uclamp_min = target_uclamp;
         self.apply_values(false);
@@ -288,10 +275,6 @@ impl CpuController {
             self.tunables.min_migration_cost as u64,
             50_000,
         );
-        let nr_u64 = crate::algorithms::sanitize_to_u64(
-            self.current_nr_migrate,
-            self.tunables.min_nr_migrate as u64,
-        );
         let walt_u64 = crate::algorithms::sanitize_to_u64(
             self.current_walt_init,
             self.tunables.min_walt_init_pct as u64,
@@ -308,8 +291,6 @@ impl CpuController {
             .update(wake_u64, force, CheckStrategy::Relative(0.10));
         self.migration
             .update(mig_u64, force, CheckStrategy::Absolute(50000));
-        self.nr_migrate
-            .update(nr_u64, force, CheckStrategy::Absolute(2));
         self.walt_init
             .update(walt_u64, force, CheckStrategy::Absolute(3));
         self.uclamp_min

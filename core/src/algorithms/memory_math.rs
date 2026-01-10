@@ -14,18 +14,10 @@ pub struct MemoryTunables {
     pub max_dirty: f32,
     pub min_dirty_bg: f32,
     pub max_dirty_bg: f32,
-    pub min_dirty_expire: f32,
-    pub max_dirty_expire: f32,
-    pub min_stat_interval: f32,
-    pub max_stat_interval: f32,
     pub min_watermark_scale: f32,
     pub max_watermark_scale: f32,
     pub min_extfrag_threshold: f32,
     pub max_extfrag_threshold: f32,
-    pub min_dirty_writeback: f32,
-    pub max_dirty_writeback: f32,
-    pub min_page_cluster: f32,
-    pub max_page_cluster: f32,
     pub pressure_kp: f32,
     pub pressure_kd: f32,
     pub inefficiency_cost: f32,
@@ -206,20 +198,6 @@ pub fn calculate_dirty_limits(io_sat: f32, tunables: &MemoryTunables) -> (f32, f
     )
 }
 
-pub fn calculate_dirty_time(io_sat: f32, tunables: &MemoryTunables) -> f32 {
-    let t = io_sat.clamp(0.0, 1.0);
-    let expire =
-        tunables.min_dirty_expire + (tunables.max_dirty_expire - tunables.min_dirty_expire) * t;
-    expire.clamp(tunables.min_dirty_expire, tunables.max_dirty_expire)
-}
-
-pub fn calculate_sampling_rate(p_mem: f32, tunables: &MemoryTunables) -> f32 {
-    let pressure_intensity = (p_mem / 50.0).clamp(0.0, 1.0);
-    let interval = tunables.max_stat_interval
-        - (pressure_intensity * (tunables.max_stat_interval - tunables.min_stat_interval));
-    interval.clamp(tunables.min_stat_interval, tunables.max_stat_interval)
-}
-
 pub fn calculate_watermark_scale(p_mem: f32, fragmentation: f32, tunables: &MemoryTunables) -> f32 {
     let pressure_factor = (p_mem / 100.0).clamp(0.0, 1.0);
     let fragmentation_impact = tunables.fragmentation_impact_k * fragmentation * pressure_factor;
@@ -232,21 +210,5 @@ pub fn calculate_extfrag_threshold(p_cpu: f32, tunables: &MemoryTunables) -> f32
         tunables.max_extfrag_threshold
     } else {
         tunables.min_extfrag_threshold
-    }
-}
-
-pub fn calculate_dirty_writeback(target_expire: f32, tunables: &MemoryTunables) -> f32 {
-    let t_wb = (target_expire - tunables.min_dirty_expire)
-        / (tunables.max_dirty_expire - tunables.min_dirty_expire);
-    let wb = tunables.min_dirty_writeback
-        + (tunables.max_dirty_writeback - tunables.min_dirty_writeback) * t_wb;
-    wb.clamp(tunables.min_dirty_writeback, tunables.max_dirty_writeback)
-}
-
-pub fn calculate_clustering_factor(p_cpu: f32, tunables: &MemoryTunables) -> f32 {
-    if p_cpu > 25.0 {
-        tunables.min_page_cluster
-    } else {
-        1.0
     }
 }

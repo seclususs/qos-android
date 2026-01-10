@@ -23,7 +23,6 @@ pub struct StorageController {
     fd: File,
     read_ahead: CachedFile,
     nr_requests: CachedFile,
-    fifo_batch: CachedFile,
     psi_monitor: PsiMonitor,
     disk_monitor: DiskMonitor,
     prev_io_stats: IoStats,
@@ -31,7 +30,6 @@ pub struct StorageController {
     last_tick: Instant,
     current_read_ahead: f32,
     current_nr_requests: f32,
-    current_fifo_batch: f32,
     tunables: StorageTunables,
     poller: AdaptivePoller,
     next_wake_ms: i32,
@@ -45,8 +43,6 @@ impl StorageController {
         let fd = unsafe { File::from_raw_fd(raw_fd) };
         let read_ahead = CachedFile::new(filesystem::open_file_for_write(K_READ_AHEAD_PATH)?, 0);
         let nr_requests = CachedFile::new(filesystem::open_file_for_write(K_NR_REQUESTS_PATH)?, 0);
-        let fifo_batch =
-            CachedFile::new_opt(filesystem::open_file_for_write(K_FIFO_BATCH_PATH).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_IO_PATH)?;
         let mut disk_monitor = DiskMonitor::new(K_MMC_DISKSTATS_PATH)?;
         let initial_stats = disk_monitor.read_stats().unwrap_or(IoStats::default());
@@ -55,8 +51,6 @@ impl StorageController {
             max_read_ahead: MAX_READ_AHEAD as f32,
             min_nr_requests: MIN_NR_REQUESTS as f32,
             max_nr_requests: MAX_NR_REQUESTS as f32,
-            min_fifo_batch: MIN_FIFO_BATCH as f32,
-            max_fifo_batch: MAX_FIFO_BATCH as f32,
             min_req_size_kb: 32.0,
             max_req_size_kb: 256.0,
             write_cost_factor: 5.0,
@@ -72,7 +66,6 @@ impl StorageController {
             fd,
             read_ahead,
             nr_requests,
-            fifo_batch,
             psi_monitor,
             disk_monitor,
             prev_io_stats: initial_stats,
@@ -80,7 +73,6 @@ impl StorageController {
             last_tick: Instant::now(),
             current_read_ahead: MIN_READ_AHEAD as f32,
             current_nr_requests: MAX_NR_REQUESTS as f32,
-            current_fifo_batch: MAX_FIFO_BATCH as f32,
             tunables,
             poller,
             next_wake_ms: MIN_POLLING_MS as i32,
@@ -138,10 +130,7 @@ impl StorageController {
         ) {
             self.current_nr_requests = calculated_nr;
         }
-        let calculated_fifo =
-            storage_math::calculate_fifo_batch(self.current_nr_requests, &self.tunables);
         self.current_read_ahead = calculated_ra;
-        self.current_fifo_batch = calculated_fifo;
         if storage_math::is_congestion_critical(
             psi_data.some.avg10,
             current_io_stats.in_flight as f32,
@@ -168,16 +157,10 @@ impl StorageController {
             self.tunables.min_nr_requests as u64,
             16,
         );
-        let fifo_u64 = crate::algorithms::sanitize_to_u64(
-            self.current_fifo_batch,
-            self.tunables.max_fifo_batch as u64,
-        );
         self.read_ahead
             .update(ra_u64, force, CheckStrategy::Absolute(32));
         self.nr_requests
             .update(nr_u64, force, CheckStrategy::Absolute(16));
-        self.fifo_batch
-            .update(fifo_u64, force, CheckStrategy::Absolute(2));
     }
 }
 

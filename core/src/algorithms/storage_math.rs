@@ -8,8 +8,6 @@ pub struct StorageTunables {
     pub max_read_ahead: f32,
     pub min_nr_requests: f32,
     pub max_nr_requests: f32,
-    pub min_fifo_batch: f32,
-    pub max_fifo_batch: f32,
     pub min_req_size_kb: f32,
     pub max_req_size_kb: f32,
     pub write_cost_factor: f32,
@@ -181,14 +179,4 @@ pub fn calculate_next_queue_depth(
         next_nr = current_nr_requests;
     }
     next_nr.clamp(tunables.min_nr_requests, tunables.max_nr_requests)
-}
-
-pub fn calculate_fifo_batch(current_nr_requests: f32, tunables: &StorageTunables) -> f32 {
-    let nr_range = tunables.max_nr_requests - tunables.min_nr_requests;
-    if nr_range <= 0.0 {
-        return tunables.min_fifo_batch;
-    }
-    let batch_ratio = (current_nr_requests - tunables.min_nr_requests) / nr_range;
-    let batch_range = tunables.max_fifo_batch - tunables.min_fifo_batch;
-    tunables.min_fifo_batch + (batch_range * batch_ratio)
 }

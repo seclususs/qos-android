@@ -36,15 +36,12 @@ pub struct CpuTunables {
     pub max_wakeup_ns: f32,
     pub min_migration_cost: f32,
     pub max_migration_cost: f32,
-    pub min_nr_migrate: f32,
-    pub max_nr_migrate: f32,
     pub min_walt_init_pct: f32,
     pub max_walt_init_pct: f32,
     pub min_uclamp_min: f32,
     pub max_uclamp_min: f32,
     pub latency_gran_ratio: f32,
     pub decay_coeff: f32,
-    pub nr_migrate_k: f32,
     pub uclamp_k: f32,
     pub uclamp_mid: f32,
     pub response_gain: f32,
@@ -291,12 +288,6 @@ pub fn calculate_migration_cost(
     let dynamic_cost = raw_mig * (1.0 - (volatility_ratio * 0.5));
     let pressure_scale = 1.0 + (tunables.memory_migration_alpha * (memory_psi / 100.0));
     (dynamic_cost * pressure_scale).clamp(tunables.min_migration_cost, tunables.max_migration_cost)
-}
-
-pub fn calculate_nr_migrate(pressure: f32, tunables: &CpuTunables) -> f32 {
-    let denominator = 1.0 + (tunables.nr_migrate_k * pressure);
-    let range = tunables.max_nr_migrate - tunables.min_nr_migrate;
-    tunables.min_nr_migrate + (range / denominator)
 }
 
 pub fn calculate_walt_init(pressure: f32, tunables: &CpuTunables) -> f32 {
