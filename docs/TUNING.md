@@ -31,19 +31,6 @@ decay = (-tunables.decay_coeff * pressure).exp()
 - **Impact if increased**: Wakeup_granularity drops quickly under light load, highly responsive for touch boost.
 - **Impact if decreased**: Slower granularity reduction, more power efficient.
 
-### `nr_migrate_k` (Default: `0.20`)
-
-**Purpose**: Scales the number of task migrations between cores based on CPU pressure to reduce lock overhead.
-
-**Formula/Logic**:
-```rust
-denom = 1.0 + (tunables.nr_migrate_k * pressure);
-target_nr = min + (range / denom);
-```
-
-- **Impact if increased**: Migration aggressively limited under high load, reduces rq->lock overhead, throughput increases.
-- **Impact if decreased**: Migration remains active under busy CPU, more aggressive load balancing.
-
 ### `uclamp_k` (Default: `0.12`)
 
 **Purpose**: Controls the steepness of the sigmoid curve for uClamp (minimum utility) activation based on pressure.
@@ -890,12 +877,6 @@ These parameters limit the dynamic range for CPU scheduler and task scheduling.
 * **Unit**: Nanoseconds
 * **Description**: Estimated "cost" of lost cache time when moving tasks between cores. Higher values make tasks more "sticky" to the current core.
 
-#### `SCHED_NR_MIGRATE`
-
-* **Range**: `8` - `32`
-* **Unit**: Tasks
-* **Description**: Maximum number of tasks allowed to migrate in a single load balancing operation. Limits the duration a core holds the lock (`rq->lock`).
-
 #### `SCHED_WALT_INIT_TASK_LOAD_PCT`
 
 * **Range**: `15` - `45`
@@ -931,19 +912,6 @@ These parameters limit how aggressively virtual memory (VM) management and dirty
 * **Background Range**: `5%` - `10%`
 * **Description**: Dirty memory limit (data not yet written to disk) before forced cleaning. This range is tightly controlled to prevent *IO Stutter* during large data flushes.
 
-#### `DIRTY_EXPIRE_CENTISECS`
-
-* **Range**: `1000` (10s) - `2000` (20s)
-* **Unit**: Centiseconds
-* **Description**: Maximum age of dirty data in RAM before it's considered expired and must be written to disk.
-
-#### `DIRTY_WRITEBACK_CENTISECS`
-
-* **Range**: `300` (3s) - `1000` (10s)
-* **Unit**: Centiseconds
-* **Description**: Interval for background flusher thread to wake up and write dirty data to disk.
-* **Logic**: Short interval (3s) when memory is full to prevent accumulation, long interval (10s) when idle to save battery.
-
 #### `WATERMARK_SCALE_FACTOR`
 
 * **Range**: `8` (0.08%) - `15` (0.15%)
@@ -953,21 +921,6 @@ These parameters limit how aggressively virtual memory (VM) management and dirty
 
 * **Range**: `400` - `600`
 * **Description**: External fragmentation index threshold. Determines when kernel should perform *compaction* rather than discarding cache.
-
-#### `VM_STAT_INTERVAL`
-
-* **Range**: `1` - `5`
-* **Unit**: Seconds
-* **Description**: Update interval for VM (virtual memory) statistics.
-* **Logic**: 1 second when memory pressure is high (needs accurate data), 5 seconds when normal (saves overhead).
-
-#### `PAGE_CLUSTER`
-
-* **Range**: `0` - `1`
-* **Unit**: Power of 2 (Pages)
-* **Description**: Number of pages read at once during swap-in (prefetch).
-* `0` (2^0 = 1 page): Optimal for ZRAM/ZSWAP (low latency random access).
-* `1` (2^1 = 2 pages): Slight prefetch if CPU load is low.
 
 ### **Storage Constraints**
 
@@ -985,8 +938,3 @@ These parameters control block device I/O queue (MMC/UFS).
 * **Description**: I/O scheduler queue depth.
 * **Low**: Low latency for UI (random read).
 * **High**: High throughput for file copying (sequential write).
-
-#### `FIFO_BATCH`
-
-* **Range**: `8` - `16`
-* **Description**: Number of requests processed in one batch (for `deadline` or `mq-deadline` scheduler) before switching direction (read vs write).
