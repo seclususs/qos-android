@@ -35,52 +35,52 @@ impl VmMonitor {
                 if let Some(key) = parts.next() {
                     match key {
                         "pgscan_direct" | "pgscan_kswapd" => {
-                            if let Some(val_str) = parts.next() {
-                                if let Ok(val) = val_str.parse::<u64>() {
-                                    stats.pgscan = stats.pgscan.saturating_add(val);
-                                }
+                            if let Some(val_str) = parts.next()
+                                && let Ok(val) = val_str.parse::<u64>()
+                            {
+                                stats.pgscan = stats.pgscan.saturating_add(val);
                             }
                         }
                         "pgsteal_direct" | "pgsteal_kswapd" => {
-                            if let Some(val_str) = parts.next() {
-                                if let Ok(val) = val_str.parse::<u64>() {
-                                    stats.pgsteal = stats.pgsteal.saturating_add(val);
-                                }
+                            if let Some(val_str) = parts.next()
+                                && let Ok(val) = val_str.parse::<u64>()
+                            {
+                                stats.pgsteal = stats.pgsteal.saturating_add(val);
                             }
                         }
                         "workingset_refault" => {
-                            if let Some(val_str) = parts.next() {
-                                if let Ok(val) = val_str.parse::<u64>() {
-                                    stats.workingset_refault = val;
-                                }
+                            if let Some(val_str) = parts.next()
+                                && let Ok(val) = val_str.parse::<u64>()
+                            {
+                                stats.workingset_refault = val;
                             }
                         }
                         "nr_active_anon" => {
-                            if let Some(val_str) = parts.next() {
-                                if let Ok(val) = val_str.parse::<u64>() {
-                                    stats.nr_active_anon = val;
-                                }
+                            if let Some(val_str) = parts.next()
+                                && let Ok(val) = val_str.parse::<u64>()
+                            {
+                                stats.nr_active_anon = val;
                             }
                         }
                         "nr_inactive_anon" => {
-                            if let Some(val_str) = parts.next() {
-                                if let Ok(val) = val_str.parse::<u64>() {
-                                    stats.nr_inactive_anon = val;
-                                }
+                            if let Some(val_str) = parts.next()
+                                && let Ok(val) = val_str.parse::<u64>()
+                            {
+                                stats.nr_inactive_anon = val;
                             }
                         }
                         "nr_active_file" => {
-                            if let Some(val_str) = parts.next() {
-                                if let Ok(val) = val_str.parse::<u64>() {
-                                    stats.nr_active_file = val;
-                                }
+                            if let Some(val_str) = parts.next()
+                                && let Ok(val) = val_str.parse::<u64>()
+                            {
+                                stats.nr_active_file = val;
                             }
                         }
                         "nr_inactive_file" => {
-                            if let Some(val_str) = parts.next() {
-                                if let Ok(val) = val_str.parse::<u64>() {
-                                    stats.nr_inactive_file = val;
-                                }
+                            if let Some(val_str) = parts.next()
+                                && let Ok(val) = val_str.parse::<u64>()
+                            {
+                                stats.nr_inactive_file = val;
                             }
                         }
                         _ => {}
