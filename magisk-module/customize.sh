@@ -60,11 +60,11 @@ check_strict_paths() {
 
   PATHS_PSI="/proc/pressure/cpu /proc/pressure/memory /proc/pressure/io"
   
-  PATHS_SCHED="/proc/sys/kernel/sched_latency_ns /proc/sys/kernel/sched_min_granularity_ns /proc/sys/kernel/sched_wakeup_granularity_ns /proc/sys/kernel/sched_migration_cost_ns /proc/sys/kernel/sched_nr_migrate /proc/sys/kernel/sched_walt_init_task_load_pct /proc/sys/kernel/sched_uclamp_util_min"
+  PATHS_SCHED="/proc/sys/kernel/sched_latency_ns /proc/sys/kernel/sched_min_granularity_ns /proc/sys/kernel/sched_wakeup_granularity_ns /proc/sys/kernel/sched_migration_cost_ns /proc/sys/kernel/sched_walt_init_task_load_pct /proc/sys/kernel/sched_uclamp_util_min"
   
-  PATHS_VM="/proc/sys/vm/swappiness /proc/sys/vm/vfs_cache_pressure /proc/sys/vm/dirty_ratio /proc/sys/vm/dirty_background_ratio /proc/sys/vm/dirty_expire_centisecs /proc/sys/vm/stat_interval /proc/sys/vm/watermark_scale_factor /proc/sys/vm/extfrag_threshold /proc/sys/vm/dirty_writeback_centisecs /proc/sys/vm/page-cluster"
+  PATHS_VM="/proc/sys/vm/swappiness /proc/sys/vm/vfs_cache_pressure /proc/sys/vm/dirty_ratio /proc/sys/vm/dirty_background_ratio /proc/sys/vm/watermark_scale_factor /proc/sys/vm/extfrag_threshold"
   
-  PATHS_STORAGE="/sys/block/mmcblk0/queue/read_ahead_kb /sys/block/mmcblk0/queue/nr_requests /sys/block/mmcblk0/queue/iosched/fifo_batch /sys/block/mmcblk0/stat"
+  PATHS_STORAGE="/sys/block/mmcblk0/queue/read_ahead_kb /sys/block/mmcblk0/queue/nr_requests /sys/block/mmcblk0/stat"
   
   PATHS_THERMAL="/sys/class/thermal/thermal_zone3/temp /sys/class/power_supply/battery/temp /sys/class/power_supply/battery/capacity"
   
