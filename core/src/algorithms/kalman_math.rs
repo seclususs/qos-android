@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::collections::VecDeque;
+const MAX_WINDOW_SIZE: usize = 16;
 
 #[derive(Debug, Clone, Copy)]
 pub struct KalmanConfig {
@@ -26,18 +26,29 @@ pub struct KalmanFilter {
     p: f32,
     last_nis: f32,
     config: KalmanConfig,
-    history: VecDeque<f32>,
+    history: [f32; MAX_WINDOW_SIZE],
+    head: usize,
+    count: usize,
     first_run: bool,
 }
 
 impl KalmanFilter {
     pub fn new(config: KalmanConfig) -> Self {
+        let safe_config = if config.window_size > MAX_WINDOW_SIZE {
+            let mut c = config;
+            c.window_size = MAX_WINDOW_SIZE;
+            c
+        } else {
+            config
+        };
         Self {
             x: 0.0,
             p: 1.0,
             last_nis: 0.0,
-            config,
-            history: VecDeque::with_capacity(config.window_size),
+            config: safe_config,
+            history: [0.0; MAX_WINDOW_SIZE],
+            head: 0,
+            count: 0,
             first_run: true,
         }
     }
@@ -46,7 +57,8 @@ impl KalmanFilter {
         self.p = self.config.r_base;
         self.x = 0.0;
         self.last_nis = 0.0;
-        self.history.clear();
+        self.head = 0;
+        self.count = 0;
     }
     pub fn update(&mut self, mut z_measured: f32, dt_sec: f32) -> f32 {
         if !z_measured.is_finite() {
@@ -67,14 +79,14 @@ impl KalmanFilter {
         let q_k_base = self.config.q_base * dt_sec;
         let p_pred = (self.config.fading_factor * self.p) + q_k_base;
         let innovation = z_measured - x_pred;
-        if self.history.len() >= self.config.window_size {
-            self.history.pop_front();
+        self.history[self.head] = innovation;
+        self.head = (self.head + 1) % self.config.window_size;
+        if self.count < self.config.window_size {
+            self.count += 1;
         }
-        self.history.push_back(innovation);
-        let sum_sq_innov: f32 = self.history.iter().map(|&y| y * y).sum();
-        let count = self.history.len() as f32;
-        let c_y = if count > 0.0 {
-            sum_sq_innov / count
+        let sum_sq_innov: f32 = self.history.iter().take(self.count).map(|&y| y * y).sum();
+        let c_y = if self.count > 0 {
+            sum_sq_innov / (self.count as f32)
         } else {
             0.0
         };

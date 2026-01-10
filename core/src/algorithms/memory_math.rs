@@ -2,7 +2,7 @@
 
 use crate::monitors::vm_monitor::VmStats;
 
-use std::collections::VecDeque;
+const QUEUE_HISTORY_CAP: usize = 32;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryTunables {
@@ -50,14 +50,18 @@ pub struct ActivityState {
 }
 
 pub struct QueueState {
-    pub rate_history: VecDeque<f32>,
+    pub rate_history: [f32; QUEUE_HISTORY_CAP],
+    pub head: usize,
+    pub count: usize,
     pub smoothed_rate: f32,
 }
 
 impl Default for QueueState {
     fn default() -> Self {
         Self {
-            rate_history: VecDeque::with_capacity(32),
+            rate_history: [0.0; QUEUE_HISTORY_CAP],
+            head: 0,
+            count: 0,
             smoothed_rate: 0.0,
         }
     }
@@ -124,14 +128,24 @@ pub fn update_congestion_model(
     }
     let safe_rate = state.smoothed_rate.max(1.0);
     let residence_time = active_set / safe_rate;
-    if state.rate_history.len() >= tunables.queue_history_size {
-        state.rate_history.pop_front();
+    let history_limit = tunables.queue_history_size.min(QUEUE_HISTORY_CAP);
+    state.rate_history[state.head] = rate_raw;
+    state.head = (state.head + 1) % history_limit;
+    if state.count < history_limit {
+        state.count += 1;
     }
-    state.rate_history.push_back(rate_raw);
-    let n = state.rate_history.len() as f32;
+    let n = state.count as f32;
     let variability_factor = if n > 2.0 {
-        let mean: f32 = state.rate_history.iter().sum::<f32>() / n;
-        let variance_sum: f32 = state.rate_history.iter().map(|v| (v - mean).powi(2)).sum();
+        let mut sum = 0.0;
+        for i in 0..state.count {
+            sum += state.rate_history[i];
+        }
+        let mean = sum / n;
+        let mut variance_sum = 0.0;
+        for i in 0..state.count {
+            let v = state.rate_history[i];
+            variance_sum += (v - mean).powi(2);
+        }
         let std_dev = (variance_sum / n).sqrt();
         let cv = if mean > 0.0 { std_dev / mean } else { 0.0 };
         1.0 + (cv * tunables.congestion_scaling_factor)

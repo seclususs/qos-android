@@ -10,8 +10,8 @@ pub struct PropTweak {
     pub value: &'static str,
 }
 
-pub fn get_file_tweaks() -> Vec<FileTweak> {
-    vec![
+pub fn get_file_tweaks() -> &'static [FileTweak] {
+    &[
         FileTweak {
             path: "/proc/sys/vm/oom_dump_tasks",
             value: "0",
@@ -167,8 +167,8 @@ pub fn get_file_tweaks() -> Vec<FileTweak> {
     ]
 }
 
-pub fn get_prop_tweaks() -> Vec<PropTweak> {
-    vec![
+pub fn get_prop_tweaks() -> &'static [PropTweak] {
+    &[
         PropTweak {
             key: "persist.sys.lmk.reportkills",
             value: "false",

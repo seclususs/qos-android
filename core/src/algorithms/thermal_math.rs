@@ -1,7 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::collections::VecDeque;
 use std::time::Instant;
+
+const SMITH_BUFFER_SIZE: usize = 512;
 
 #[derive(Clone, Copy)]
 pub struct ThermalTunables {
@@ -59,16 +60,21 @@ impl LeadLagFilter {
 
 struct SmithPredictor {
     model_output_no_delay: f32,
-    delay_buffer: VecDeque<f32>,
+    delay_buffer: [f32; SMITH_BUFFER_SIZE],
+    head: usize,
+    count: usize,
     capacity: usize,
 }
 
 impl SmithPredictor {
     fn new(capacity: usize) -> Self {
+        let safe_capacity = capacity.min(SMITH_BUFFER_SIZE);
         Self {
             model_output_no_delay: 0.0,
-            delay_buffer: VecDeque::with_capacity(capacity),
-            capacity,
+            delay_buffer: [0.0; SMITH_BUFFER_SIZE],
+            head: 0,
+            count: 0,
+            capacity: safe_capacity,
         }
     }
     fn update(
@@ -82,17 +88,20 @@ impl SmithPredictor {
         let alpha = dt / (tau + dt);
         let y_no_delay = alpha * (u_control * k_gain) + (1.0 - alpha) * self.model_output_no_delay;
         self.model_output_no_delay = y_no_delay;
-        if self.delay_buffer.len() >= self.capacity {
-            self.delay_buffer.pop_front();
+        self.delay_buffer[self.head] = y_no_delay;
+        self.head = (self.head + 1) % self.capacity;
+        if self.count < self.capacity {
+            self.count += 1;
         }
-        self.delay_buffer.push_back(y_no_delay);
         let steps_needed = (delay_sec / dt.max(0.001)).round() as usize;
-        let current_len = self.delay_buffer.len();
-        let y_delayed = if steps_needed < current_len {
-            let idx = current_len.saturating_sub(1).saturating_sub(steps_needed);
-            *self.delay_buffer.get(idx).unwrap_or(&0.0)
+        let y_delayed = if self.count == 0 {
+            0.0
+        } else if steps_needed >= self.count {
+            let oldest_idx = (self.head + self.capacity - self.count) % self.capacity;
+            self.delay_buffer[oldest_idx]
         } else {
-            *self.delay_buffer.front().unwrap_or(&0.0)
+            let idx = (self.head + self.capacity - 1 - steps_needed) % self.capacity;
+            self.delay_buffer[idx]
         };
         (y_no_delay, y_delayed)
     }
