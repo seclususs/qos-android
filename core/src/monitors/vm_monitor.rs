@@ -32,20 +32,57 @@ impl VmMonitor {
         if let Ok(content) = self.vmstat_monitor.read_value() {
             for line in content.lines() {
                 let mut parts = line.split_ascii_whitespace();
-                if let (Some(key), Some(val_str)) = (parts.next(), parts.next()) {
-                    let val = val_str.parse::<u64>().unwrap_or(0);
+                if let Some(key) = parts.next() {
                     match key {
                         "pgscan_direct" | "pgscan_kswapd" => {
-                            stats.pgscan = stats.pgscan.saturating_add(val);
+                            if let Some(val_str) = parts.next() {
+                                if let Ok(val) = val_str.parse::<u64>() {
+                                    stats.pgscan = stats.pgscan.saturating_add(val);
+                                }
+                            }
                         }
                         "pgsteal_direct" | "pgsteal_kswapd" => {
-                            stats.pgsteal = stats.pgsteal.saturating_add(val);
+                            if let Some(val_str) = parts.next() {
+                                if let Ok(val) = val_str.parse::<u64>() {
+                                    stats.pgsteal = stats.pgsteal.saturating_add(val);
+                                }
+                            }
                         }
-                        "workingset_refault" => stats.workingset_refault = val,
-                        "nr_active_anon" => stats.nr_active_anon = val,
-                        "nr_inactive_anon" => stats.nr_inactive_anon = val,
-                        "nr_active_file" => stats.nr_active_file = val,
-                        "nr_inactive_file" => stats.nr_inactive_file = val,
+                        "workingset_refault" => {
+                            if let Some(val_str) = parts.next() {
+                                if let Ok(val) = val_str.parse::<u64>() {
+                                    stats.workingset_refault = val;
+                                }
+                            }
+                        }
+                        "nr_active_anon" => {
+                            if let Some(val_str) = parts.next() {
+                                if let Ok(val) = val_str.parse::<u64>() {
+                                    stats.nr_active_anon = val;
+                                }
+                            }
+                        }
+                        "nr_inactive_anon" => {
+                            if let Some(val_str) = parts.next() {
+                                if let Ok(val) = val_str.parse::<u64>() {
+                                    stats.nr_inactive_anon = val;
+                                }
+                            }
+                        }
+                        "nr_active_file" => {
+                            if let Some(val_str) = parts.next() {
+                                if let Ok(val) = val_str.parse::<u64>() {
+                                    stats.nr_active_file = val;
+                                }
+                            }
+                        }
+                        "nr_inactive_file" => {
+                            if let Some(val_str) = parts.next() {
+                                if let Ok(val) = val_str.parse::<u64>() {
+                                    stats.nr_inactive_file = val;
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
