@@ -1,6 +1,6 @@
 {
-  "version": "v2.0",
-  "versionCode": 11,
-  "zipUrl": "https://github.com/seclususs/qos-android/releases/download/v2.0/qos-v2.0.zip",
+  "version": "v2.1",
+  "versionCode": 12,
+  "zipUrl": "https://github.com/seclususs/qos-android/releases/download/v2.1/qos-v2.1.zip",
   "changelog": "https://raw.githubusercontent.com/seclususs/qos-android/main/changelog.md"
 }
