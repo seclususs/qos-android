@@ -206,9 +206,12 @@ pub fn calculate_watermark_scale(p_mem: f32, fragmentation: f32, tunables: &Memo
 }
 
 pub fn calculate_extfrag_threshold(p_cpu: f32, tunables: &MemoryTunables) -> f32 {
-    if p_cpu > 50.0 {
-        tunables.max_extfrag_threshold
-    } else {
-        tunables.min_extfrag_threshold
-    }
+    let pressure = p_cpu.clamp(0.0, 100.0);
+    let factor = ((pressure - 10.0) / 80.0).clamp(0.0, 1.0);
+    let range = tunables.max_extfrag_threshold - tunables.min_extfrag_threshold;
+    let target = tunables.min_extfrag_threshold + (range * factor);
+    target.clamp(
+        tunables.min_extfrag_threshold,
+        tunables.max_extfrag_threshold,
+    )
 }
