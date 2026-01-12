@@ -1,6 +1,17 @@
 # Changelog
 
-## v2.0 (Latest)
+## v2.1 (Latest)
+- **Memory:** Refined control behavior with bounded history tracking and smoother extfrag scaling
+- **Monitoring:** Improved vmstat parsing robustness by avoiding implicit default values
+- **CPU:** Retuned control parameters to improve stability under transient load
+- **Thermal:** Simplified delay handling with bounded predictor buffers
+- **Architecture:** Removed overengineered control paths and unused tunables
+- **Memory Usage:** Reduced runtime allocation overhead across control loops
+- **Polling:** Tightened adaptive polling bounds for more responsive and stable operation
+
+---
+
+### v2.0
 - **Core:** Shifted control flow toward unified predictive–reactive state-driven logic
 - **Thermal:** Refined thermal regulation with combined predictive handling and reactive correction
 - **Monitoring:** Expanded low-level system telemetry coverage for disk and virtual memory
