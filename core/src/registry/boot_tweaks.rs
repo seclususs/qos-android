@@ -17,16 +17,16 @@ pub fn get_file_tweaks() -> &'static [FileTweak] {
             value: "0",
         },
         FileTweak {
+            path: "/proc/sys/vm/stat_interval",
+            value: "2",
+        },
+        FileTweak {
             path: "/proc/sys/kernel/printk",
             value: "0 0 0 0",
         },
         FileTweak {
             path: "/proc/sys/kernel/printk_devkmsg",
             value: "off",
-        },
-        FileTweak {
-            path: "/proc/sys/kernel/core_pattern",
-            value: "/dev/null",
         },
         FileTweak {
             path: "/proc/sys/kernel/dmesg_restrict",
@@ -91,6 +91,10 @@ pub fn get_file_tweaks() -> &'static [FileTweak] {
         FileTweak {
             path: "/sys/block/mmcblk0/queue/scheduler",
             value: "deadline",
+        },
+        FileTweak {
+            path: "/sys/block/mmcblk0/queue/iosched/fifo_batch",
+            value: "16",
         },
         FileTweak {
             path: "/sys/block/zram0/max_comp_streams",
