@@ -60,9 +60,9 @@ impl AdaptivePoller {
             return MIN_POLLING_MS;
         }
         let (dynamic_min, dynamic_max) = if avg300 < 2.0 && current_pressure < 10.0 {
-            (10000u64, MAX_POLLING_MS)
+            (6000u64, MAX_POLLING_MS)
         } else if avg300 > 20.0 {
-            (MIN_POLLING_MS, 6000u64)
+            (MIN_POLLING_MS, 5000u64)
         } else {
             (MIN_POLLING_MS, MAX_POLLING_MS)
         };
