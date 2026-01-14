@@ -65,6 +65,7 @@ int main(int argc, char *argv[]) {
   bool final_cpu = cfg["cpu"] && features.has_cpu_psi;
   bool final_mem = cfg["mem"] && features.has_mem_psi;
   bool final_io = cfg["io"] && features.has_io_psi;
+  bool final_display = cfg["display"];
   bool final_tweaks = cfg["tweaks"];
 
   if (!final_cpu && !final_mem && !final_io && !final_tweaks) {
@@ -77,6 +78,7 @@ int main(int argc, char *argv[]) {
   rust_set_cpu_service_enabled(final_cpu);
   rust_set_memory_service_enabled(final_mem);
   rust_set_storage_service_enabled(final_io);
+  rust_set_display_service_enabled(final_display);
   rust_set_tweaks_enabled(final_tweaks);
 
   // Prepare signal handling for the event loop.

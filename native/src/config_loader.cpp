@@ -14,6 +14,7 @@ std::map<std::string, bool> load(const char *path) {
   config["cpu"] = false;
   config["mem"] = false;
   config["io"] = false;
+  config["display"] = false;
   config["tweaks"] = false;
 
   std::ifstream file(path);
@@ -77,6 +78,8 @@ std::map<std::string, bool> load(const char *path) {
         config["mem"] = bool_val;
       else if (key == "storage_enabled")
         config["io"] = bool_val;
+      else if (key == "display_enabled")
+        config["display"] = bool_val;
       else if (key == "tweaks_enabled")
         config["tweaks"] = bool_val;
     }

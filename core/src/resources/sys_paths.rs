@@ -27,3 +27,5 @@ pub const K_BATTERY_CAPACITY_PATH: &str = "/sys/class/power_supply/battery/capac
 pub const K_MMC_DISKSTATS_PATH: &str = "/sys/block/mmcblk0/stat";
 pub const K_VMSTAT_PATH: &str = "/proc/vmstat";
 pub const K_BUDDYINFO_PATH: &str = "/proc/buddyinfo";
+
+pub const K_TOUCH_DEVICE_PATH: &str = "/dev/input/event3";

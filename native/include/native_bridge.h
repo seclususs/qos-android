@@ -57,6 +57,17 @@ void rust_set_memory_service_enabled(bool enabled);
 void rust_set_storage_service_enabled(bool enabled);
 
 /**
+ * @brief Configures the enabled state of the Display Controller service.
+ *
+ * Updates the configuration state for the Adaptive Display monitor.
+ * This operation is thread-safe and the new state takes effect immediately
+ * for the next polling cycle.
+ *
+ * @param[in] enabled True to enable the service, false to disable.
+ */
+void rust_set_display_service_enabled(bool enabled);
+
+/**
  * @brief Configures the enabled state of the System Tweaks module.
  *
  * Determines whether boot-time optimizations (sysctl/prop) should be applied.

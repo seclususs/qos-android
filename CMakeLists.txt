@@ -63,6 +63,7 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/controllers/mod.rs
             ${RUST_CRATE_PATH}/src/controllers/cpu_impl.rs
             ${RUST_CRATE_PATH}/src/controllers/memory_impl.rs
+            ${RUST_CRATE_PATH}/src/controllers/display_impl.rs
             ${RUST_CRATE_PATH}/src/controllers/signal_impl.rs
             ${RUST_CRATE_PATH}/src/controllers/storage_impl.rs
             ${RUST_CRATE_PATH}/src/daemon/mod.rs

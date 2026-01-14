@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
-const ALLOWED_PREFIXES: [&str; 2] = ["/proc/", "/sys/"];
+const ALLOWED_PREFIXES: [&str; 3] = ["/proc/", "/sys/", "/dev/",];
 
 fn validate_path_secure(path_str: &str) -> Result<(), QosError> {
     let path = Path::new(path_str);
