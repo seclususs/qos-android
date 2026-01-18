@@ -687,15 +687,6 @@ throttle = 1.0 - (temp_stress * zram_thermal_cost);
 - **Impact if increased**: Sysfs values change quickly/roughly.
 - **Impact if decreased**: Smooth but slow.
 
-### `watermark_smooth_factor` (Default: `0.1`)
-
-**Purpose**: Specific smoothing for watermark_scale_factor.
-
-**Formula/Logic**: smooth_value for watermark.
-
-- **Impact if increased**: Fast watermark changes.
-- **Impact if decreased**: Slow changes.
-
 ### `queue_history_size` (Default: `16`)
 
 **Purpose**: Number of queue history samples for variability analysis.
@@ -905,22 +896,6 @@ These parameters limit how aggressively virtual memory (VM) management and dirty
 * **Range**: `80` - `200`
 * **Description**: Controls reclaim of inode/dentry cache vs page cache.
 * **>100**: Kernel is more aggressive in discarding file structure cache (inodes) to free RAM.
-
-#### `DIRTY_RATIO` & `DIRTY_BACKGROUND_RATIO`
-
-* **Total Ratio Range**: `10%` - `20%`
-* **Background Range**: `5%` - `10%`
-* **Description**: Dirty memory limit (data not yet written to disk) before forced cleaning. This range is tightly controlled to prevent *IO Stutter* during large data flushes.
-
-#### `WATERMARK_SCALE_FACTOR`
-
-* **Range**: `8` (0.08%) - `15` (0.15%)
-* **Description**: Controls how early `kswapd` wakes up before memory is actually exhausted. Dynamic value increases when memory fragmentation is high.
-
-#### `EXTFRAG_THRESHOLD`
-
-* **Range**: `400` - `600`
-* **Description**: External fragmentation index threshold. Determines when kernel should perform *compaction* rather than discarding cache.
 
 ### **Storage Constraints**
 
