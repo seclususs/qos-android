@@ -72,11 +72,7 @@ impl PsiMonitor {
         } else {
             elapsed_duration.as_micros() as f32
         };
-        let dt_calc = if elapsed_micros < 1000.0 {
-            1000.0
-        } else {
-            elapsed_micros
-        };
+        let dt_calc = elapsed_micros.max(1000.0);
         let mut data = PsiData {
             some: PsiTrend::default(),
             full: PsiTrend::default(),
@@ -95,12 +91,15 @@ impl PsiMonitor {
             for token in line.split_ascii_whitespace() {
                 if let Some(v) = token.strip_prefix("avg10=") {
                     target.avg10 = v.parse::<f32>().unwrap_or(0.0);
-                } else if let Some(v) = token.strip_prefix("avg60=") {
-                    target.avg60 = v.parse::<f32>().unwrap_or(0.0);
-                } else if let Some(v) = token.strip_prefix("avg300=") {
-                    target.avg300 = v.parse::<f32>().unwrap_or(0.0);
-                } else if let Some(v) = token.strip_prefix("total=") {
-                    target.total = v.parse::<u64>().unwrap_or(0);
+                }
+                else if is_some {
+                    if let Some(v) = token.strip_prefix("avg60=") {
+                        target.avg60 = v.parse::<f32>().unwrap_or(0.0);
+                    } else if let Some(v) = token.strip_prefix("avg300=") {
+                        target.avg300 = v.parse::<f32>().unwrap_or(0.0);
+                    } else if let Some(v) = token.strip_prefix("total=") {
+                        target.total = v.parse::<u64>().unwrap_or(0);
+                    }
                 }
             }
         }

@@ -8,7 +8,6 @@ pub struct VmStats {
     pub pgscan: u64,
     pub pgsteal: u64,
     pub workingset_refault: u64,
-    pub fragmentation_index: f32,
     pub nr_active_anon: u64,
     pub nr_inactive_anon: u64,
     pub nr_active_file: u64,
@@ -17,14 +16,12 @@ pub struct VmStats {
 
 pub struct VmMonitor {
     vmstat_monitor: MonitoredFile<8192>,
-    buddy_monitor: MonitoredFile<1024>,
 }
 
 impl VmMonitor {
-    pub fn new(vmstat_path: &str, buddy_path: &str) -> Result<Self, QosError> {
+    pub fn new(vmstat_path: &str) -> Result<Self, QosError> {
         Ok(Self {
             vmstat_monitor: MonitoredFile::new(vmstat_path)?,
-            buddy_monitor: MonitoredFile::new(buddy_path)?,
         })
     }
     pub fn read_stats(&mut self) -> Result<VmStats, QosError> {
@@ -86,26 +83,6 @@ impl VmMonitor {
                         _ => {}
                     }
                 }
-            }
-        }
-        if let Ok(content) = self.buddy_monitor.read_value() {
-            let mut total_free_pages = 0u64;
-            let mut huge_pages = 0u64;
-            for line in content.lines() {
-                if let Some(pos) = line.find("Normal") {
-                    let numbers_part = &line[pos + 6..];
-                    for (order, count_str) in numbers_part.split_ascii_whitespace().enumerate() {
-                        let count = count_str.parse::<u64>().unwrap_or(0);
-                        let pages = count * (1 << order);
-                        total_free_pages += pages;
-                        if order >= 9 {
-                            huge_pages += pages;
-                        }
-                    }
-                }
-            }
-            if total_free_pages > 0 {
-                stats.fragmentation_index = 1.0 - (huge_pages as f32 / total_free_pages as f32);
             }
         }
         Ok(stats)
