@@ -13,7 +13,16 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 
     message(STATUS ">> Release Mode: Enabling optimizations...")
     add_compile_options(-Oz -ffunction-sections -fdata-sections)
+
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions> 
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+        -fno-unwind-tables
+        -fno-asynchronous-unwind-tables
+    )
+
     add_link_options(-Wl,--gc-sections -Wl,--icf=all -Wl,-s)
+    add_link_options(-Wl,--build-id=none)
 else()
     message(STATUS ">> Debug Mode: LTO Disabled")
 endif()
@@ -49,7 +58,7 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/lib.rs
             ${RUST_CRATE_PATH}/src/algorithms/mod.rs
             ${RUST_CRATE_PATH}/src/algorithms/cpu_math.rs
-            ${RUST_CRATE_PATH}/src/algorithms/kalman_math.rs
+            ${RUST_CRATE_PATH}/src/algorithms/filter_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/memory_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/poll_math.rs
             ${RUST_CRATE_PATH}/src/algorithms/storage_math.rs
@@ -80,6 +89,7 @@ add_custom_command(
             ${RUST_CRATE_PATH}/src/hal/kernel.rs
             ${RUST_CRATE_PATH}/src/hal/monitored_file.rs
             ${RUST_CRATE_PATH}/src/hal/properties.rs
+            ${RUST_CRATE_PATH}/src/hal/surface_flinger.rs
             ${RUST_CRATE_PATH}/src/hal/thermal.rs
             ${RUST_CRATE_PATH}/src/monitors/mod.rs
             ${RUST_CRATE_PATH}/src/monitors/disk_monitor.rs
