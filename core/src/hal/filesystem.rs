@@ -4,10 +4,10 @@ use super::validate_value;
 use crate::daemon::types::QosError;
 
 use std::fs::{self, File};
-use std::io::{Seek, SeekFrom, Write};
+use std::os::unix::fs::FileExt;
 use std::path::Path;
 
-const ALLOWED_PREFIXES: [&str; 3] = ["/proc/", "/sys/", "/dev/",];
+const ALLOWED_PREFIXES: [&str; 3] = ["/proc/", "/sys/", "/dev/"];
 
 fn validate_path_secure(path_str: &str) -> Result<(), QosError> {
     let path = Path::new(path_str);
@@ -48,13 +48,13 @@ pub fn open_file_for_read(path: &str) -> Result<File, QosError> {
 
 pub fn write_to_stream(file: &mut File, value: u64) -> Result<(), QosError> {
     let mut buffer = [0u8; 24];
+    use std::io::Write;
     let mut cursor = std::io::Cursor::new(&mut buffer[..]);
-    writeln!(cursor, "{}", value).map_err(QosError::IoError)?;
+    write!(cursor, "{}", value).map_err(QosError::IoError)?;
     let len = cursor.position() as usize;
     let valid_slice = &buffer[..len];
-    file.seek(SeekFrom::Start(0)).map_err(QosError::IoError)?;
-    file.write_all(valid_slice).map_err(|e| {
-        log::warn!("Write to stream failed: {}", e);
+    file.write_all_at(valid_slice, 0).map_err(|e| {
+        log::warn!("Write via pwrite failed: {}", e);
         QosError::IoError(e)
     })?;
     Ok(())
