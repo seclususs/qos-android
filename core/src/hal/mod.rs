@@ -5,6 +5,7 @@ pub mod filesystem;
 pub mod kernel;
 pub mod monitored_file;
 pub mod properties;
+pub mod surface_flinger;
 pub mod thermal;
 
 pub fn validate_value(value: &str) -> bool {

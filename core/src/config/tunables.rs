@@ -1,9 +1,9 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 pub const MIN_LATENCY_NS: u64 = 8_000_000;
-pub const MAX_LATENCY_NS: u64 = 24_000_000;
+pub const MAX_LATENCY_NS: u64 = 16_000_000;
 pub const MIN_GRANULARITY_NS: u64 = 6_000_000;
-pub const MAX_GRANULARITY_NS: u64 = 18_000_000;
+pub const MAX_GRANULARITY_NS: u64 = 12_000_000;
 pub const MIN_WAKEUP_NS: u64 = 3_000_000;
 pub const MAX_WAKEUP_NS: u64 = 6_000_000;
 pub const MIN_MIGRATION_COST: u64 = 200_000;
