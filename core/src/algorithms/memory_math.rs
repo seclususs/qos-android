@@ -10,14 +10,6 @@ pub struct MemoryTunables {
     pub max_swappiness: f32,
     pub min_vfs: f32,
     pub max_vfs: f32,
-    pub min_dirty: f32,
-    pub max_dirty: f32,
-    pub min_dirty_bg: f32,
-    pub max_dirty_bg: f32,
-    pub min_watermark_scale: f32,
-    pub max_watermark_scale: f32,
-    pub min_extfrag_threshold: f32,
-    pub max_extfrag_threshold: f32,
     pub pressure_kp: f32,
     pub pressure_kd: f32,
     pub inefficiency_cost: f32,
@@ -26,7 +18,6 @@ pub struct MemoryTunables {
     pub wss_cost_factor: f32,
     pub zram_thermal_cost: f32,
     pub general_smooth_factor: f32,
-    pub watermark_smooth_factor: f32,
     pub queue_history_size: usize,
     pub queue_smoothing_alpha: f32,
     pub residence_time_threshold: f32,
@@ -186,32 +177,4 @@ pub fn calculate_vfs_pressure(p_mem: f32, tunables: &MemoryTunables) -> f32 {
     let inverse_decay = 1.0 - decay;
     let vfs = tunables.min_vfs + (range * inverse_decay);
     vfs.clamp(tunables.min_vfs, tunables.max_vfs)
-}
-
-pub fn calculate_dirty_limits(io_sat: f32, tunables: &MemoryTunables) -> (f32, f32) {
-    let throughput_capacity = (1.0 - io_sat).clamp(0.1, 1.0);
-    let target_dirty = tunables.max_dirty * throughput_capacity;
-    let target_dirty_bg = tunables.max_dirty_bg * throughput_capacity;
-    (
-        target_dirty.clamp(tunables.min_dirty, tunables.max_dirty),
-        target_dirty_bg.clamp(tunables.min_dirty_bg, tunables.max_dirty_bg),
-    )
-}
-
-pub fn calculate_watermark_scale(p_mem: f32, fragmentation: f32, tunables: &MemoryTunables) -> f32 {
-    let pressure_factor = (p_mem / 100.0).clamp(0.0, 1.0);
-    let fragmentation_impact = tunables.fragmentation_impact_k * fragmentation * pressure_factor;
-    let target_wm = tunables.min_watermark_scale * (1.0 + fragmentation_impact);
-    target_wm.clamp(tunables.min_watermark_scale, tunables.max_watermark_scale)
-}
-
-pub fn calculate_extfrag_threshold(p_cpu: f32, tunables: &MemoryTunables) -> f32 {
-    let pressure = p_cpu.clamp(0.0, 100.0);
-    let factor = ((pressure - 10.0) / 80.0).clamp(0.0, 1.0);
-    let range = tunables.max_extfrag_threshold - tunables.min_extfrag_threshold;
-    let target = tunables.min_extfrag_threshold + (range * factor);
-    target.clamp(
-        tunables.min_extfrag_threshold,
-        tunables.max_extfrag_threshold,
-    )
 }

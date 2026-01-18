@@ -24,10 +24,6 @@ pub struct MemoryController {
     fd: File,
     swap: CachedFile,
     vfs: CachedFile,
-    dirty_ratio: CachedFile,
-    dirty_bg: CachedFile,
-    watermark_scale: CachedFile,
-    extfrag: CachedFile,
     psi_monitor: PsiMonitor,
     vm_monitor: VmMonitor,
     cpu_sensor: ThermalSensor,
@@ -36,10 +32,6 @@ pub struct MemoryController {
     last_tick: Instant,
     current_swappiness: f32,
     current_vfs: f32,
-    current_dirty: f32,
-    current_dirty_bg: f32,
-    current_watermark_scale: f32,
-    current_extfrag_threshold: f32,
     tunables: MemoryTunables,
     poller: AdaptivePoller,
     queue_state: QueueState,
@@ -57,18 +49,8 @@ impl MemoryController {
             filesystem::open_file_for_write(K_VFS_CACHE_PRESSURE_PATH)?,
             0,
         );
-        let dirty_ratio =
-            CachedFile::new_opt(filesystem::open_file_for_write(K_DIRTY_RATIO).ok(), 0);
-        let dirty_bg =
-            CachedFile::new_opt(filesystem::open_file_for_write(K_DIRTY_BG_RATIO).ok(), 0);
-        let watermark_scale = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_WATERMARK_SCALE_FACTOR).ok(),
-            0,
-        );
-        let extfrag =
-            CachedFile::new_opt(filesystem::open_file_for_write(K_EXTFRAG_THRESHOLD).ok(), 0);
         let psi_monitor = PsiMonitor::new(K_PSI_MEMORY_PATH)?;
-        let mut vm_monitor = VmMonitor::new(K_VMSTAT_PATH, K_BUDDYINFO_PATH)?;
+        let mut vm_monitor = VmMonitor::new(K_VMSTAT_PATH)?;
         let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 45.0);
         let initial_vm_stats = vm_monitor.read_stats().unwrap_or(VmStats::default());
         let tunables = MemoryTunables {
@@ -76,14 +58,6 @@ impl MemoryController {
             max_swappiness: MAX_SWAPPINESS as f32,
             min_vfs: MIN_VFS as f32,
             max_vfs: MAX_VFS as f32,
-            min_dirty: MIN_DIRTY as f32,
-            max_dirty: MAX_DIRTY as f32,
-            min_dirty_bg: MIN_DIRTY_BG as f32,
-            max_dirty_bg: MAX_DIRTY_BG as f32,
-            min_watermark_scale: MIN_WATERMARK_SCALE as f32,
-            max_watermark_scale: MAX_WATERMARK_SCALE as f32,
-            min_extfrag_threshold: MIN_EXTFRAG_THRESHOLD as f32,
-            max_extfrag_threshold: MAX_EXTFRAG_THRESHOLD as f32,
             pressure_kp: 0.8,
             pressure_kd: 0.2,
             inefficiency_cost: 25.0,
@@ -92,7 +66,6 @@ impl MemoryController {
             wss_cost_factor: 3.0,
             zram_thermal_cost: 1.5,
             general_smooth_factor: 0.20,
-            watermark_smooth_factor: 0.1,
             queue_history_size: 16,
             queue_smoothing_alpha: 0.2,
             residence_time_threshold: 30.0,
@@ -104,10 +77,6 @@ impl MemoryController {
             fd,
             swap,
             vfs,
-            dirty_ratio,
-            dirty_bg,
-            watermark_scale,
-            extfrag,
             psi_monitor,
             vm_monitor,
             cpu_sensor,
@@ -116,10 +85,6 @@ impl MemoryController {
             last_tick: Instant::now(),
             current_swappiness: MIN_SWAPPINESS as f32,
             current_vfs: MIN_VFS as f32,
-            current_dirty: MAX_DIRTY as f32,
-            current_dirty_bg: MAX_DIRTY_BG as f32,
-            current_watermark_scale: MIN_WATERMARK_SCALE as f32,
-            current_extfrag_threshold: MAX_EXTFRAG_THRESHOLD as f32,
             tunables,
             poller,
             queue_state: QueueState::default(),
@@ -132,7 +97,6 @@ impl MemoryController {
         let psi_data = self.psi_monitor.read_state()?;
         let vm_stats = self.vm_monitor.read_stats()?;
         let cpu_temp = self.cpu_sensor.read();
-        let p_cpu = context.pressure.cpu_psi;
         let io_sat = context.pressure.io_saturation;
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f32().max(0.001);
@@ -165,14 +129,6 @@ impl MemoryController {
             &self.tunables,
         );
         let target_vfs = memory_math::calculate_vfs_pressure(p_mem, &self.tunables);
-        let (target_dirty, target_dirty_bg) =
-            memory_math::calculate_dirty_limits(io_sat, &self.tunables);
-        let target_wm = memory_math::calculate_watermark_scale(
-            p_mem,
-            vm_stats.fragmentation_index,
-            &self.tunables,
-        );
-        let target_ext = memory_math::calculate_extfrag_threshold(p_cpu, &self.tunables);
         self.current_swappiness = memory_math::smooth_value(
             self.current_swappiness,
             target_swap,
@@ -183,14 +139,6 @@ impl MemoryController {
             target_vfs,
             self.tunables.general_smooth_factor,
         );
-        self.current_dirty = target_dirty;
-        self.current_dirty_bg = target_dirty_bg;
-        self.current_watermark_scale = memory_math::smooth_value(
-            self.current_watermark_scale,
-            target_wm,
-            self.tunables.watermark_smooth_factor,
-        );
-        self.current_extfrag_threshold = target_ext;
         self.apply_values(false);
         Ok(())
     }
@@ -201,31 +149,9 @@ impl MemoryController {
         );
         let vfs_u64 =
             crate::algorithms::sanitize_to_u64(self.current_vfs, self.tunables.min_vfs as u64);
-        let dirty_u64 =
-            crate::algorithms::sanitize_to_u64(self.current_dirty, self.tunables.max_dirty as u64);
-        let dbg_u64 = crate::algorithms::sanitize_to_u64(
-            self.current_dirty_bg,
-            self.tunables.max_dirty_bg as u64,
-        );
-        let wm_u64 = crate::algorithms::sanitize_to_u64(
-            self.current_watermark_scale,
-            self.tunables.min_watermark_scale as u64,
-        );
-        let ext_u64 = crate::algorithms::sanitize_to_u64(
-            self.current_extfrag_threshold,
-            self.tunables.max_extfrag_threshold as u64,
-        );
         self.swap
             .update(swap_u64, force, CheckStrategy::Absolute(5));
         self.vfs.update(vfs_u64, force, CheckStrategy::Absolute(10));
-        self.dirty_ratio
-            .update(dirty_u64, force, CheckStrategy::Absolute(1));
-        self.dirty_bg
-            .update(dbg_u64, force, CheckStrategy::Absolute(1));
-        self.watermark_scale
-            .update(wm_u64, force, CheckStrategy::Absolute(2));
-        self.extfrag
-            .update(ext_u64, force, CheckStrategy::Absolute(20));
     }
 }
 

@@ -13,10 +13,6 @@ pub const K_SCHED_UCLAMP_UTIL_MIN: &str = "/proc/sys/kernel/sched_uclamp_util_mi
 
 pub const K_SWAPPINESS_PATH: &str = "/proc/sys/vm/swappiness";
 pub const K_VFS_CACHE_PRESSURE_PATH: &str = "/proc/sys/vm/vfs_cache_pressure";
-pub const K_DIRTY_RATIO: &str = "/proc/sys/vm/dirty_ratio";
-pub const K_DIRTY_BG_RATIO: &str = "/proc/sys/vm/dirty_background_ratio";
-pub const K_WATERMARK_SCALE_FACTOR: &str = "/proc/sys/vm/watermark_scale_factor";
-pub const K_EXTFRAG_THRESHOLD: &str = "/proc/sys/vm/extfrag_threshold";
 
 pub const K_READ_AHEAD_PATH: &str = "/sys/block/mmcblk0/queue/read_ahead_kb";
 pub const K_NR_REQUESTS_PATH: &str = "/sys/block/mmcblk0/queue/nr_requests";
@@ -26,6 +22,5 @@ pub const K_BATTERY_TEMP_PATH: &str = "/sys/class/power_supply/battery/temp";
 pub const K_BATTERY_CAPACITY_PATH: &str = "/sys/class/power_supply/battery/capacity";
 pub const K_MMC_DISKSTATS_PATH: &str = "/sys/block/mmcblk0/stat";
 pub const K_VMSTAT_PATH: &str = "/proc/vmstat";
-pub const K_BUDDYINFO_PATH: &str = "/proc/buddyinfo";
 
 pub const K_TOUCH_DEVICE_PATH: &str = "/dev/input/event3";

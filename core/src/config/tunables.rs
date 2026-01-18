@@ -17,14 +17,6 @@ pub const MIN_SWAPPINESS: u64 = 20;
 pub const MAX_SWAPPINESS: u64 = 60;
 pub const MIN_VFS: u64 = 80;
 pub const MAX_VFS: u64 = 200;
-pub const MIN_DIRTY: u64 = 10;
-pub const MAX_DIRTY: u64 = 20;
-pub const MIN_DIRTY_BG: u64 = 5;
-pub const MAX_DIRTY_BG: u64 = 10;
-pub const MIN_WATERMARK_SCALE: u64 = 8;
-pub const MAX_WATERMARK_SCALE: u64 = 15;
-pub const MIN_EXTFRAG_THRESHOLD: u64 = 400;
-pub const MAX_EXTFRAG_THRESHOLD: u64 = 600;
 
 pub const MAX_READ_AHEAD: u64 = 256;
 pub const MIN_READ_AHEAD: u64 = 128;
