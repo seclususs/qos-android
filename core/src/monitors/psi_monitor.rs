@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::kalman_math::{KalmanConfig, KalmanFilter};
+use crate::algorithms::filter_math::{KalmanConfig, KalmanFilter};
 use crate::daemon::types::QosError;
 use crate::hal::monitored_file::MonitoredFile;
 
@@ -91,8 +91,7 @@ impl PsiMonitor {
             for token in line.split_ascii_whitespace() {
                 if let Some(v) = token.strip_prefix("avg10=") {
                     target.avg10 = v.parse::<f32>().unwrap_or(0.0);
-                }
-                else if is_some {
+                } else if is_some {
                     if let Some(v) = token.strip_prefix("avg60=") {
                         target.avg60 = v.parse::<f32>().unwrap_or(0.0);
                     } else if let Some(v) = token.strip_prefix("avg300=") {
