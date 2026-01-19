@@ -44,11 +44,16 @@ impl MemoryController {
         let raw_fd = kernel::register_psi_trigger(K_PSI_MEMORY_PATH, 150000, 1000000)
             .map_err(|e| QosError::FfiError(format!("Memory PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let swap = CachedFile::new(filesystem::open_file_for_write(K_SWAPPINESS_PATH)?, 0);
-        let vfs = CachedFile::new(
-            filesystem::open_file_for_write(K_VFS_CACHE_PRESSURE_PATH)?,
+        let swap = CachedFile::new_opt(filesystem::open_file_for_write(K_SWAPPINESS_PATH).ok(), 0);
+        let vfs = CachedFile::new_opt(
+            filesystem::open_file_for_write(K_VFS_CACHE_PRESSURE_PATH).ok(),
             0,
         );
+        if !swap.is_active() && !vfs.is_active() {
+            return Err(QosError::SystemCheckFailed(
+                "No memory tunables found.".to_string(),
+            ));
+        }
         let psi_monitor = PsiMonitor::new(K_PSI_MEMORY_PATH)?;
         let mut vm_monitor = VmMonitor::new(K_VMSTAT_PATH)?;
         let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 45.0);

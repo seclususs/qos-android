@@ -49,6 +49,9 @@ impl CachedFile {
             last_value: initial_value,
         }
     }
+    pub fn is_active(&self) -> bool {
+        self.file.is_some()
+    }
     pub fn update(&mut self, new_value: u64, force: bool, strategy: CheckStrategy) {
         if let Some(ref mut file) = self.file {
             let needs_update = if force {

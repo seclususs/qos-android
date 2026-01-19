@@ -55,13 +55,14 @@ impl CpuController {
         let raw_fd = kernel::register_psi_trigger(K_PSI_CPU_PATH, 100000, 1000000)
             .map_err(|e| QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let latency = CachedFile::new(filesystem::open_file_for_write(K_SCHED_LATENCY_NS)?, 0);
-        let min_gran = CachedFile::new(
-            filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS)?,
+        let latency =
+            CachedFile::new_opt(filesystem::open_file_for_write(K_SCHED_LATENCY_NS).ok(), 0);
+        let min_gran = CachedFile::new_opt(
+            filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS).ok(),
             0,
         );
-        let wakeup = CachedFile::new(
-            filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS)?,
+        let wakeup = CachedFile::new_opt(
+            filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
             0,
         );
         let migration = CachedFile::new_opt(
@@ -76,6 +77,17 @@ impl CpuController {
             filesystem::open_file_for_write(K_SCHED_UCLAMP_UTIL_MIN).ok(),
             MIN_UCLAMP_MIN,
         );
+        if !latency.is_active()
+            && !min_gran.is_active()
+            && !wakeup.is_active()
+            && !migration.is_active()
+            && !walt_init.is_active()
+            && !uclamp_min.is_active()
+        {
+            return Err(QosError::SystemCheckFailed(
+                "No supported CPU kernel knobs found.".to_string(),
+            ));
+        }
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
         let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 70.0);
         let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);

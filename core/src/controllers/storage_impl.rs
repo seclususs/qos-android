@@ -41,8 +41,15 @@ impl StorageController {
         let raw_fd = kernel::register_psi_trigger(K_PSI_IO_PATH, 250000, 1000000)
             .map_err(|e| QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
         let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let read_ahead = CachedFile::new(filesystem::open_file_for_write(K_READ_AHEAD_PATH)?, 0);
-        let nr_requests = CachedFile::new(filesystem::open_file_for_write(K_NR_REQUESTS_PATH)?, 0);
+        let read_ahead =
+            CachedFile::new_opt(filesystem::open_file_for_write(K_READ_AHEAD_PATH).ok(), 0);
+        let nr_requests =
+            CachedFile::new_opt(filesystem::open_file_for_write(K_NR_REQUESTS_PATH).ok(), 0);
+        if !read_ahead.is_active() && !nr_requests.is_active() {
+            return Err(QosError::SystemCheckFailed(
+                "No storage block tunables found.".to_string(),
+            ));
+        }
         let psi_monitor = PsiMonitor::new(K_PSI_IO_PATH)?;
         let mut disk_monitor = DiskMonitor::new(K_MMC_DISKSTATS_PATH)?;
         let initial_stats = disk_monitor.read_stats().unwrap_or(IoStats::default());
