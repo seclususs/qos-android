@@ -7,6 +7,7 @@ pub mod monitored_file;
 pub mod properties;
 pub mod surface_flinger;
 pub mod thermal;
+pub mod traversal;
 
 pub fn validate_value(value: &str) -> bool {
     value

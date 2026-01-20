@@ -1,5 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::controllers::cleaner_impl::CleanerController;
 use crate::controllers::cpu_impl::CpuController;
 use crate::controllers::display_impl::DisplayController;
 use crate::controllers::memory_impl::MemoryController;
@@ -8,8 +9,8 @@ use crate::controllers::storage_impl::StorageController;
 use crate::daemon::logging;
 use crate::daemon::runtime::{self, RecoverableService};
 use crate::daemon::state::{
-    CPU_SERVICE_ENABLED, DISPLAY_SERVICE_ENABLED, MEMORY_SERVICE_ENABLED, SHUTDOWN_REQUESTED,
-    STORAGE_SERVICE_ENABLED, TWEAKS_ENABLED,
+    CLEANER_SERVICE_ENABLED, CPU_SERVICE_ENABLED, DISPLAY_SERVICE_ENABLED, MEMORY_SERVICE_ENABLED,
+    SHUTDOWN_REQUESTED, STORAGE_SERVICE_ENABLED, TWEAKS_ENABLED,
 };
 use crate::hal::bridge::notify_service_death;
 
@@ -19,6 +20,11 @@ use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
 
 static MAIN_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_set_cleaner_service_enabled(enabled: bool) {
+    CLEANER_SERVICE_ENABLED.store(enabled, Ordering::Release);
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_cpu_service_enabled(enabled: bool) {
@@ -128,6 +134,11 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                 if DISPLAY_SERVICE_ENABLED.load(Ordering::Acquire) {
                     services.push(RecoverableService::new("Display", || {
                         Ok(Box::new(DisplayController::new()?))
+                    }));
+                }
+                if CLEANER_SERVICE_ENABLED.load(Ordering::Acquire) {
+                    services.push(RecoverableService::new("Cleaner", || {
+                        Ok(Box::new(CleanerController::new()?))
                     }));
                 }
                 log::info!(
