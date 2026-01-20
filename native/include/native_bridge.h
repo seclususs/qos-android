@@ -24,6 +24,20 @@ extern "C" {
 // -----------------------------------------------------------------------------
 
 /**
+ * @brief Configures the enabled state of the Cleaner Controller service.
+ *
+ * Updates the configuration state for the background cache and stale data
+ * cleanup service. When enabled, the cleaner operates opportunistically
+ * based on system load, thermal conditions, and storage pressure.
+ *
+ * This operation is thread-safe and the new state takes effect immediately
+ * for the next maintenance cycle.
+ *
+ * @param[in] enabled True to enable the service, false to disable.
+ */
+void rust_set_cleaner_service_enabled(bool enabled);
+
+/**
  * @brief Configures the enabled state of the CPU Controller service.
  *
  * Updates the configuration state for the CPU pressure monitor.
