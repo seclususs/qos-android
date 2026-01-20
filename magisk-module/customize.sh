@@ -60,17 +60,11 @@ check_strict_paths() {
 
   PATHS_PSI="/proc/pressure/cpu /proc/pressure/memory /proc/pressure/io"
   
-  PATHS_SCHED="/proc/sys/kernel/sched_latency_ns /proc/sys/kernel/sched_min_granularity_ns /proc/sys/kernel/sched_wakeup_granularity_ns /proc/sys/kernel/sched_migration_cost_ns /proc/sys/kernel/sched_walt_init_task_load_pct /proc/sys/kernel/sched_uclamp_util_min"
-  
-  PATHS_VM="/proc/sys/vm/swappiness /proc/sys/vm/vfs_cache_pressure /proc/sys/vm/dirty_ratio /proc/sys/vm/dirty_background_ratio /proc/sys/vm/watermark_scale_factor /proc/sys/vm/extfrag_threshold"
-  
   PATHS_STORAGE="/sys/block/mmcblk0/queue/read_ahead_kb /sys/block/mmcblk0/queue/nr_requests /sys/block/mmcblk0/stat"
   
-  PATHS_THERMAL="/sys/class/thermal/thermal_zone3/temp /sys/class/power_supply/battery/temp /sys/class/power_supply/battery/capacity"
-  
-  PATHS_INFO="/proc/vmstat /proc/buddyinfo"
+  PATHS_INFO="/proc/vmstat"
 
-  ALL_PATHS="$PATHS_PSI $PATHS_SCHED $PATHS_VM $PATHS_STORAGE $PATHS_THERMAL $PATHS_INFO"
+  ALL_PATHS="$PATHS_PSI $PATHS_STORAGE $PATHS_INFO"
 
   for path in $ALL_PATHS; do
     if [ ! -e "$path" ]; then
@@ -136,7 +130,7 @@ backup_config
 HAS_BACKUP=$?
 
 ui_print_log "Extracting module files..."
-unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' -d "$MODPATH" >&2
+unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' 'system.prop' -d "$MODPATH" >&2
 unzip -o "$ZIPFILE" 'common/*' -d "$MODPATH" >&2
 
 if [ $HAS_BACKUP -eq 0 ]; then
