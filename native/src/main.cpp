@@ -18,7 +18,6 @@
 #include <malloc.h>
 #include <string>
 #include <sys/signalfd.h>
-#include <unistd.h>
 
 // Bionic libc definitions for malloc tuning.
 #ifndef M_DECAY_TIME
@@ -65,10 +64,11 @@ int main(int argc, char *argv[]) {
   bool final_cpu = cfg["cpu"] && features.has_cpu_psi;
   bool final_mem = cfg["mem"] && features.has_mem_psi;
   bool final_io = cfg["io"] && features.has_io_psi;
-  bool final_display = cfg["display"];
+  bool final_display = cfg["display"] && features.display_supported;
   bool final_tweaks = cfg["tweaks"];
 
-  if (!final_cpu && !final_mem && !final_io && !final_tweaks) {
+  if (!final_cpu && !final_mem && !final_io && !final_tweaks &&
+      !final_display) {
     LOGE("Daemon shutting down to save resources (No services enabled).");
     return EXIT_FAILURE;
   }

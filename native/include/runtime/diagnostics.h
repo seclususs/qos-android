@@ -14,13 +14,14 @@
 namespace qos::runtime {
 
 /**
- * @brief Represents the availability of Pressure Stall Information (PSI)
- * interfaces.
+ * @brief Represents the availability of system capabilities and hardware
+ * support.
  */
 struct KernelFeatures {
-  bool has_cpu_psi; ///< True if /proc/pressure/cpu is readable.
-  bool has_mem_psi; ///< True if /proc/pressure/memory is readable.
-  bool has_io_psi;  ///< True if /proc/pressure/io is readable.
+  bool has_cpu_psi;       ///< True if /proc/pressure/cpu is readable.
+  bool has_mem_psi;       ///< True if /proc/pressure/memory is readable.
+  bool has_io_psi;        ///< True if /proc/pressure/io is readable.
+  bool display_supported; ///< True if the device is compatible.
 };
 
 /**

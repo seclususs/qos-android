@@ -1,6 +1,7 @@
 // Author: [Seclususs](https://github.com/seclususs)
 
 #include "runtime/diagnostics.h"
+#include "device_compat.h"
 #include "logging.h"
 
 #include <unistd.h>
@@ -32,6 +33,15 @@ KernelFeatures Diagnostics::check_kernel_features() {
     LOGI("Diagnostics: PSI I/O DETECTED.");
   } else {
     LOGI("Diagnostics: WARNING - PSI I/O MISSING.");
+  }
+
+  // Check for Display Compatibility
+  if (qos::compat::DeviceCompat::should_force_disable_display()) {
+    features.display_supported = false;
+    LOGI("Diagnostics: Display disabled (incompatible device).");
+  } else {
+    features.display_supported = true;
+    LOGI("Diagnostics: Display supported.");
   }
 
   return features;
