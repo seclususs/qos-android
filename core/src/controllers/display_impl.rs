@@ -14,8 +14,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
-const TOUCH_IDLE_TIMEOUT_MS: i32 = 3000;
-const ACTIVITY_THROTTLE_MS: u128 = 200;
 const BUFFER_CAPACITY: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,10 +28,26 @@ pub enum DisplayMode {
     High90Hz = 1,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DisplayTunables {
+    pub touch_idle_timeout_ms: i32,
+    pub activity_throttle_ms: u128,
+}
+
+impl Default for DisplayTunables {
+    fn default() -> Self {
+        Self {
+            touch_idle_timeout_ms: 3000,
+            activity_throttle_ms: 200,
+        }
+    }
+}
+
 pub struct DisplayController {
     touch_fd: File,
     state: DisplayState,
     current_mode: DisplayMode,
+    tunables: DisplayTunables,
     last_activity: Instant,
     last_transition: Instant,
     next_wake_ms: i32,
@@ -65,6 +79,7 @@ impl DisplayController {
             touch_fd,
             state: DisplayState::Idle,
             current_mode: DisplayMode::Low60Hz,
+            tunables: DisplayTunables::default(),
             last_activity: Instant::now(),
             last_transition: Instant::now(),
             next_wake_ms: -1,
@@ -77,14 +92,15 @@ impl DisplayController {
             return;
         }
         let now = Instant::now();
-        if now.duration_since(self.last_transition).as_millis() < ACTIVITY_THROTTLE_MS {
+        if now.duration_since(self.last_transition).as_millis() < self.tunables.activity_throttle_ms
+        {
             return;
         }
         match (self.state, new_state) {
             (DisplayState::Idle, DisplayState::Active) => {
                 self.current_mode = DisplayMode::High90Hz;
                 let _ = self.tx.send(DisplayMode::High90Hz);
-                self.next_wake_ms = TOUCH_IDLE_TIMEOUT_MS;
+                self.next_wake_ms = self.tunables.touch_idle_timeout_ms;
             }
             (DisplayState::Active, DisplayState::Idle) => {
                 self.current_mode = DisplayMode::Low60Hz;
@@ -132,10 +148,10 @@ impl EventHandler for DisplayController {
         let elapsed = Instant::now()
             .duration_since(self.last_activity)
             .as_millis() as i32;
-        if elapsed >= TOUCH_IDLE_TIMEOUT_MS {
+        if elapsed >= self.tunables.touch_idle_timeout_ms {
             self.transition_to(DisplayState::Idle);
         } else {
-            self.next_wake_ms = TOUCH_IDLE_TIMEOUT_MS - elapsed;
+            self.next_wake_ms = self.tunables.touch_idle_timeout_ms - elapsed;
         }
         Ok(LoopAction::Continue)
     }
