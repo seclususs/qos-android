@@ -5,7 +5,7 @@ use crate::daemon::traits::{EventHandler, LoopAction};
 use crate::daemon::types::QosError;
 
 use std::fs::File;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::sync::atomic::Ordering;
 
@@ -32,13 +32,21 @@ impl EventHandler for SignalController {
     fn on_event(&mut self, _context: &mut DaemonContext) -> Result<LoopAction, QosError> {
         log::info!("SignalController: Signal received from Kernel.");
         let mut buf = [0u8; 128];
-        match self.file.read_exact(&mut buf) {
-            Ok(()) => {
+        match self.file.read(&mut buf) {
+            Ok(bytes_read) if bytes_read > 0 => {
                 log::info!("SignalController: Requesting shutdown...");
                 SHUTDOWN_REQUESTED.store(true, Ordering::Release);
                 Ok(LoopAction::Continue)
             }
-            Err(e) => Err(QosError::IoError(e)),
+            Ok(_) => {
+                Ok(LoopAction::Continue)
+            }
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                Ok(LoopAction::Continue)
+            }
+            Err(e) => {
+                Err(QosError::IoError(e))
+            }
         }
     }
 }
