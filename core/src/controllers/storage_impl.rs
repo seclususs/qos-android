@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::poll_math::AdaptivePoller;
+use crate::algorithms::poll_math::{AdaptivePoller, PollerTunables};
 use crate::algorithms::storage_math::{self, StorageTunables, WorkloadState};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
@@ -68,7 +68,7 @@ impl StorageController {
             queue_pressure_high: 4.0,
             smoothing_factor: 0.25,
         };
-        let poller = AdaptivePoller::new(1.0, 1.0);
+        let poller = AdaptivePoller::new(1.0, 1.0, PollerTunables::default());
         let mut controller = Self {
             fd,
             read_ahead,

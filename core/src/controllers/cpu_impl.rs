@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::cpu_math::{self, CpuTunables, LoadState};
-use crate::algorithms::poll_math::AdaptivePoller;
+use crate::algorithms::poll_math::{AdaptivePoller, PollerTunables};
 use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
@@ -157,7 +157,7 @@ impl CpuController {
             smith_delay_sec: 4.0,
         };
         let thermal_manager = ThermalManager::default();
-        let poller = AdaptivePoller::new(1.0, 2.5);
+        let poller = AdaptivePoller::new(1.0, 2.5, PollerTunables::default());
         let mut controller = Self {
             fd,
             latency,

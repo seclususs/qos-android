@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::memory_math::{self, MemoryTunables, QueueState};
-use crate::algorithms::poll_math::AdaptivePoller;
+use crate::algorithms::poll_math::{AdaptivePoller, PollerTunables};
 use crate::config::loop_settings::MIN_POLLING_MS;
 use crate::config::tunables::*;
 use crate::daemon::state::DaemonContext;
@@ -77,7 +77,7 @@ impl MemoryController {
             protection_curve_k: 3.0,
             congestion_scaling_factor: 2.5,
         };
-        let poller = AdaptivePoller::new(1.5, 0.5);
+        let poller = AdaptivePoller::new(1.5, 0.5, PollerTunables::default());
         let mut controller = Self {
             fd,
             swap,
