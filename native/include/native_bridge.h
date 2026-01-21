@@ -182,6 +182,34 @@ int cpp_set_system_property(const char *key, const char *value);
  */
 int cpp_get_system_property(const char *key, char *value, size_t max_len);
 
+/**
+ * @brief Sets the display refresh rate via a direct SurfaceFlinger transaction.
+ *
+ * Issues a low-level Binder transaction to the SurfaceFlinger service by
+ * invoking `/system/bin/service` through `execve()`, bypassing the shell
+ * environment entirely. This reduces overhead and avoids dependency on
+ * shell state or PATH resolution.
+ *
+ * @note This function relies on a device-specific SurfaceFlinger transaction
+ *       code (e.g. `1035`) that is **not part of the public Android API**.
+ *       The transaction ID, accepted parameters, and behavior are vendor-
+ *       and version-specific and may differ across devices, ROMs, or
+ *       Android releases.
+ *
+ * @warning This function is intended only for devices known to support the
+ *          targeted SurfaceFlinger transaction. Calling it on unsupported
+ *          devices may result in a no-op, transaction failure, or undefined
+ *          behavior.
+ *
+ * @param[in] refresh_rate_mode Vendor-defined mode identifier
+ *                              (commonly 0 = 60Hz, 1 = 90Hz/120Hz).
+ *
+ * @return 0 on successful transaction execution.
+ * @return -1 on failure. Errors may indicate missing service support,
+ *         execution failure, or an unsupported transaction code.
+ */
+int cpp_set_refresh_rate(int refresh_rate_mode);
+
 #ifdef __cplusplus
 }
 #endif

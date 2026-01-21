@@ -8,7 +8,9 @@
 #include <cerrno>
 #include <cstdio>
 #include <fcntl.h>
+#include <string>
 #include <sys/system_properties.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 /**
@@ -125,4 +127,66 @@ extern "C" int cpp_get_system_property(const char *key, char *value,
     return -1;
   }
   return __system_property_get(key, value);
+}
+
+extern "C" int cpp_set_refresh_rate(int refresh_rate_mode) {
+  // Pre-allocate all required string data before vfork().
+  // This avoids heap allocation in the child process and ensures
+  // address space safety while the parent is suspended.
+  std::string val_str = std::to_string(refresh_rate_mode);
+
+  // Argument vector for:
+  //   /system/bin/service call SurfaceFlinger 1035 i32 <value>
+  // The array must be NULL-terminated as required by execve().
+  const char *argv[] = {
+      "/system/bin/service", "call", "SurfaceFlinger", "1035", "i32",
+      val_str.c_str(),       nullptr};
+
+  // Use vfork() to avoid page table duplication.
+  // The parent process is blocked until the child either calls execve()
+  // or terminates via _exit().
+  pid_t pid = vfork();
+
+  if (pid < 0) {
+    LOGE("SurfaceFlinger: vfork failed (errno: %d)", errno);
+    return -1;
+  } else if (pid == 0) {
+    // CRITICAL:
+    // Do not allocate memory, acquire locks, or modify global state here.
+    // The child shares the parent's address space until execve().
+
+    // Redirect stdout and stderr to /dev/null to avoid log spam
+    // from the service binary.
+    int dev_null = open("/dev/null", O_RDWR);
+    if (dev_null >= 0) {
+      dup2(dev_null, STDOUT_FILENO);
+      dup2(dev_null, STDERR_FILENO);
+      close(dev_null);
+    }
+
+    // Execute the service binary directly without shell involvement
+    // to minimize overhead and ensure deterministic behavior.
+    extern char **environ;
+    execve(argv[0], (char *const *)argv, environ);
+
+    // execve() only returns on failure (e.g. binary not found).
+    // Use _exit() instead of exit() to avoid flushing shared stdio buffers.
+    _exit(127);
+  }
+
+  // Wait synchronously for the child process to complete the transaction.
+  int status;
+  if (waitpid(pid, &status, 0) == -1) {
+    LOGE("SurfaceFlinger: waitpid failed (errno: %d)", errno);
+    return -1;
+  }
+
+  // Treat exit code 0 as a successful SurfaceFlinger transaction.
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+    return 0;
+  }
+
+  LOGE("SurfaceFlinger: Transaction failed (code: %d)", WEXITSTATUS(status));
+  errno = EPROTO;
+  return -1;
 }
