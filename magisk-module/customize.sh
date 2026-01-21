@@ -1,4 +1,5 @@
 #!/system/bin/sh
+SKIPUNZIP=1
 
 MODID="sys_qos"
 ACTIVE_DIR="/data/adb/modules/$MODID"
@@ -8,94 +9,60 @@ grep_prop() {
   sed -n "$REGEX" "$2"
 }
 
+get_prop() {
+  local prop=$(getprop "$1")
+  echo "$prop"
+}
+
+unzip -o "$ZIPFILE" 'module.prop' -d "$MODPATH" >&2
+
 ui_print_header() {
-ui_print " "
-  ui_print "⠀⠀⠀⠀⠀⠀⢀⣴⣾⣿⣿⣿⣿⣿⣿⣷⣦⡀⠀⠀⠀⠀⠐⣶⣄⠀⠀"
-  ui_print "⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⢹⣿⣆⠀"
-  ui_print "⠀⠀⠀⢠⣿⣿⣿⡿⠋⠉⠻⣿⣿⠟⠉⠙⢿⣿⣿⣿⡄⠀⠀⢸⣿⣿⠀"
-  ui_print "⠀⠀⠀⣾⣿⣿⣿⠁⠀⣠⣤⡈⠁⢠⣄⡀⠈⣿⣿⣿⣷⠀⠀⣾⣿⡏⠀"
-  ui_print "⠀⠀⢸⣿⣿⣿⣿⠀⢰⣿⣿⡇⠀⢸⣿⣿⡆⢸⣿⣿⣿⣿⣿⣿⡟⠀⠀"
-  ui_print "⠀⠀⠈⣿⣿⣿⣿⡆⠈⠛⠛⠁⠀⠈⠛⠛⠁⣼⣿⣿⣿⣿⣿⡿⠁⠀⠀"
-  ui_print "⠀⠀⠀⠹⣿⣿⣿⣿⣶⣤⣤⣄⣀⣠⣤⣤⣾⣿⣿⣿⣿⣿⠟⠁⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠁⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠈⠉⠛⠛⠿⠿⠿⠿⠛⠛⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀"
   ui_print " "
-  ui_print "  unsafe { // Trust me, bro"
-  ui_print "      cpp_bridge::trigger_segfault();"
-  ui_print "  }"
+  ui_print "==================================="
+  ui_print "⠄⣾⣿⡇⢸⣿⣿⣿⠄⠈⣿⣿⣿⣿⠈⣿⡇⢹⣿⣿⣿⡇⡇⢸⣿⣿⡇⣿⣿⣿"
+  ui_print "⢠⣿⣿⡇⢸⣿⣿⣿⡇⠄⢹⣿⣿⣿⡀⣿⣧⢸⣿⣿⣿⠁⡇⢸⣿⣿⠁⣿⣿⣿"
+  ui_print "⢸⣿⣿⡇⠸⣿⣿⣿⣿⡄⠈⢿⣿⣿⡇⢸⣿⡀⣿⣿⡿⠸⡇⣸⣿⣿⠄⣿⣿⣿"
+  ui_print "⢸⣿⡿⠷⠄⠿⠿⠿⠟⠓⠰⠘⠿⣿⣿⡈⣿⡇⢹⡟⠰⠦⠁⠈⠉⠋⠄⠻⢿⣿"
+  ui_print "⢨⡑⠶⡏⠛⠐⠋⠓⠲⠶⣭⣤⣴⣦⣭⣥⣮⣾⣬⣴⡮⠝⠒⠂⠂⠘⠉⠿⠖⣬"
+  ui_print "⠈⠉⠄⡀⠄⣀⣀⣀⣀⠈⢛⣿⣿⣿⣿⣿⣿⣿⣿⣟⠁⣀⣤⣤⣠⡀⠄⡀⠈⠁"
+  ui_print "⠄⠠⣾⡀⣾⣿⣧⣼⣿⡿⢠⣿⣿⣿⣿⣿⣿⣿⣿⣧⣼⣿⣧⣼⣿⣿⢀⣿⡇⠄"
+  ui_print "⡀⠄⠻⣷⡘⢿⣿⣿⡿⢣⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣜⢿⣿⣿⡿⢃⣾⠟⢁⠈"
+  ui_print "⢃⢻⣶⣬⣿⣶⣬⣥⣶⣿⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⣿⣷⣶⣶⣾⣿⣷⣾⣾⢣"
+  ui_print "⡄⠈⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡏⠘"
+  ui_print "⣿⡐⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⢠⢃"
+  ui_print "⣿⣷⡀⠈⠻⣿⣿⣿⣿⣿⣿⣿⣿⠿⠿⠿⠿⢿⣿⣿⣿⣿⣿⣿⣿⡿⠋⢀⠆⣼"
+  ui_print "⣿⣿⣷⡀⠄⠈⠛⢿⣿⣿⣿⣿⣷⣶⣶⣶⣶⣶⣿⣿⣿⣿⣿⠿⠋⠠⠂⢀⣾⣿"
+  ui_print "⣿⣿⣿⣧⠄⠄⢵⢠⣈⠛⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⢋⡁⢰⠏⠄⠄⣼⣿⣿"
+  ui_print "⢻⣿⣿⣿⡄⢢⠨⠄⣯⠄⠄⣌⣉⠛⠻⠟⠛⢋⣉⣤⠄⢸⡇⣨⣤⠄⢸⣿⣿⣿"
+  ui_print "==================================="
   ui_print " "
-  ui_print "  QoS v$(grep_prop version "$MODPATH/module.prop")"
-  ui_print "  [ MEMORY_SAFETY: OPTIONAL ]"
-  ui_print "  --------------------------------------------------"
-  ui_print " "
+  ui_print "  QoS"
+  ui_print "  Version : v$(grep_prop version "$MODPATH/module.prop")"
+  ui_print "-----------------------------------"
 }
 
 ui_print_log() { ui_print "  ● $1"; }
 ui_print_info() { ui_print "    ➜ $1"; }
 ui_print_warn() { ui_print "    ! $1"; }
+ui_print_err() { ui_print "    X $1"; }
 
 # Original concept by Chainfire, modernized for new Android versions
 chooseport() {
-  rm -f "$TMPDIR/events"
-  touch "$TMPDIR/events"
+  sleep 0.5
+  timeout 0.2 /system/bin/getevent -l -c 1 > /dev/null 2>&1
   while true; do
-    timeout 5 /system/bin/getevent -lc 1 2>&1 > "$TMPDIR/events"
+    timeout 15 /system/bin/getevent -l -c 1 > "$TMPDIR/events" 2>/dev/null
+
     if [ -s "$TMPDIR/events" ]; then
-        if grep -q "KEY_VOLUMEUP" "$TMPDIR/events" || grep -q "0073" "$TMPDIR/events"; then
-            return 0
-        fi
-        if grep -q "KEY_VOLUMEDOWN" "$TMPDIR/events" || grep -q "0072" "$TMPDIR/events"; then
-            return 1
-        fi
+      if grep -qE "KEY_VOLUMEUP| 0073 " "$TMPDIR/events"; then
+        return 0
+      fi
+      if grep -qE "KEY_VOLUMEDOWN| 0072 " "$TMPDIR/events"; then
+        return 1
+      fi
     fi
-    > "$TMPDIR/events"
+
   done
-}
-
-check_strict_paths() {
-  ui_print_log "Validating system paths..."
-  
-  MISSING_LIST=""
-  MISSING_COUNT=0
-
-  PATHS_PSI="/proc/pressure/cpu /proc/pressure/memory /proc/pressure/io"
-  
-  PATHS_STORAGE="/sys/block/mmcblk0/queue/read_ahead_kb /sys/block/mmcblk0/queue/nr_requests /sys/block/mmcblk0/stat"
-  
-  PATHS_INFO="/proc/vmstat"
-
-  ALL_PATHS="$PATHS_PSI $PATHS_STORAGE $PATHS_INFO"
-
-  for path in $ALL_PATHS; do
-    if [ ! -e "$path" ]; then
-      MISSING_COUNT=$((MISSING_COUNT + 1))
-      MISSING_LIST="$MISSING_LIST    [x] $path"
-    fi
-  done
-
-  if [ $MISSING_COUNT -gt 0 ]; then
-    ui_print_warn "FOUND $MISSING_COUNT MISSING PATHS!"
-    ui_print_warn "Daemon uses the following hardcoded paths:"
-    ui_print "$MISSING_LIST"
-    ui_print " "
-    ui_print_warn "Module might Panic/Crash if forced."
-    ui_print_warn "Some paths are very specific."
-    ui_print " "
-    
-    ui_print_log "Waiting for volume key confirmation..."
-    ui_print "    [+] Vol Up: Force Install (At your own risk)"
-    ui_print "    [-] Vol Down: Cancel (Safe)"
-    
-    if chooseport; then
-      ui_print_info "User selected: CONTINUE"
-      ui_print_info "Daemon might need recompilation for this device."
-    else
-      ui_print_err "User selected: CANCEL"
-      abort
-    fi
-  else
-    ui_print_info "All system paths validated."
-  fi
 }
 
 backup_config() {
@@ -109,12 +76,96 @@ backup_config() {
 }
 
 restore_config() {
-  if [ -f "$TMPDIR/config.ini.bak" ]; then
+  local OLD_CFG="$TMPDIR/config.ini.bak"
+  local NEW_CFG="$MODPATH/config.ini"
+
+  if [ -f "$OLD_CFG" ]; then
     ui_print_log "Restoring user configuration..."
-    cp -f "$TMPDIR/config.ini.bak" "$MODPATH/config.ini"
-    ui_print_info "Config.ini restored successfully."
+    
+    grep '^[a-zA-Z0-9_.]\+=' "$OLD_CFG" | while read -r line; do
+      local key=$(echo "$line" | cut -d'=' -f1)
+      local val=$(echo "$line" | cut -d'=' -f2-)
+      if grep -q "^$key=" "$NEW_CFG"; then
+        sed -i "s|^$key=.*|$key=$val|" "$NEW_CFG"
+      fi
+    done
+
+    ui_print_info "Config merged. User settings restored."
   else
     ui_print_log "Using default configuration."
+  fi
+}
+
+run_setup_wizard() {
+  ui_print_log "Starting Setup..."
+  ui_print " "
+  
+  FEATURES="Cleaner:cleaner_enabled CPU_Controller:cpu_enabled Memory_Controller:memory_enabled Storage_Controller:storage_enabled Display_Tweaks:display_enabled System_Tweaks:tweaks_enabled"
+  
+  for item in $FEATURES; do
+    local name=$(echo "$item" | cut -d':' -f1 | tr '_' ' ')
+    local key=$(echo "$item" | cut -d':' -f2)
+    local warning=""
+    
+    case "$key" in
+      "cpu_enabled")
+         [ ! -e "/proc/pressure/cpu" ] && warning="PSI CPU missing (/proc/pressure/cpu)"
+         ;;
+      "memory_enabled")
+         [ ! -e "/proc/pressure/memory" ] && warning="PSI MEMORY missing (/proc/pressure/memory)"
+         ;;
+      "storage_enabled")
+         [ ! -e "/proc/pressure/io" ] && warning="PSI IO missing (/proc/pressure/io)"
+         ;;
+      "display_enabled")
+         local DEV=$(get_prop "ro.product.device")
+         local BID=$(get_prop "ro.build.id")
+         if [ "$DEV" != "selene" ] || [ "$BID" != "TQ3A.230901.001.B1" ]; then
+            warning="Device mismatch ($DEV) or Build ID mismatch"
+         fi
+         ;;
+      "cleaner_enabled")
+         if [ ! -d "/data/data" ] || [ ! -d "/proc" ]; then
+            warning="System paths inaccessible (/data/data or /proc)"
+         fi
+         ;;
+    esac
+
+    ui_print "  [?] Enable $name?"
+
+    if [ ! -z "$warning" ]; then
+       ui_print_warn "$warning"
+    fi
+
+    ui_print "    (+) Vol Up   = ENABLE"
+    ui_print "    (-) Vol Down = DISABLE"
+    
+    if chooseport; then
+      sed -i "s|^$key=.*|$key=true|" "$MODPATH/config.ini"
+      ui_print_info "$name -> ON"
+    else
+      sed -i "s|^$key=.*|$key=false|" "$MODPATH/config.ini"
+      ui_print_warn "$name -> OFF"
+    fi
+    ui_print " "
+    sleep 0.2
+  done
+
+  ui_print_info "Configuration Setup Complete."
+}
+
+ask_bootanimation() {
+  ui_print " "
+  ui_print "  [?] Install Custom Bootanimation?"
+  ui_print "    (+) Vol Up   : YES (Install)"
+  ui_print "    (-) Vol Down : NO  (Skip)"
+  
+  if chooseport; then
+    ui_print_info "Bootanimation: ENABLED"
+    return 0
+  else
+    ui_print_warn "Bootanimation: SKIPPED"
+    return 1
   fi
 }
 
@@ -124,17 +175,40 @@ if [ "$ARCH" != "arm64" ]; then
   ui_print_warn "Architecture $ARCH might be incompatible (Daemon targets arm64)."
 fi
 
-check_strict_paths
-
 backup_config
 HAS_BACKUP=$?
 
 ui_print_log "Extracting module files..."
-unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' 'system.prop' -d "$MODPATH" >&2
+unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' 'system.prop' 'system/product/media/bootanimation.zip' -d "$MODPATH" >&2
 unzip -o "$ZIPFILE" 'common/*' -d "$MODPATH" >&2
 
+ui_print " "
 if [ $HAS_BACKUP -eq 0 ]; then
-  restore_config
+  ui_print_warn "Previous Configuration Found!"
+  ui_print "    (+) Vol Up   : MERGE (Keep settings)"
+  ui_print "    (-) Vol Down : RESET (Re-configure)"
+  
+  if chooseport; then
+    restore_config
+  else
+    ui_print_log "Old config discarded."
+    run_setup_wizard
+  fi
+else
+  ui_print_log "Fresh Installation Detected."
+  ui_print "    (+) Vol Up   : CUSTOMIZE Features"
+  ui_print "    (-) Vol Down : USE DEFAULTS"
+  
+  if chooseport; then
+    run_setup_wizard
+  else
+    ui_print_info "Using default configuration."
+  fi
+fi
+
+INSTALL_BOOTANIM=0
+if ask_bootanimation; then
+  INSTALL_BOOTANIM=1
 fi
 
 ui_print_log "Setting permissions..."
@@ -145,7 +219,15 @@ set_perm "$MODPATH/config.ini" 0 0 0644
 
 if [ -d "$MODPATH/common" ]; then
   ui_print_log "Running additional scripts..."
-  export BootAnimation_location='/system/product/media/bootanimation.zip'
+  
+  if [ $INSTALL_BOOTANIM -eq 1 ]; then
+    export BootAnimation_location='/system/product/media/bootanimation.zip'
+  else
+    rm -f "$MODPATH/system/product/media/bootanimation.zip" 2>/dev/null
+    rmdir -p "$MODPATH/system/product" 2>/dev/null
+    unset BootAnimation_location
+  fi
+
   for script in "$MODPATH"/common/*.sh; do
     if [ -f "$script" ]; then
         . "$script"
