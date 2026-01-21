@@ -15,6 +15,7 @@ std::map<std::string, bool> load(const char *path) {
   config["mem"] = false;
   config["io"] = false;
   config["display"] = false;
+  config["cleaner"] = false;
   config["tweaks"] = false;
 
   std::ifstream file(path);
@@ -80,6 +81,8 @@ std::map<std::string, bool> load(const char *path) {
         config["io"] = bool_val;
       else if (key == "display_enabled")
         config["display"] = bool_val;
+      else if (key == "cleaner_enabled")
+        config["cleaner"] = bool_val;
       else if (key == "tweaks_enabled")
         config["tweaks"] = bool_val;
     }

@@ -4,6 +4,7 @@
 #include "device_compat.h"
 #include "logging.h"
 
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 namespace qos::runtime {
@@ -42,6 +43,19 @@ KernelFeatures Diagnostics::check_kernel_features() {
   } else {
     features.display_supported = true;
     LOGI("Diagnostics: Display supported.");
+  }
+
+  struct statvfs vfs_buf;
+  bool has_data = access("/data/data", R_OK | X_OK) == 0;
+  bool has_proc = access("/proc", R_OK | X_OK) == 0;
+  bool has_stat = statvfs("/data", &vfs_buf) == 0;
+
+  if (has_data && has_proc && has_stat) {
+    features.cleaner_supported = true;
+    LOGI("Diagnostics: Cleaner prerequisites met.");
+  } else {
+    features.cleaner_supported = false;
+    LOGI("Diagnostics: Cleaner disabled (Environment mismatch).");
   }
 
   return features;
