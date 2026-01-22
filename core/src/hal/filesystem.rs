@@ -1,69 +1,66 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use super::validate_value;
-use crate::daemon::types::QosError;
+use crate::daemon::types;
 
-use std::fs::{self, File};
-use std::os::unix::fs::FileExt;
-use std::path::Path;
+use std::{fs, io, os, path};
 
 const ALLOWED_PREFIXES: [&str; 3] = ["/proc/", "/sys/", "/dev/"];
 
-fn validate_path_secure(path_str: &str) -> Result<(), QosError> {
-    let path = Path::new(path_str);
+fn validate_path_secure(path_str: &str) -> Result<(), types::QosError> {
+    let path = path::Path::new(path_str);
     let canonical_path = fs::canonicalize(path).map_err(|e| {
-        QosError::InvalidPath(format!("Path resolution failed for {}: {}", path_str, e))
+        types::QosError::InvalidPath(format!("Path resolution failed for {}: {}", path_str, e))
     })?;
     let canonical_str = canonical_path
         .to_str()
-        .ok_or_else(|| QosError::InvalidPath("Non-UTF8 path".to_string()))?;
+        .ok_or_else(|| types::QosError::InvalidPath("Non-UTF8 path".to_string()))?;
     if ALLOWED_PREFIXES
         .iter()
         .any(|&prefix| canonical_str.starts_with(prefix))
     {
         Ok(())
     } else {
-        Err(QosError::PermissionDenied(format!(
+        Err(types::QosError::PermissionDenied(format!(
             "Access denied: {}",
             canonical_str
         )))
     }
 }
 
-pub fn open_file_for_write(path: &str) -> Result<File, QosError> {
+pub fn open_file_for_write(path: &str) -> Result<fs::File, types::QosError> {
     validate_path_secure(path)?;
     fs::OpenOptions::new()
         .write(true)
         .open(path)
-        .map_err(QosError::IoError)
+        .map_err(types::QosError::IoError)
 }
 
-pub fn open_file_for_read(path: &str) -> Result<File, QosError> {
+pub fn open_file_for_read(path: &str) -> Result<fs::File, types::QosError> {
     validate_path_secure(path)?;
     fs::OpenOptions::new()
         .read(true)
         .open(path)
-        .map_err(QosError::IoError)
+        .map_err(types::QosError::IoError)
 }
 
-pub fn write_to_stream(file: &mut File, value: u64) -> Result<(), QosError> {
+pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::QosError> {
     let mut buffer = [0u8; 24];
-    use std::io::Write;
-    let mut cursor = std::io::Cursor::new(&mut buffer[..]);
-    write!(cursor, "{}", value).map_err(QosError::IoError)?;
+    let mut cursor = io::Cursor::new(&mut buffer[..]);
+    io::Write::write_fmt(&mut cursor, format_args!("{}", value))
+        .map_err(types::QosError::IoError)?;
     let len = cursor.position() as usize;
     let valid_slice = &buffer[..len];
-    file.write_all_at(valid_slice, 0).map_err(|e| {
+    os::unix::fs::FileExt::write_all_at(file, valid_slice, 0).map_err(|e| {
         log::warn!("Write via pwrite failed: {}", e);
-        QosError::IoError(e)
+        types::QosError::IoError(e)
     })?;
     Ok(())
 }
 
-pub fn write_to_file(path: &str, value: &str) -> Result<(), QosError> {
+pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
     validate_path_secure(path)?;
-    if !validate_value(value) {
-        return Err(QosError::SystemCheckFailed(format!(
+    if !super::validate_value(value) {
+        return Err(types::QosError::SystemCheckFailed(format!(
             "Invalid characters in value for {}: '{}'",
             path, value
         )));
@@ -71,6 +68,6 @@ pub fn write_to_file(path: &str, value: &str) -> Result<(), QosError> {
     let content = format!("{}\n", value);
     fs::write(path, content).map_err(|e| {
         log::debug!("Write failed '{}' -> {}: {}", value, path, e);
-        QosError::IoError(e)
+        types::QosError::IoError(e)
     })
 }

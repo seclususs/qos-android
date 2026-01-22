@@ -1,15 +1,15 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::monitored_file::MonitoredFile;
+use crate::hal::monitored_file;
 
 pub struct ThermalSensor {
-    monitor: Option<MonitoredFile<16>>,
+    monitor: Option<monitored_file::MonitoredFile<16>>,
     default_val: f32,
 }
 
 impl ThermalSensor {
     pub fn new(path: &str, default_val: f32) -> Self {
-        let monitor = MonitoredFile::new(path).ok();
+        let monitor = monitored_file::MonitoredFile::new(path).ok();
         Self {
             monitor,
             default_val,

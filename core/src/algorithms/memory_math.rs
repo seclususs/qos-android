@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::monitors::vm_monitor::VmStats;
+use crate::monitors::vm_monitor;
 
 const QUEUE_HISTORY_CAP: usize = 32;
 
@@ -50,7 +50,7 @@ impl Default for QueueState {
     }
 }
 
-pub fn calculate_active_set(stats: &VmStats) -> f32 {
+pub fn calculate_active_set(stats: &vm_monitor::VmStats) -> f32 {
     (stats.nr_active_anon + stats.nr_inactive_anon + stats.nr_active_file + stats.nr_inactive_file)
         as f32
 }
@@ -71,7 +71,11 @@ pub fn smooth_value(current: f32, target: f32, alpha: f32) -> f32 {
     current * (1.0 - alpha) + target * alpha
 }
 
-pub fn calculate_activity_state(current: &VmStats, prev: &VmStats, dt_sec: f32) -> ActivityState {
+pub fn calculate_activity_state(
+    current: &vm_monitor::VmStats,
+    prev: &vm_monitor::VmStats,
+    dt_sec: f32,
+) -> ActivityState {
     if dt_sec <= 0.0 {
         return ActivityState::default();
     }

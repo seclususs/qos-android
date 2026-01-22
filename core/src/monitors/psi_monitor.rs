@@ -1,10 +1,10 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::filter_math::{KalmanConfig, KalmanFilter};
-use crate::daemon::types::QosError;
-use crate::hal::monitored_file::MonitoredFile;
+use crate::algorithms::filter_math;
+use crate::daemon::types;
+use crate::hal::monitored_file;
 
-use std::time::Instant;
+use std::time;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PsiTrend {
@@ -36,31 +36,31 @@ pub struct PsiData {
 }
 
 pub struct PsiMonitor {
-    monitor: MonitoredFile<512>,
-    last_read_time: Instant,
+    monitor: monitored_file::MonitoredFile<512>,
+    last_read_time: time::Instant,
     last_some_total: u64,
     first_run: bool,
-    filter_some: KalmanFilter,
+    filter_some: filter_math::KalmanFilter,
 }
 
 impl PsiMonitor {
-    pub fn new(path: &str) -> Result<Self, QosError> {
-        let monitor = MonitoredFile::new(path)?;
-        let config = KalmanConfig::default();
+    pub fn new(path: &str) -> Result<Self, types::QosError> {
+        let monitor = monitored_file::MonitoredFile::new(path)?;
+        let config = filter_math::KalmanConfig::default();
         Ok(Self {
             monitor,
-            last_read_time: Instant::now(),
+            last_read_time: time::Instant::now(),
             last_some_total: 0,
             first_run: true,
-            filter_some: KalmanFilter::new(config),
+            filter_some: filter_math::KalmanFilter::new(config),
         })
     }
-    pub fn read_state(&mut self) -> Result<PsiData, QosError> {
+    pub fn read_state(&mut self) -> Result<PsiData, types::QosError> {
         let content = self.monitor.read_value()?;
         if content.is_empty() {
-            return Err(QosError::PsiParseError("Empty PSI file".to_string()));
+            return Err(types::QosError::PsiParseError("Empty PSI file".to_string()));
         }
-        let now = Instant::now();
+        let now = time::Instant::now();
         let elapsed_duration = now.duration_since(self.last_read_time);
         let dt_sec = if self.first_run {
             1.0

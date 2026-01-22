@@ -1,81 +1,72 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::cpu_math::{self, CpuTunables, LoadState};
-use crate::algorithms::poll_math::{AdaptivePoller, PollerTunables};
-use crate::algorithms::thermal_math::{ThermalManager, ThermalTunables};
-use crate::config::loop_settings::MIN_POLLING_MS;
-use crate::config::tunables::*;
-use crate::daemon::state::DaemonContext;
-use crate::daemon::traits::{EventHandler, LoopAction};
-use crate::daemon::types::QosError;
-use crate::hal::battery::BatterySensor;
-use crate::hal::cached_file::{CachedFile, CheckStrategy};
-use crate::hal::filesystem;
-use crate::hal::kernel;
-use crate::hal::thermal::ThermalSensor;
-use crate::monitors::psi_monitor::PsiMonitor;
-use crate::resources::sys_paths::*;
+use crate::algorithms::{cpu_math, poll_math, thermal_math};
+use crate::config::{loop_settings, tunables};
+use crate::daemon::{state, traits, types};
+use crate::hal::{battery, cached_file, filesystem, kernel, thermal};
+use crate::monitors::psi_monitor;
+use crate::resources::sys_paths;
 
-use std::fs::File;
-use std::io::Read;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
-use std::time::Instant;
+use std::{fs, io, os, time};
 
 pub struct CpuController {
-    fd: File,
-    latency: CachedFile,
-    min_gran: CachedFile,
-    wakeup: CachedFile,
-    migration: CachedFile,
-    walt_init: CachedFile,
-    uclamp_min: CachedFile,
-    psi_monitor: PsiMonitor,
-    thermal_manager: ThermalManager,
-    thermal_tunables: ThermalTunables,
-    cpu_sensor: ThermalSensor,
-    battery_sensor: ThermalSensor,
-    battery_capacity_sensor: BatterySensor,
+    fd: fs::File,
+    latency: cached_file::CachedFile,
+    min_gran: cached_file::CachedFile,
+    wakeup: cached_file::CachedFile,
+    migration: cached_file::CachedFile,
+    walt_init: cached_file::CachedFile,
+    uclamp_min: cached_file::CachedFile,
+    psi_monitor: psi_monitor::PsiMonitor,
+    thermal_manager: thermal_math::ThermalManager,
+    thermal_config: thermal_math::ThermalConfig,
+    cpu_sensor: thermal::ThermalSensor,
+    battery_sensor: thermal::ThermalSensor,
+    battery_capacity_sensor: battery::BatterySensor,
     current_latency: f32,
     current_min_gran: f32,
     current_wakeup: f32,
     current_migration: f32,
     current_walt_init: f32,
     current_uclamp_min: f32,
-    load_state: LoadState,
-    last_tick: Instant,
+    load_state: cpu_math::LoadState,
+    last_tick: time::Instant,
     prev_delta_smooth: f32,
-    tunables: CpuTunables,
-    poller: AdaptivePoller,
+    tunables: cpu_math::CpuTunables,
+    poller: poll_math::AdaptivePoller,
     next_wake_ms: i32,
 }
 
 impl CpuController {
-    pub fn new() -> Result<Self, QosError> {
+    pub fn new() -> Result<Self, types::QosError> {
         log::info!("CpuController: Initializing...");
-        let raw_fd = kernel::register_psi_trigger(K_PSI_CPU_PATH, 100000, 1000000)
-            .map_err(|e| QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
-        let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let latency =
-            CachedFile::new_opt(filesystem::open_file_for_write(K_SCHED_LATENCY_NS).ok(), 0);
-        let min_gran = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_SCHED_MIN_GRANULARITY_NS).ok(),
+        let config = tunables::GlobalConfig::default();
+        let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_CPU_PATH, 100000, 1000000)
+            .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
+        let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
+        let latency = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_SCHED_LATENCY_NS).ok(),
             0,
         );
-        let wakeup = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
+        let min_gran = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
             0,
         );
-        let migration = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_SCHED_MIGRATION_COST_NS).ok(),
+        let wakeup = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
             0,
         );
-        let walt_init = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
-            MIN_WALT_INIT_PCT,
+        let migration = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_SCHED_MIGRATION_COST_NS).ok(),
+            0,
         );
-        let uclamp_min = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_SCHED_UCLAMP_UTIL_MIN).ok(),
-            MIN_UCLAMP_MIN,
+        let walt_init = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
+            config.cpu.min_walt_init_pct,
+        );
+        let uclamp_min = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
+            config.cpu.min_uclamp_min,
         );
         if !latency.is_active()
             && !min_gran.is_active()
@@ -84,81 +75,63 @@ impl CpuController {
             && !walt_init.is_active()
             && !uclamp_min.is_active()
         {
-            return Err(QosError::SystemCheckFailed(
+            return Err(types::QosError::SystemCheckFailed(
                 "No supported CPU kernel knobs found.".to_string(),
             ));
         }
-        let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
-        let cpu_path = get_cpu_temp_path();
-        let cpu_sensor = ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
-        let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
-        let battery_capacity_sensor = BatterySensor::new(K_BATTERY_CAPACITY_PATH);
-        let tunables = CpuTunables {
-            min_latency_ns: MIN_LATENCY_NS as f32,
-            max_latency_ns: MAX_LATENCY_NS as f32,
-            min_granularity_ns: MIN_GRANULARITY_NS as f32,
-            max_granularity_ns: MAX_GRANULARITY_NS as f32,
-            min_wakeup_ns: MIN_WAKEUP_NS as f32,
-            max_wakeup_ns: MAX_WAKEUP_NS as f32,
-            min_migration_cost: MIN_MIGRATION_COST as f32,
-            max_migration_cost: MAX_MIGRATION_COST as f32,
-            min_walt_init_pct: MIN_WALT_INIT_PCT as f32,
-            max_walt_init_pct: MAX_WALT_INIT_PCT as f32,
-            min_uclamp_min: MIN_UCLAMP_MIN as f32,
-            max_uclamp_min: MAX_UCLAMP_MIN as f32,
-            latency_gran_ratio: 0.60,
-            decay_coeff: 0.15,
-            uclamp_k: 0.18,
-            uclamp_mid: 20.0,
-            response_gain: 40.0,
-            stability_ratio: 1.50,
-            stability_margin: 1.5,
-            gain_scheduling_alpha: 1.0,
-            alpha_smooth: 0.70,
-            sigmoid_k: 0.25,
-            sigmoid_mid: 35.0,
-            lookahead_time: 0.08,
-            variance_sensitivity: 0.12,
-            efficiency_gain: 3.0,
-            trend_amplification: 0.15,
-            surge_threshold: 35.0,
-            surge_gain: 0.25,
-            transient_rate_threshold: 0.30,
-            transient_diff_threshold: 2.0,
-            transient_poll_interval: 50.0,
-            nis_threshold: 8.0,
-            safe_temp_limit: 55.0,
-            max_temp_limit: 75.0,
-            temp_cost_weight: 7.0,
-            bat_temp_weight: 5.0,
-            bat_level_weight: 70.0,
-            integral_acc_rate: 0.15,
-            memory_migration_alpha: 1.8,
-            memory_granularity_scaling: 1.0,
-            memory_volatility_cost: 2.0,
+        let psi_monitor = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?;
+        let cpu_path = sys_paths::get_cpu_temp_path();
+        let cpu_sensor = thermal::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
+        let battery_sensor = thermal::ThermalSensor::new(sys_paths::K_BATTERY_TEMP_PATH, 35.0);
+        let battery_capacity_sensor =
+            battery::BatterySensor::new(sys_paths::K_BATTERY_CAPACITY_PATH);
+        let thermal_config = thermal_math::ThermalConfig::default();
+        let tunables = cpu_math::CpuTunables {
+            min_latency_ns: config.cpu.min_latency_ns as f32,
+            max_latency_ns: config.cpu.max_latency_ns as f32,
+            min_granularity_ns: config.cpu.min_granularity_ns as f32,
+            max_granularity_ns: config.cpu.max_granularity_ns as f32,
+            min_wakeup_ns: config.cpu.min_wakeup_ns as f32,
+            max_wakeup_ns: config.cpu.max_wakeup_ns as f32,
+            min_migration_cost: config.cpu.min_migration_cost as f32,
+            max_migration_cost: config.cpu.max_migration_cost as f32,
+            min_walt_init_pct: config.cpu.min_walt_init_pct as f32,
+            max_walt_init_pct: config.cpu.max_walt_init_pct as f32,
+            min_uclamp_min: config.cpu.min_uclamp_min as f32,
+            max_uclamp_min: config.cpu.max_uclamp_min as f32,
+            latency_gran_ratio: config.cpu.latency_gran_ratio,
+            decay_coeff: config.cpu.decay_coeff,
+            uclamp_k: config.cpu.uclamp_k,
+            uclamp_mid: config.cpu.uclamp_mid,
+            response_gain: config.cpu.response_gain,
+            stability_ratio: config.cpu.stability_ratio,
+            stability_margin: config.cpu.stability_margin,
+            gain_scheduling_alpha: config.cpu.gain_scheduling_alpha,
+            alpha_smooth: config.cpu.alpha_smooth,
+            sigmoid_k: config.cpu.sigmoid_k,
+            sigmoid_mid: config.cpu.sigmoid_mid,
+            lookahead_time: config.cpu.lookahead_time,
+            variance_sensitivity: config.cpu.variance_sensitivity,
+            efficiency_gain: config.cpu.efficiency_gain,
+            trend_amplification: config.cpu.trend_amplification,
+            surge_threshold: config.cpu.surge_threshold,
+            surge_gain: config.cpu.surge_gain,
+            transient_rate_threshold: config.cpu.transient_rate_threshold,
+            transient_diff_threshold: config.cpu.transient_diff_threshold,
+            transient_poll_interval: config.cpu.transient_poll_interval,
+            nis_threshold: config.cpu.nis_threshold,
+            safe_temp_limit: config.cpu.safe_temp_limit,
+            max_temp_limit: config.cpu.max_temp_limit,
+            temp_cost_weight: config.cpu.temp_cost_weight,
+            bat_temp_weight: config.cpu.bat_temp_weight,
+            bat_level_weight: config.cpu.bat_level_weight,
+            integral_acc_rate: config.cpu.integral_acc_rate,
+            memory_migration_alpha: config.cpu.memory_migration_alpha,
+            memory_granularity_scaling: config.cpu.memory_granularity_scaling,
+            memory_volatility_cost: config.cpu.memory_volatility_cost,
         };
-        let thermal_tunables = ThermalTunables {
-            hard_limit_cpu: 70.0,
-            hard_limit_bat: 40.0,
-            sched_temp_cool: 35.0,
-            sched_temp_hot: 45.0,
-            kp_base: 1.2,
-            ki_base: 0.03,
-            kd_base: 0.8,
-            kp_fast: 4.0,
-            ki_fast: 0.15,
-            kd_fast: 3.5,
-            anti_windup_k: 1.0,
-            deriv_filter_n: 8.0,
-            ff_gain: 2.5,
-            ff_lead_time: 5.0,
-            ff_lag_time: 2.5,
-            smith_gain: 1.5,
-            smith_tau: 12.0,
-            smith_delay_sec: 4.0,
-        };
-        let thermal_manager = ThermalManager::default();
-        let poller = AdaptivePoller::new(1.0, 2.5, PollerTunables::default());
+        let thermal_manager = thermal_math::ThermalManager::default();
+        let poller = poll_math::AdaptivePoller::new(1.0, 2.5, poll_math::PollerConfig::default());
         let mut controller = Self {
             fd,
             latency,
@@ -169,27 +142,30 @@ impl CpuController {
             uclamp_min,
             psi_monitor,
             thermal_manager,
-            thermal_tunables,
+            thermal_config,
             cpu_sensor,
             battery_sensor,
             battery_capacity_sensor,
-            current_latency: MIN_LATENCY_NS as f32,
-            current_min_gran: MIN_GRANULARITY_NS as f32,
-            current_wakeup: MIN_WAKEUP_NS as f32,
-            current_migration: MIN_MIGRATION_COST as f32,
-            current_walt_init: MIN_WALT_INIT_PCT as f32,
-            current_uclamp_min: MIN_UCLAMP_MIN as f32,
-            load_state: LoadState::default(),
-            last_tick: Instant::now(),
+            current_latency: config.cpu.min_latency_ns as f32,
+            current_min_gran: config.cpu.min_granularity_ns as f32,
+            current_wakeup: config.cpu.min_wakeup_ns as f32,
+            current_migration: config.cpu.min_migration_cost as f32,
+            current_walt_init: config.cpu.min_walt_init_pct as f32,
+            current_uclamp_min: config.cpu.min_uclamp_min as f32,
+            load_state: cpu_math::LoadState::default(),
+            last_tick: time::Instant::now(),
             prev_delta_smooth: 0.0,
             tunables,
             poller,
-            next_wake_ms: MIN_POLLING_MS as i32,
+            next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
         Ok(controller)
     }
-    fn update_dynamics(&mut self, context: &mut DaemonContext) -> Result<(), QosError> {
+    fn update_dynamics(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<(), types::QosError> {
         let data = self.psi_monitor.read_state()?;
         let some = data.some;
         let memory_psi = context.pressure.memory_psi;
@@ -201,10 +177,10 @@ impl CpuController {
         let bat_level = self.battery_capacity_sensor.read();
         let thermal_scale =
             self.thermal_manager
-                .update(cpu_temp, bat_temp, target_psi, &self.thermal_tunables);
+                .update(cpu_temp, bat_temp, target_psi, &self.thermal_config);
         let trend_factor =
             cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
-        let now = Instant::now();
+        let now = time::Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
         let dt_sec = cpu_math::sanitize_dt(dt_duration.as_secs_f32());
@@ -297,37 +273,43 @@ impl CpuController {
             self.tunables.min_uclamp_min as u64,
         );
         self.latency
-            .update(lat_u64, force, CheckStrategy::Relative(0.05));
+            .update(lat_u64, force, cached_file::CheckStrategy::Relative(0.05));
         self.min_gran
-            .update(gran_u64, force, CheckStrategy::Relative(0.05));
+            .update(gran_u64, force, cached_file::CheckStrategy::Relative(0.05));
         self.wakeup
-            .update(wake_u64, force, CheckStrategy::Relative(0.10));
+            .update(wake_u64, force, cached_file::CheckStrategy::Relative(0.10));
         self.migration
-            .update(mig_u64, force, CheckStrategy::Absolute(50000));
+            .update(mig_u64, force, cached_file::CheckStrategy::Absolute(50000));
         self.walt_init
-            .update(walt_u64, force, CheckStrategy::Absolute(3));
+            .update(walt_u64, force, cached_file::CheckStrategy::Absolute(3));
         self.uclamp_min
-            .update(uclamp_u64, force, CheckStrategy::Absolute(32));
+            .update(uclamp_u64, force, cached_file::CheckStrategy::Absolute(32));
     }
 }
 
-impl EventHandler for CpuController {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
+impl traits::EventHandler for CpuController {
+    fn as_raw_fd(&self) -> os::fd::RawFd {
+        os::fd::AsRawFd::as_raw_fd(&self.fd)
     }
-    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_event(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
         let mut buf = [0u8; 8];
-        let _ = self.fd.read(&mut buf);
+        let _ = io::Read::read(&mut self.fd, &mut buf);
         if let Err(e) = self.update_dynamics(context) {
             log::warn!("Cpu Logic Error: {}", e);
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
-    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_timeout(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
         if let Err(e) = self.update_dynamics(context) {
             log::warn!("Cpu Timeout Error: {}", e);
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
         self.next_wake_ms

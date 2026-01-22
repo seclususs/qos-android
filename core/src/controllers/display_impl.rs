@@ -1,18 +1,10 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::daemon::state::{DISPLAY_SERVICE_ENABLED, DaemonContext};
-use crate::daemon::traits::{EventHandler, LoopAction};
-use crate::daemon::types::QosError;
+use crate::daemon::{state, traits, types};
 use crate::hal::{filesystem, surface_flinger};
-use crate::resources::sys_paths::K_TOUCH_DEVICE_PATH;
+use crate::resources::sys_paths;
 
-use std::fs::File;
-use std::io::{ErrorKind, Read};
-use std::os::fd::{AsRawFd, RawFd};
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::thread;
-use std::time::Instant;
+use std::{fs, io, os, sync, thread, time};
 
 const BUFFER_CAPACITY: usize = 1024;
 
@@ -44,28 +36,28 @@ impl Default for DisplayTunables {
 }
 
 pub struct DisplayController {
-    touch_fd: File,
+    touch_fd: fs::File,
     state: DisplayState,
     current_mode: DisplayMode,
     tunables: DisplayTunables,
-    last_activity: Instant,
-    last_transition: Instant,
+    last_activity: time::Instant,
+    last_transition: time::Instant,
     next_wake_ms: i32,
-    tx: mpsc::Sender<DisplayMode>,
+    tx: sync::mpsc::Sender<DisplayMode>,
     io_buffer: Box<[u8; BUFFER_CAPACITY]>,
 }
 
 impl DisplayController {
-    pub fn new() -> Result<Self, QosError> {
+    pub fn new() -> Result<Self, types::QosError> {
         log::info!("DisplayController: Initializing...");
-        let touch_fd = filesystem::open_file_for_read(K_TOUCH_DEVICE_PATH)?;
-        let fd_raw = touch_fd.as_raw_fd();
-        let borrowed_fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd_raw) };
+        let touch_fd = filesystem::open_file_for_read(sys_paths::K_TOUCH_DEVICE_PATH)?;
+        let fd_raw = os::fd::AsRawFd::as_raw_fd(&touch_fd);
+        let borrowed_fd = unsafe { os::fd::BorrowedFd::borrow_raw(fd_raw) };
         let flags = rustix::fs::fcntl_getfl(borrowed_fd)
-            .map_err(|e: rustix::io::Errno| QosError::IoError(e.into()))?;
+            .map_err(|e: rustix::io::Errno| types::QosError::IoError(e.into()))?;
         rustix::fs::fcntl_setfl(borrowed_fd, flags | rustix::fs::OFlags::NONBLOCK)
-            .map_err(|e: rustix::io::Errno| QosError::IoError(e.into()))?;
-        let (tx, rx) = mpsc::channel::<DisplayMode>();
+            .map_err(|e: rustix::io::Errno| types::QosError::IoError(e.into()))?;
+        let (tx, rx) = sync::mpsc::channel::<DisplayMode>();
         thread::Builder::new()
             .name("DisplayWorker".into())
             .spawn(move || {
@@ -73,15 +65,17 @@ impl DisplayController {
                     let _ = surface_flinger::set_refresh_rate(mode as i32);
                 }
             })
-            .map_err(|e| QosError::SystemCheckFailed(format!("Spawn worker failed: {}", e)))?;
+            .map_err(|e| {
+                types::QosError::SystemCheckFailed(format!("Spawn worker failed: {}", e))
+            })?;
         let _ = tx.send(DisplayMode::Low60Hz);
         Ok(Self {
             touch_fd,
             state: DisplayState::Idle,
             current_mode: DisplayMode::Low60Hz,
             tunables: DisplayTunables::default(),
-            last_activity: Instant::now(),
-            last_transition: Instant::now(),
+            last_activity: time::Instant::now(),
+            last_transition: time::Instant::now(),
             next_wake_ms: -1,
             tx,
             io_buffer: Box::new([0u8; BUFFER_CAPACITY]),
@@ -91,7 +85,7 @@ impl DisplayController {
         if self.state == new_state {
             return;
         }
-        let now = Instant::now();
+        let now = time::Instant::now();
         if now.duration_since(self.last_transition).as_millis() < self.tunables.activity_throttle_ms
         {
             return;
@@ -114,38 +108,44 @@ impl DisplayController {
     }
 }
 
-impl EventHandler for DisplayController {
-    fn as_raw_fd(&self) -> RawFd {
-        self.touch_fd.as_raw_fd()
+impl traits::EventHandler for DisplayController {
+    fn as_raw_fd(&self) -> os::fd::RawFd {
+        os::fd::AsRawFd::as_raw_fd(&self.touch_fd)
     }
-    fn on_event(&mut self, _context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_event(
+        &mut self,
+        _context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
         loop {
-            match self.touch_fd.read(self.io_buffer.as_mut_slice()) {
+            match io::Read::read(&mut self.touch_fd, self.io_buffer.as_mut_slice()) {
                 Ok(0) => break,
                 Ok(_) => {
-                    self.last_activity = Instant::now();
-                    if DISPLAY_SERVICE_ENABLED.load(Ordering::Relaxed) {
+                    self.last_activity = time::Instant::now();
+                    if state::DISPLAY_SERVICE_ENABLED.load(sync::atomic::Ordering::Relaxed) {
                         self.transition_to(DisplayState::Active);
                     }
                 }
-                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => {
                     log::warn!("Display: read error: {}", e);
                     break;
                 }
             }
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
-    fn on_timeout(&mut self, _context: &mut DaemonContext) -> Result<LoopAction, QosError> {
-        if !DISPLAY_SERVICE_ENABLED.load(Ordering::Relaxed) {
-            return Ok(LoopAction::Continue);
+    fn on_timeout(
+        &mut self,
+        _context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
+        if !state::DISPLAY_SERVICE_ENABLED.load(sync::atomic::Ordering::Relaxed) {
+            return Ok(traits::LoopAction::Continue);
         }
         if self.state != DisplayState::Active {
-            return Ok(LoopAction::Continue);
+            return Ok(traits::LoopAction::Continue);
         }
-        let elapsed = Instant::now()
+        let elapsed = time::Instant::now()
             .duration_since(self.last_activity)
             .as_millis() as i32;
         if elapsed >= self.tunables.touch_idle_timeout_ms {
@@ -153,7 +153,7 @@ impl EventHandler for DisplayController {
         } else {
             self.next_wake_ms = self.tunables.touch_idle_timeout_ms - elapsed;
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
         match self.state {

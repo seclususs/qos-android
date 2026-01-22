@@ -1,81 +1,75 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::poll_math::{AdaptivePoller, PollerTunables};
-use crate::algorithms::storage_math::{self, StorageTunables, WorkloadState};
-use crate::config::loop_settings::MIN_POLLING_MS;
-use crate::config::tunables::*;
-use crate::daemon::state::DaemonContext;
-use crate::daemon::traits::{EventHandler, LoopAction};
-use crate::daemon::types::QosError;
-use crate::hal::cached_file::{CachedFile, CheckStrategy};
-use crate::hal::filesystem;
-use crate::hal::kernel;
-use crate::monitors::disk_monitor::{DiskMonitor, IoStats};
-use crate::monitors::psi_monitor::PsiMonitor;
-use crate::resources::sys_paths::*;
+use crate::algorithms::{poll_math, storage_math};
+use crate::config::{loop_settings, tunables};
+use crate::daemon::{state, traits, types};
+use crate::hal::{cached_file, filesystem, kernel};
+use crate::monitors::{disk_monitor, psi_monitor};
+use crate::resources::sys_paths;
 
-use std::fs::File;
-use std::io::Read;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
-use std::time::Instant;
+use std::{fs, io, os, time};
 
 pub struct StorageController {
-    fd: File,
-    read_ahead: CachedFile,
-    nr_requests: CachedFile,
-    psi_monitor: PsiMonitor,
-    disk_monitor: DiskMonitor,
-    prev_io_stats: IoStats,
-    workload_state: WorkloadState,
-    last_tick: Instant,
+    fd: fs::File,
+    read_ahead: cached_file::CachedFile,
+    nr_requests: cached_file::CachedFile,
+    psi_monitor: psi_monitor::PsiMonitor,
+    disk_monitor: disk_monitor::DiskMonitor,
+    prev_io_stats: disk_monitor::IoStats,
+    workload_state: storage_math::WorkloadState,
+    last_tick: time::Instant,
     current_read_ahead: f32,
     current_nr_requests: f32,
-    tunables: StorageTunables,
-    poller: AdaptivePoller,
+    tunables: storage_math::StorageTunables,
+    poller: poll_math::AdaptivePoller,
     next_wake_ms: i32,
 }
 
 impl StorageController {
-    pub fn new() -> Result<Self, QosError> {
+    pub fn new() -> Result<Self, types::QosError> {
         log::info!("StorageController: Initializing...");
-        let raw_fd = kernel::register_psi_trigger(K_PSI_IO_PATH, 250000, 1000000)
-            .map_err(|e| QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
-        let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let ra_path = get_read_ahead_path();
-        let nr_path = get_nr_requests_path();
-        let read_ahead = CachedFile::new_opt(
+        let config = tunables::GlobalConfig::default();
+        let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_IO_PATH, 250000, 1000000)
+            .map_err(|e| types::QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
+        let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
+        let ra_path = sys_paths::get_read_ahead_path();
+        let nr_path = sys_paths::get_nr_requests_path();
+        let read_ahead = cached_file::CachedFile::new_opt(
             filesystem::open_file_for_write(ra_path.to_str().unwrap_or_default()).ok(),
             0,
         );
-        let nr_requests = CachedFile::new_opt(
+        let nr_requests = cached_file::CachedFile::new_opt(
             filesystem::open_file_for_write(nr_path.to_str().unwrap_or_default()).ok(),
             0,
         );
         if !read_ahead.is_active() && !nr_requests.is_active() {
-            return Err(QosError::SystemCheckFailed(
+            return Err(types::QosError::SystemCheckFailed(
                 "No storage block tunables found.".to_string(),
             ));
         }
-        let psi_monitor = PsiMonitor::new(K_PSI_IO_PATH)?;
-        let stats_path = get_diskstats_path();
-        let mut disk_monitor = DiskMonitor::new(stats_path.to_str().unwrap_or_default())?;
-        let initial_stats = disk_monitor.read_stats().unwrap_or(IoStats::default());
-        let tunables = StorageTunables {
-            min_read_ahead: MIN_READ_AHEAD as f32,
-            max_read_ahead: MAX_READ_AHEAD as f32,
-            min_nr_requests: MIN_NR_REQUESTS as f32,
-            max_nr_requests: MAX_NR_REQUESTS as f32,
-            min_req_size_kb: 32.0,
-            max_req_size_kb: 256.0,
-            write_cost_factor: 5.0,
-            target_latency_base_ms: 75.0,
-            hysteresis_threshold: 0.15,
-            critical_threshold_psi: 40.0,
-            queue_pressure_low: 1.0,
-            queue_pressure_high: 4.0,
-            smoothing_factor: 0.25,
+        let psi_monitor = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_IO_PATH)?;
+        let stats_path = sys_paths::get_diskstats_path();
+        let mut disk_monitor =
+            disk_monitor::DiskMonitor::new(stats_path.to_str().unwrap_or_default())?;
+        let initial_stats = disk_monitor
+            .read_stats()
+            .unwrap_or(disk_monitor::IoStats::default());
+        let tunables = storage_math::StorageTunables {
+            min_read_ahead: config.storage.min_read_ahead as f32,
+            max_read_ahead: config.storage.max_read_ahead as f32,
+            min_nr_requests: config.storage.min_nr_requests as f32,
+            max_nr_requests: config.storage.max_nr_requests as f32,
+            min_req_size_kb: config.storage.min_req_size_kb,
+            max_req_size_kb: config.storage.max_req_size_kb,
+            write_cost_factor: config.storage.write_cost_factor,
+            target_latency_base_ms: config.storage.target_latency_base_ms,
+            hysteresis_threshold: config.storage.hysteresis_threshold,
+            critical_threshold_psi: config.storage.critical_threshold_psi,
+            queue_pressure_low: config.storage.queue_pressure_low,
+            queue_pressure_high: config.storage.queue_pressure_high,
+            smoothing_factor: config.storage.smoothing_factor,
         };
-        let poller = AdaptivePoller::new(1.0, 1.0, PollerTunables::default());
+        let poller = poll_math::AdaptivePoller::new(1.0, 1.0, poll_math::PollerConfig::default());
         let mut controller = Self {
             fd,
             read_ahead,
@@ -83,21 +77,24 @@ impl StorageController {
             psi_monitor,
             disk_monitor,
             prev_io_stats: initial_stats,
-            workload_state: WorkloadState::default(),
-            last_tick: Instant::now(),
-            current_read_ahead: MIN_READ_AHEAD as f32,
-            current_nr_requests: MAX_NR_REQUESTS as f32,
+            workload_state: storage_math::WorkloadState::default(),
+            last_tick: time::Instant::now(),
+            current_read_ahead: config.storage.min_read_ahead as f32,
+            current_nr_requests: config.storage.max_nr_requests as f32,
             tunables,
             poller,
-            next_wake_ms: MIN_POLLING_MS as i32,
+            next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
         Ok(controller)
     }
-    fn update_io_logic(&mut self, context: &mut DaemonContext) -> Result<(), QosError> {
+    fn update_io_logic(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<(), types::QosError> {
         let psi_data = self.psi_monitor.read_state()?;
         let current_io_stats = self.disk_monitor.read_stats()?;
-        let now = Instant::now();
+        let now = time::Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f32();
         let dt_safe = dt.max(0.001);
         let delta =
@@ -150,7 +147,7 @@ impl StorageController {
             current_io_stats.in_flight as f32,
             &self.tunables,
         ) {
-            self.next_wake_ms = MIN_POLLING_MS as i32;
+            self.next_wake_ms = loop_settings::MIN_POLLING_MS as i32;
         } else {
             self.next_wake_ms = self
                 .poller
@@ -172,29 +169,35 @@ impl StorageController {
             16,
         );
         self.read_ahead
-            .update(ra_u64, force, CheckStrategy::Absolute(32));
+            .update(ra_u64, force, cached_file::CheckStrategy::Absolute(32));
         self.nr_requests
-            .update(nr_u64, force, CheckStrategy::Absolute(16));
+            .update(nr_u64, force, cached_file::CheckStrategy::Absolute(16));
     }
 }
 
-impl EventHandler for StorageController {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
+impl traits::EventHandler for StorageController {
+    fn as_raw_fd(&self) -> os::fd::RawFd {
+        os::fd::AsRawFd::as_raw_fd(&self.fd)
     }
-    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_event(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
         let mut buf = [0u8; 8];
-        let _ = self.fd.read(&mut buf);
+        let _ = io::Read::read(&mut self.fd, &mut buf);
         if let Err(e) = self.update_io_logic(context) {
             log::warn!("Storage Error: {}", e);
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
-    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_timeout(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
         if let Err(e) = self.update_io_logic(context) {
             log::warn!("Storage Timeout Error: {}", e);
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
         self.next_wake_ms

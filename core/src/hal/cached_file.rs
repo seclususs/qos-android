@@ -1,8 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::filesystem::write_to_stream;
+use crate::hal::filesystem;
 
-use std::fs::File;
+use std::fs;
 
 #[inline(always)]
 fn check_absolute(current: u64, target: u64, threshold: u64) -> bool {
@@ -32,18 +32,18 @@ pub enum CheckStrategy {
 }
 
 pub struct CachedFile {
-    file: Option<File>,
+    file: Option<fs::File>,
     last_value: u64,
 }
 
 impl CachedFile {
-    pub fn new(file: File, initial_value: u64) -> Self {
+    pub fn new(file: fs::File, initial_value: u64) -> Self {
         Self {
             file: Some(file),
             last_value: initial_value,
         }
     }
-    pub fn new_opt(file: Option<File>, initial_value: u64) -> Self {
+    pub fn new_opt(file: Option<fs::File>, initial_value: u64) -> Self {
         Self {
             file,
             last_value: initial_value,
@@ -67,7 +67,7 @@ impl CachedFile {
                     CheckStrategy::Strict => self.last_value != new_value,
                 }
             };
-            if needs_update && write_to_stream(file, new_value).is_ok() {
+            if needs_update && filesystem::write_to_stream(file, new_value).is_ok() {
                 self.last_value = new_value;
             }
         }

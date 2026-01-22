@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::daemon::types::QosError;
-use crate::hal::monitored_file::MonitoredFile;
+use crate::daemon::types;
+use crate::hal::monitored_file;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VmStats {
@@ -15,16 +15,16 @@ pub struct VmStats {
 }
 
 pub struct VmMonitor {
-    vmstat_monitor: MonitoredFile<8192>,
+    vmstat_monitor: monitored_file::MonitoredFile<8192>,
 }
 
 impl VmMonitor {
-    pub fn new(vmstat_path: &str) -> Result<Self, QosError> {
+    pub fn new(vmstat_path: &str) -> Result<Self, types::QosError> {
         Ok(Self {
-            vmstat_monitor: MonitoredFile::new(vmstat_path)?,
+            vmstat_monitor: monitored_file::MonitoredFile::new(vmstat_path)?,
         })
     }
-    pub fn read_stats(&mut self) -> Result<VmStats, QosError> {
+    pub fn read_stats(&mut self) -> Result<VmStats, types::QosError> {
         let mut stats = VmStats::default();
         if let Ok(content) = self.vmstat_monitor.read_value() {
             for line in content.lines() {

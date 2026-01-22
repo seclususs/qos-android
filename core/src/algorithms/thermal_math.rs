@@ -1,11 +1,11 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::time::Instant;
+use std::time;
 
 const SMITH_BUFFER_SIZE: usize = 512;
 
-#[derive(Clone, Copy)]
-pub struct ThermalTunables {
+#[derive(Clone, Copy, Debug)]
+pub struct ThermalConfig {
     pub hard_limit_cpu: f32,
     pub hard_limit_bat: f32,
     pub sched_temp_cool: f32,
@@ -24,6 +24,31 @@ pub struct ThermalTunables {
     pub smith_gain: f32,
     pub smith_tau: f32,
     pub smith_delay_sec: f32,
+}
+
+impl Default for ThermalConfig {
+    fn default() -> Self {
+        Self {
+            hard_limit_cpu: 70.0,
+            hard_limit_bat: 40.0,
+            sched_temp_cool: 35.0,
+            sched_temp_hot: 45.0,
+            kp_base: 1.2,
+            ki_base: 0.03,
+            kd_base: 0.8,
+            kp_fast: 4.0,
+            ki_fast: 0.15,
+            kd_fast: 3.5,
+            anti_windup_k: 1.0,
+            deriv_filter_n: 8.0,
+            ff_gain: 2.5,
+            ff_lead_time: 5.0,
+            ff_lag_time: 2.5,
+            smith_gain: 1.5,
+            smith_tau: 12.0,
+            smith_delay_sec: 4.0,
+        }
+    }
 }
 
 struct LeadLagFilter {
@@ -108,7 +133,7 @@ impl SmithPredictor {
 }
 
 pub struct ThermalManager {
-    last_tick: Instant,
+    last_tick: time::Instant,
     integral_accum: f32,
     prev_adjusted_pv: f32,
     prev_deriv_output: f32,
@@ -126,7 +151,7 @@ impl Default for ThermalManager {
 impl ThermalManager {
     pub fn new() -> Self {
         Self {
-            last_tick: Instant::now(),
+            last_tick: time::Instant::now(),
             integral_accum: 0.0,
             prev_adjusted_pv: 0.0,
             prev_deriv_output: 0.0,
@@ -140,9 +165,9 @@ impl ThermalManager {
         cpu_temp: f32,
         bat_temp: f32,
         psi_load: f32,
-        tunables: &ThermalTunables,
+        tunables: &ThermalConfig,
     ) -> f32 {
-        let now = Instant::now();
+        let now = time::Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f32();
         let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;

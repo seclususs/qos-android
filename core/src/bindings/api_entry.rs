@@ -1,54 +1,43 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::controllers::cleaner_impl::CleanerController;
-use crate::controllers::cpu_impl::CpuController;
-use crate::controllers::display_impl::DisplayController;
-use crate::controllers::memory_impl::MemoryController;
-use crate::controllers::signal_impl::SignalController;
-use crate::controllers::storage_impl::StorageController;
-use crate::daemon::logging;
-use crate::daemon::runtime::{self, RecoverableService};
-use crate::daemon::state::{
-    CLEANER_SERVICE_ENABLED, CPU_SERVICE_ENABLED, DISPLAY_SERVICE_ENABLED, MEMORY_SERVICE_ENABLED,
-    SHUTDOWN_REQUESTED, STORAGE_SERVICE_ENABLED, TWEAKS_ENABLED,
+use crate::controllers::{
+    cleaner_impl, cpu_impl, display_impl, memory_impl, signal_impl, storage_impl,
 };
-use crate::hal::bridge::notify_service_death;
+use crate::daemon::{logging, runtime, state};
+use crate::hal::bridge;
 
-use std::sync::atomic::Ordering;
-use std::sync::{Mutex, mpsc};
-use std::thread::{Builder, JoinHandle};
-use std::time::Duration;
+use std::{sync, thread, time};
 
-static MAIN_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+static MAIN_THREAD: sync::Mutex<Option<thread::JoinHandle<()>>> = sync::Mutex::new(None);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_cleaner_service_enabled(enabled: bool) {
-    CLEANER_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    state::CLEANER_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_cpu_service_enabled(enabled: bool) {
-    CPU_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    state::CPU_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_display_service_enabled(enabled: bool) {
-    DISPLAY_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    state::DISPLAY_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_memory_service_enabled(enabled: bool) {
-    MEMORY_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    state::MEMORY_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_storage_service_enabled(enabled: bool) {
-    STORAGE_SERVICE_ENABLED.store(enabled, Ordering::Release);
+    state::STORAGE_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_tweaks_enabled(enabled: bool) {
-    TWEAKS_ENABLED.store(enabled, Ordering::Release);
+    state::TWEAKS_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 /// # Safety
@@ -78,29 +67,29 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
         }
     }
     logging::init();
-    let (tx, rx) = mpsc::channel::<()>();
+    let (tx, rx) = sync::mpsc::channel::<()>();
     let result = std::panic::catch_unwind(move || {
         log::info!(
             "Rust: Service entry point reached. Signal FD: {}",
             signal_fd
         );
-        Builder::new()
+        thread::Builder::new()
             .name("Tweaks".into())
             .stack_size(256 * 1024)
             .spawn(|| {
-                if !TWEAKS_ENABLED.load(Ordering::Acquire) {
+                if !state::TWEAKS_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     log::info!("Rust: System Tweaks are DISABLED by config.");
                     return;
                 }
                 runtime::wait_for_boot_completion("Tweaker");
-                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
                     return;
                 }
                 runtime::apply_system_tweaks();
             })
             .expect("Failed to spawn Tweaks thread");
-        SHUTDOWN_REQUESTED.store(false, Ordering::Release);
-        let handle = Builder::new()
+        state::SHUTDOWN_REQUESTED.store(false, sync::atomic::Ordering::Release);
+        let handle = thread::Builder::new()
             .name("MainLoop".into())
             .stack_size(1024 * 1024)
             .spawn(move || {
@@ -108,37 +97,39 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                     log::error!("Rust: Failed to send handshake: {}.", e);
                 }
                 runtime::wait_for_boot_completion("MainLoop");
-                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
                     return;
                 }
                 log::info!("Rust: Constructing Service Vector...");
                 let mut services = Vec::new();
-                services.push(RecoverableService::new("Signal", move || {
-                    Ok(Box::new(unsafe { SignalController::new(signal_fd) }))
+                services.push(runtime::RecoverableService::new("Signal", move || {
+                    Ok(Box::new(unsafe {
+                        signal_impl::SignalController::new(signal_fd)
+                    }))
                 }));
-                if MEMORY_SERVICE_ENABLED.load(Ordering::Acquire) {
-                    services.push(RecoverableService::new("Memory", || {
-                        Ok(Box::new(MemoryController::new()?))
+                if state::MEMORY_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
+                    services.push(runtime::RecoverableService::new("Memory", || {
+                        Ok(Box::new(memory_impl::MemoryController::new()?))
                     }));
                 }
-                if STORAGE_SERVICE_ENABLED.load(Ordering::Acquire) {
-                    services.push(RecoverableService::new("Storage", || {
-                        Ok(Box::new(StorageController::new()?))
+                if state::STORAGE_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
+                    services.push(runtime::RecoverableService::new("Storage", || {
+                        Ok(Box::new(storage_impl::StorageController::new()?))
                     }));
                 }
-                if CPU_SERVICE_ENABLED.load(Ordering::Acquire) {
-                    services.push(RecoverableService::new("CPU", || {
-                        Ok(Box::new(CpuController::new()?))
+                if state::CPU_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
+                    services.push(runtime::RecoverableService::new("CPU", || {
+                        Ok(Box::new(cpu_impl::CpuController::new()?))
                     }));
                 }
-                if DISPLAY_SERVICE_ENABLED.load(Ordering::Acquire) {
-                    services.push(RecoverableService::new("Display", || {
-                        Ok(Box::new(DisplayController::new()?))
+                if state::DISPLAY_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
+                    services.push(runtime::RecoverableService::new("Display", || {
+                        Ok(Box::new(display_impl::DisplayController::new()?))
                     }));
                 }
-                if CLEANER_SERVICE_ENABLED.load(Ordering::Acquire) {
-                    services.push(RecoverableService::new("Cleaner", || {
-                        Ok(Box::new(CleanerController::new()?))
+                if state::CLEANER_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
+                    services.push(runtime::RecoverableService::new("Cleaner", || {
+                        Ok(Box::new(cleaner_impl::CleanerController::new()?))
                     }));
                 }
                 log::info!(
@@ -157,10 +148,10 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
     });
     if let Err(cause) = result {
         log::error!("Rust: Critical Panic during startup: {:?}", cause);
-        notify_service_death("Startup Panic");
+        bridge::notify_service_death("Startup Panic");
         return -1;
     }
-    match rx.recv_timeout(Duration::from_secs(5)) {
+    match rx.recv_timeout(time::Duration::from_secs(5)) {
         Ok(_) => 0,
         Err(e) => {
             log::error!("Rust: Handshake failed: {}", e);

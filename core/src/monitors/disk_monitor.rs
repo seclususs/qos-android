@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::daemon::types::QosError;
-use crate::hal::monitored_file::MonitoredFile;
+use crate::daemon::types;
+use crate::hal::monitored_file;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoStats {
@@ -15,19 +15,19 @@ pub struct IoStats {
 }
 
 pub struct DiskMonitor {
-    monitor: MonitoredFile<512>,
+    monitor: monitored_file::MonitoredFile<512>,
 }
 
 impl DiskMonitor {
-    pub fn new(path: &str) -> Result<Self, QosError> {
+    pub fn new(path: &str) -> Result<Self, types::QosError> {
         Ok(Self {
-            monitor: MonitoredFile::new(path)?,
+            monitor: monitored_file::MonitoredFile::new(path)?,
         })
     }
-    pub fn read_stats(&mut self) -> Result<IoStats, QosError> {
+    pub fn read_stats(&mut self) -> Result<IoStats, types::QosError> {
         let content = self.monitor.read_value()?;
         if content.is_empty() {
-            return Err(QosError::SystemCheckFailed(
+            return Err(types::QosError::SystemCheckFailed(
                 "Empty diskstats file".to_string(),
             ));
         }
@@ -60,7 +60,7 @@ impl DiskMonitor {
                 in_flight: infl,
             })
         } else {
-            Err(QosError::SystemCheckFailed(
+            Err(types::QosError::SystemCheckFailed(
                 "Incomplete diskstats format".to_string(),
             ))
         }

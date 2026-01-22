@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::monitors::disk_monitor::IoStats;
+use crate::monitors::disk_monitor;
 
 #[derive(Debug, Clone, Copy)]
 pub struct StorageTunables {
@@ -57,7 +57,11 @@ pub fn should_update_nr_requests(
         || calculated >= tunables.max_nr_requests
 }
 
-pub fn calculate_io_deltas(current: &IoStats, prev: &IoStats, dt_sec: f32) -> IoDelta {
+pub fn calculate_io_deltas(
+    current: &disk_monitor::IoStats,
+    prev: &disk_monitor::IoStats,
+    dt_sec: f32,
+) -> IoDelta {
     if dt_sec <= 0.0 {
         return IoDelta::default();
     }

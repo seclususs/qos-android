@@ -1,7 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::fs::{self, DirEntry};
-use std::path::Path;
+use std::{fs, path};
 
 pub enum TraversalAction {
     Keep,
@@ -9,7 +8,7 @@ pub enum TraversalAction {
     Stop,
 }
 
-pub fn get_tree_size_capped(path: &Path, limit: u64) -> u64 {
+pub fn get_tree_size_capped(path: &path::Path, limit: u64) -> u64 {
     let mut size = 0;
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
@@ -32,9 +31,9 @@ pub fn get_tree_size_capped(path: &Path, limit: u64) -> u64 {
     size
 }
 
-pub fn walk_and_act<F>(dir: &Path, callback: &F, depth: usize) -> usize
+pub fn walk_and_act<F>(dir: &path::Path, callback: &F, depth: usize) -> usize
 where
-    F: Fn(&DirEntry, usize) -> TraversalAction,
+    F: Fn(&fs::DirEntry, usize) -> TraversalAction,
 {
     if depth > 20 {
         return 0;

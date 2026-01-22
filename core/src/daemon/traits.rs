@@ -1,9 +1,8 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::daemon::state::DaemonContext;
-use crate::daemon::types::QosError;
+use crate::daemon::{state, types};
 
-use std::os::fd::RawFd;
+use std::os;
 
 #[derive(Debug, PartialEq)]
 pub enum LoopAction {
@@ -11,12 +10,18 @@ pub enum LoopAction {
 }
 
 pub trait EventHandler {
-    fn as_raw_fd(&self) -> RawFd;
-    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError>;
+    fn as_raw_fd(&self) -> os::fd::RawFd;
+    fn on_event(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<LoopAction, types::QosError>;
     fn get_timeout_ms(&self) -> i32 {
         -1
     }
-    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_timeout(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<LoopAction, types::QosError> {
         let _ = context;
         Ok(LoopAction::Continue)
     }

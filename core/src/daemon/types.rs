@@ -1,7 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::ffi::NulError;
-use std::fmt;
+use std::{ffi, fmt};
 
 #[derive(Debug)]
 pub enum QosError {
@@ -34,8 +33,8 @@ impl From<std::io::Error> for QosError {
     }
 }
 
-impl From<NulError> for QosError {
-    fn from(err: NulError) -> Self {
+impl From<ffi::NulError> for QosError {
+    fn from(err: ffi::NulError) -> Self {
         QosError::InvalidInput(format!("String contains null byte: {}", err))
     }
 }

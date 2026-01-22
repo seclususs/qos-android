@@ -1,14 +1,14 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::path;
+use std::sync;
 
-static STORAGE_DEV: OnceLock<String> = OnceLock::new();
-static READ_AHEAD_PATH: OnceLock<PathBuf> = OnceLock::new();
-static NR_REQUESTS_PATH: OnceLock<PathBuf> = OnceLock::new();
-static DISKSTATS_PATH: OnceLock<PathBuf> = OnceLock::new();
-static CPU_ZONE_PATH: OnceLock<PathBuf> = OnceLock::new();
+static STORAGE_DEV: sync::OnceLock<String> = sync::OnceLock::new();
+static READ_AHEAD_PATH: sync::OnceLock<path::PathBuf> = sync::OnceLock::new();
+static NR_REQUESTS_PATH: sync::OnceLock<path::PathBuf> = sync::OnceLock::new();
+static DISKSTATS_PATH: sync::OnceLock<path::PathBuf> = sync::OnceLock::new();
+static CPU_ZONE_PATH: sync::OnceLock<path::PathBuf> = sync::OnceLock::new();
 
 const THERMAL_PRIORITY_LIST: &[&str] = &[
     "cpu-1-0-usr",
@@ -71,44 +71,45 @@ pub(crate) fn get_storage_name() -> &'static str {
     STORAGE_DEV.get_or_init(detect_storage_device)
 }
 
-pub fn get_read_ahead_path() -> &'static Path {
+pub fn get_read_ahead_path() -> &'static path::Path {
     READ_AHEAD_PATH.get_or_init(|| {
-        PathBuf::from(format!(
+        path::PathBuf::from(format!(
             "/sys/block/{}/queue/read_ahead_kb",
             get_storage_name()
         ))
     })
 }
 
-pub fn get_nr_requests_path() -> &'static Path {
+pub fn get_nr_requests_path() -> &'static path::Path {
     NR_REQUESTS_PATH.get_or_init(|| {
-        PathBuf::from(format!(
+        path::PathBuf::from(format!(
             "/sys/block/{}/queue/nr_requests",
             get_storage_name()
         ))
     })
 }
 
-pub fn get_diskstats_path() -> &'static Path {
-    DISKSTATS_PATH.get_or_init(|| PathBuf::from(format!("/sys/block/{}/stat", get_storage_name())))
+pub fn get_diskstats_path() -> &'static path::Path {
+    DISKSTATS_PATH
+        .get_or_init(|| path::PathBuf::from(format!("/sys/block/{}/stat", get_storage_name())))
 }
 
-pub fn get_cpu_temp_path() -> &'static Path {
+pub fn get_cpu_temp_path() -> &'static path::Path {
     CPU_ZONE_PATH.get_or_init(detect_cpu_thermal_path)
 }
 
 fn detect_storage_device() -> String {
     let candidates = ["nvme0n1", "sda", "sdb", "mmcblk0"];
     for &dev in &candidates {
-        if Path::new("/sys/block").join(dev).exists() {
+        if path::Path::new("/sys/block").join(dev).exists() {
             return dev.to_string();
         }
     }
     "mmcblk0".to_string()
 }
 
-fn detect_cpu_thermal_path() -> PathBuf {
-    let base_dir = Path::new("/sys/class/thermal");
+fn detect_cpu_thermal_path() -> path::PathBuf {
+    let base_dir = path::Path::new("/sys/class/thermal");
     let mut found_zones: Vec<(String, String)> = Vec::with_capacity(30);
     if let Ok(entries) = fs::read_dir(base_dir) {
         for entry in entries.flatten() {

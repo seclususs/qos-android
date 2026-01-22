@@ -1,84 +1,79 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::memory_math::{self, MemoryTunables, QueueState};
-use crate::algorithms::poll_math::{AdaptivePoller, PollerTunables};
-use crate::config::loop_settings::MIN_POLLING_MS;
-use crate::config::tunables::*;
-use crate::daemon::state::DaemonContext;
-use crate::daemon::traits::{EventHandler, LoopAction};
-use crate::daemon::types::QosError;
-use crate::hal::cached_file::{CachedFile, CheckStrategy};
-use crate::hal::filesystem;
-use crate::hal::kernel;
-use crate::hal::thermal::ThermalSensor;
-use crate::monitors::psi_monitor::PsiMonitor;
-use crate::monitors::vm_monitor::{VmMonitor, VmStats};
-use crate::resources::sys_paths::*;
+use crate::algorithms::{memory_math, poll_math};
+use crate::config::{loop_settings, tunables};
+use crate::daemon::{state, traits, types};
+use crate::hal::{cached_file, filesystem, kernel, thermal};
+use crate::monitors::{psi_monitor, vm_monitor};
+use crate::resources::sys_paths;
 
-use std::fs::File;
-use std::io::Read;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
-use std::time::Instant;
+use std::{fs, io, os, time};
 
 pub struct MemoryController {
-    fd: File,
-    swap: CachedFile,
-    vfs: CachedFile,
-    psi_monitor: PsiMonitor,
-    vm_monitor: VmMonitor,
-    cpu_sensor: ThermalSensor,
-    prev_vm_stats: VmStats,
+    fd: fs::File,
+    swap: cached_file::CachedFile,
+    vfs: cached_file::CachedFile,
+    psi_monitor: psi_monitor::PsiMonitor,
+    vm_monitor: vm_monitor::VmMonitor,
+    cpu_sensor: thermal::ThermalSensor,
+    prev_vm_stats: vm_monitor::VmStats,
     prev_psi_mem: f32,
-    last_tick: Instant,
+    last_tick: time::Instant,
     current_swappiness: f32,
     current_vfs: f32,
-    tunables: MemoryTunables,
-    poller: AdaptivePoller,
-    queue_state: QueueState,
+    tunables: memory_math::MemoryTunables,
+    poller: poll_math::AdaptivePoller,
+    queue_state: memory_math::QueueState,
     next_wake_ms: i32,
 }
 
 impl MemoryController {
-    pub fn new() -> Result<Self, QosError> {
+    pub fn new() -> Result<Self, types::QosError> {
         log::info!("MemoryController: Initializing...");
-        let raw_fd = kernel::register_psi_trigger(K_PSI_MEMORY_PATH, 150000, 1000000)
-            .map_err(|e| QosError::FfiError(format!("Memory PSI Error: {}", e)))?;
-        let fd = unsafe { File::from_raw_fd(raw_fd) };
-        let swap = CachedFile::new_opt(filesystem::open_file_for_write(K_SWAPPINESS_PATH).ok(), 0);
-        let vfs = CachedFile::new_opt(
-            filesystem::open_file_for_write(K_VFS_CACHE_PRESSURE_PATH).ok(),
+        let config = tunables::GlobalConfig::default();
+        let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_MEMORY_PATH, 150000, 1000000)
+            .map_err(|e| types::QosError::FfiError(format!("Memory PSI Error: {}", e)))?;
+        let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
+        let swap = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_SWAPPINESS_PATH).ok(),
+            0,
+        );
+        let vfs = cached_file::CachedFile::new_opt(
+            filesystem::open_file_for_write(sys_paths::K_VFS_CACHE_PRESSURE_PATH).ok(),
             0,
         );
         if !swap.is_active() && !vfs.is_active() {
-            return Err(QosError::SystemCheckFailed(
+            return Err(types::QosError::SystemCheckFailed(
                 "No memory tunables found.".to_string(),
             ));
         }
-        let psi_monitor = PsiMonitor::new(K_PSI_MEMORY_PATH)?;
-        let mut vm_monitor = VmMonitor::new(K_VMSTAT_PATH)?;
-        let cpu_path = get_cpu_temp_path();
-        let cpu_sensor = ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 45.0);
-        let initial_vm_stats = vm_monitor.read_stats().unwrap_or(VmStats::default());
-        let tunables = MemoryTunables {
-            min_swappiness: MIN_SWAPPINESS as f32,
-            max_swappiness: MAX_SWAPPINESS as f32,
-            min_vfs: MIN_VFS as f32,
-            max_vfs: MAX_VFS as f32,
-            pressure_kp: 0.8,
-            pressure_kd: 0.2,
-            inefficiency_cost: 25.0,
-            pressure_vfs_k: 0.10,
-            fragmentation_impact_k: 2.0,
-            wss_cost_factor: 3.0,
-            zram_thermal_cost: 1.5,
-            general_smooth_factor: 0.20,
-            queue_history_size: 16,
-            queue_smoothing_alpha: 0.2,
-            residence_time_threshold: 30.0,
-            protection_curve_k: 3.0,
-            congestion_scaling_factor: 2.5,
+        let psi_monitor = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_MEMORY_PATH)?;
+        let mut vm_monitor = vm_monitor::VmMonitor::new(sys_paths::K_VMSTAT_PATH)?;
+        let cpu_path = sys_paths::get_cpu_temp_path();
+        let cpu_sensor = thermal::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 45.0);
+        let initial_vm_stats = vm_monitor
+            .read_stats()
+            .unwrap_or(vm_monitor::VmStats::default());
+        let tunables = memory_math::MemoryTunables {
+            min_swappiness: config.memory.min_swappiness as f32,
+            max_swappiness: config.memory.max_swappiness as f32,
+            min_vfs: config.memory.min_vfs as f32,
+            max_vfs: config.memory.max_vfs as f32,
+            pressure_kp: config.memory.pressure_kp,
+            pressure_kd: config.memory.pressure_kd,
+            inefficiency_cost: config.memory.inefficiency_cost,
+            pressure_vfs_k: config.memory.pressure_vfs_k,
+            fragmentation_impact_k: config.memory.fragmentation_impact_k,
+            wss_cost_factor: config.memory.wss_cost_factor,
+            zram_thermal_cost: config.memory.zram_thermal_cost,
+            general_smooth_factor: config.memory.general_smooth_factor,
+            queue_history_size: config.memory.queue_history_size,
+            queue_smoothing_alpha: config.memory.queue_smoothing_alpha,
+            residence_time_threshold: config.memory.residence_time_threshold,
+            protection_curve_k: config.memory.protection_curve_k,
+            congestion_scaling_factor: config.memory.congestion_scaling_factor,
         };
-        let poller = AdaptivePoller::new(1.5, 0.5, PollerTunables::default());
+        let poller = poll_math::AdaptivePoller::new(1.5, 0.5, poll_math::PollerConfig::default());
         let mut controller = Self {
             fd,
             swap,
@@ -88,23 +83,26 @@ impl MemoryController {
             cpu_sensor,
             prev_vm_stats: initial_vm_stats,
             prev_psi_mem: 0.0,
-            last_tick: Instant::now(),
-            current_swappiness: MIN_SWAPPINESS as f32,
-            current_vfs: MIN_VFS as f32,
+            last_tick: time::Instant::now(),
+            current_swappiness: config.memory.min_swappiness as f32,
+            current_vfs: config.memory.min_vfs as f32,
             tunables,
             poller,
-            queue_state: QueueState::default(),
-            next_wake_ms: MIN_POLLING_MS as i32,
+            queue_state: memory_math::QueueState::default(),
+            next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
         Ok(controller)
     }
-    fn update_pressure_state(&mut self, context: &mut DaemonContext) -> Result<(), QosError> {
+    fn update_pressure_state(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<(), types::QosError> {
         let psi_data = self.psi_monitor.read_state()?;
         let vm_stats = self.vm_monitor.read_stats()?;
         let cpu_temp = self.cpu_sensor.read();
         let io_sat = context.pressure.io_saturation;
-        let now = Instant::now();
+        let now = time::Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f32().max(0.001);
         self.last_tick = now;
         let activity_delta =
@@ -156,28 +154,35 @@ impl MemoryController {
         let vfs_u64 =
             crate::algorithms::sanitize_to_u64(self.current_vfs, self.tunables.min_vfs as u64);
         self.swap
-            .update(swap_u64, force, CheckStrategy::Absolute(5));
-        self.vfs.update(vfs_u64, force, CheckStrategy::Absolute(10));
+            .update(swap_u64, force, cached_file::CheckStrategy::Absolute(5));
+        self.vfs
+            .update(vfs_u64, force, cached_file::CheckStrategy::Absolute(10));
     }
 }
 
-impl EventHandler for MemoryController {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
+impl traits::EventHandler for MemoryController {
+    fn as_raw_fd(&self) -> os::fd::RawFd {
+        os::fd::AsRawFd::as_raw_fd(&self.fd)
     }
-    fn on_event(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_event(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
         let mut buf = [0u8; 8];
-        let _ = self.fd.read(&mut buf);
+        let _ = io::Read::read(&mut self.fd, &mut buf);
         if let Err(e) = self.update_pressure_state(context) {
             log::warn!("Mem Error: {}", e);
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
-    fn on_timeout(&mut self, context: &mut DaemonContext) -> Result<LoopAction, QosError> {
+    fn on_timeout(
+        &mut self,
+        context: &mut state::DaemonContext,
+    ) -> Result<traits::LoopAction, types::QosError> {
         if let Err(e) = self.update_pressure_state(context) {
             log::warn!("Mem Timeout Error: {}", e);
         }
-        Ok(LoopAction::Continue)
+        Ok(traits::LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
         self.next_wake_ms

@@ -1,11 +1,11 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::config::loop_settings::{MAX_POLLING_MS, MIN_POLLING_MS};
+use crate::config::loop_settings;
 
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time;
 
 #[derive(Debug, Clone, Copy)]
-pub struct PollerTunables {
+pub struct PollerConfig {
     pub sleep_tolerance_ms: u64,
     pub min_effective_dt_ms: u64,
     pub quantization_step_ms: u64,
@@ -15,7 +15,7 @@ pub struct PollerTunables {
     pub fall_factor: f32,
 }
 
-impl Default for PollerTunables {
+impl Default for PollerConfig {
     fn default() -> Self {
         Self {
             sleep_tolerance_ms: 500,
@@ -32,25 +32,25 @@ impl Default for PollerTunables {
 pub struct AdaptivePoller {
     current_interval: u64,
     last_pressure: f32,
-    last_tick: Instant,
+    last_tick: time::Instant,
     target_interval: u64,
     weight_pressure: f32,
     weight_derivative: f32,
     rng_state: u64,
-    tunables: PollerTunables,
+    tunables: PollerConfig,
 }
 
 impl AdaptivePoller {
-    pub fn new(weight_pressure: f32, weight_derivative: f32, tunables: PollerTunables) -> Self {
-        let start_seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+    pub fn new(weight_pressure: f32, weight_derivative: f32, tunables: PollerConfig) -> Self {
+        let start_seed = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
         Self {
-            current_interval: MIN_POLLING_MS,
+            current_interval: loop_settings::MIN_POLLING_MS,
             last_pressure: 0.0,
-            last_tick: Instant::now(),
-            target_interval: MIN_POLLING_MS,
+            last_tick: time::Instant::now(),
+            target_interval: loop_settings::MIN_POLLING_MS,
             weight_pressure,
             weight_derivative,
             rng_state: start_seed,
@@ -69,21 +69,21 @@ impl AdaptivePoller {
         self.rng_state % (limit + 1)
     }
     pub fn calculate_next_interval(&mut self, current_pressure: f32, avg300: f32) -> u64 {
-        let now = Instant::now();
+        let now = time::Instant::now();
         let elapsed_ms = now.duration_since(self.last_tick).as_millis() as u64;
         if elapsed_ms > (self.current_interval + self.tunables.sleep_tolerance_ms) {
             log::debug!("Time Discontinuity (Sleep?): {}ms.", elapsed_ms);
             self.last_pressure = current_pressure;
             self.last_tick = now;
-            self.current_interval = MIN_POLLING_MS;
-            return MIN_POLLING_MS;
+            self.current_interval = loop_settings::MIN_POLLING_MS;
+            return loop_settings::MIN_POLLING_MS;
         }
         let (dynamic_min, dynamic_max) = if avg300 < 2.0 && current_pressure < 10.0 {
-            (6000u64, MAX_POLLING_MS)
+            (6000u64, loop_settings::MAX_POLLING_MS)
         } else if avg300 > 20.0 {
-            (MIN_POLLING_MS, 5000u64)
+            (loop_settings::MIN_POLLING_MS, 5000u64)
         } else {
-            (MIN_POLLING_MS, MAX_POLLING_MS)
+            (loop_settings::MIN_POLLING_MS, loop_settings::MAX_POLLING_MS)
         };
         let effective_dt_ms = elapsed_ms.max(self.tunables.min_effective_dt_ms);
         let dt_sec = effective_dt_ms as f32 / 1000.0;
