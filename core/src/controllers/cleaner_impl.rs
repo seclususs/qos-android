@@ -325,7 +325,7 @@ impl EventHandler for CleanerController {
         let cpu_busy = self
             .cpu_monitor
             .read_state()
-            .map(|d| d.some.avg10 > 25.0)
+            .map(|d| d.some.avg10 > 10.0)
             .unwrap_or(false);
         let temp = self.thermal.read();
         let is_emergency = self.is_storage_critical();
