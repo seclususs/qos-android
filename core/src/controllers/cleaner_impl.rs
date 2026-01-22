@@ -15,13 +15,15 @@ use std::io::Read;
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Debug, Clone, Copy)]
 struct CleanerTunables {
     sweep_interval_ms: i32,
     bloat_limit_bytes: u64,
-    storage_critical_threshold: f64,
+    storage_critical_threshold: f32,
     age_stale_media: Duration,
     age_stale_code: Duration,
     age_bloat: Duration,
@@ -34,7 +36,7 @@ impl Default for CleanerTunables {
         Self {
             sweep_interval_ms: 600_000,
             bloat_limit_bytes: 512 * 1024 * 1024,
-            storage_critical_threshold: 15.0,
+            storage_critical_threshold: 10.0,
             age_stale_media: Duration::from_secs(7 * 86400),
             age_stale_code: Duration::from_secs(30 * 86400),
             age_bloat: Duration::from_secs(24 * 3600),
@@ -44,28 +46,22 @@ impl Default for CleanerTunables {
     }
 }
 
-pub struct CleanerController {
-    io_monitor: PsiMonitor,
-    cpu_monitor: PsiMonitor,
-    thermal: ThermalSensor,
+struct CleanerWorker {
     tunables: CleanerTunables,
-    last_sweep: Instant,
-    dummy_fd: File,
+    rx: mpsc::Receiver<()>,
 }
 
-impl CleanerController {
-    pub fn new() -> Result<Self, QosError> {
-        log::info!("CleanerController: Initializing...");
-        let dummy = File::open("/dev/null")
-            .map_err(|e| QosError::SystemCheckFailed(format!("Placeholder error: {}", e)))?;
-        Ok(Self {
-            io_monitor: PsiMonitor::new(K_PSI_IO_PATH)?,
-            cpu_monitor: PsiMonitor::new(K_PSI_CPU_PATH)?,
-            thermal: ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0),
-            tunables: CleanerTunables::default(),
-            last_sweep: Instant::now() - Duration::from_secs(86000),
-            dummy_fd: dummy,
-        })
+impl CleanerWorker {
+    fn new(tunables: CleanerTunables, rx: mpsc::Receiver<()>) -> Self {
+        Self { tunables, rx }
+    }
+    fn run(&self) {
+        while self.rx.recv().is_ok() {
+            let items = self.perform_cycle();
+            if items > 0 {
+                log::info!("Cleaner: Cycle complete. Removed {} items.", items);
+            }
+        }
     }
     fn get_active_packages(&self) -> HashSet<String> {
         let mut active = HashSet::new();
@@ -98,7 +94,7 @@ impl CleanerController {
             let total = stats.f_blocks * stats.f_frsize;
             let free = stats.f_bavail * stats.f_frsize;
             if total > 0 {
-                let pct = (free as f64 / total as f64) * 100.0;
+                let pct = (free as f32 / total as f32) * 100.0;
                 return pct < self.tunables.storage_critical_threshold;
             }
         }
@@ -143,7 +139,7 @@ impl CleanerController {
         }
         false
     }
-    fn perform_cycle(&mut self) -> usize {
+    fn perform_cycle(&self) -> usize {
         let active_pkgs = self.get_active_packages();
         let is_critical = self.is_storage_critical();
         let now = SystemTime::now();
@@ -258,6 +254,56 @@ impl CleanerController {
     }
 }
 
+pub struct CleanerController {
+    io_monitor: PsiMonitor,
+    cpu_monitor: PsiMonitor,
+    thermal: ThermalSensor,
+    tunables: CleanerTunables,
+    last_sweep: Instant,
+    dummy_fd: File,
+    tx: mpsc::Sender<()>,
+}
+
+impl CleanerController {
+    pub fn new() -> Result<Self, QosError> {
+        log::info!("CleanerController: Initializing...");
+        let dummy = File::open("/dev/null")
+            .map_err(|e| QosError::SystemCheckFailed(format!("Placeholder error: {}", e)))?;
+        let tunables = CleanerTunables::default();
+        let (tx, rx) = mpsc::channel();
+        let worker_tunables = tunables;
+        thread::Builder::new()
+            .name("CleanerWorker".into())
+            .spawn(move || {
+                let worker = CleanerWorker::new(worker_tunables, rx);
+                worker.run();
+            })
+            .map_err(|e| {
+                QosError::SystemCheckFailed(format!("Failed to spawn cleaner thread: {}", e))
+            })?;
+        Ok(Self {
+            io_monitor: PsiMonitor::new(K_PSI_IO_PATH)?,
+            cpu_monitor: PsiMonitor::new(K_PSI_CPU_PATH)?,
+            thermal: ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0),
+            tunables,
+            last_sweep: Instant::now() - Duration::from_secs(86000),
+            dummy_fd: dummy,
+            tx,
+        })
+    }
+    fn is_storage_critical(&self) -> bool {
+        if let Ok(stats) = rustix::fs::statvfs("/data") {
+            let total = stats.f_blocks * stats.f_frsize;
+            let free = stats.f_bavail * stats.f_frsize;
+            if total > 0 {
+                let pct = (free as f32 / total as f32) * 100.0;
+                return pct < self.tunables.storage_critical_threshold;
+            }
+        }
+        false
+    }
+}
+
 impl EventHandler for CleanerController {
     fn as_raw_fd(&self) -> RawFd {
         self.dummy_fd.as_raw_fd()
@@ -292,11 +338,14 @@ impl EventHandler for CleanerController {
         {
             return Ok(LoopAction::Continue);
         }
-        let items = self.perform_cycle();
-        if items > 0 {
-            log::info!("Cleaner: Cycle complete. Removed {} items.", items);
+        match self.tx.send(()) {
+            Ok(_) => {
+                self.last_sweep = now;
+            }
+            Err(e) => {
+                log::error!("CleanerController: Failed to signal worker: {}", e);
+            }
         }
-        self.last_sweep = now;
         Ok(LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
