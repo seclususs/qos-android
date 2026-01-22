@@ -1,0 +1,143 @@
+//! Author: [Seclususs](https://github.com/seclususs)
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+static STORAGE_DEV: OnceLock<String> = OnceLock::new();
+static READ_AHEAD_PATH: OnceLock<PathBuf> = OnceLock::new();
+static NR_REQUESTS_PATH: OnceLock<PathBuf> = OnceLock::new();
+static DISKSTATS_PATH: OnceLock<PathBuf> = OnceLock::new();
+static CPU_ZONE_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+const THERMAL_PRIORITY_LIST: &[&str] = &[
+    "cpu-1-0-usr",
+    "cpu-1-1-usr",
+    "cpu-1-2-usr",
+    "cpu-1-3-usr",
+    "cpu-0-0-usr",
+    "cpu-0-1-usr",
+    "big-core",
+    "mid-core",
+    "little-core",
+    "cpu0_thermal",
+    "cpu1_thermal",
+    "mtktscpu",
+    "mtk_ts_cpu",
+    "mtkts_cpu",
+    "thermal-cpuss-0",
+    "thermal-cpuss-1",
+    "exynos_thermal",
+    "exynos_dev_thermal",
+    "hisi_thermal",
+    "mtktsAP",
+    "mtk_ts_ap",
+    "ap_cdev",
+    "ap_thermal",
+    "soc_thermal",
+    "soc-thermal",
+    "cpu_thermal",
+    "cpu-thermal",
+    "cpu",
+    "tsens_tz_sensor10",
+    "tsens_tz_sensor5",
+    "tsens_tz_sensor0",
+];
+
+const THERMAL_BLACKLIST: &[&str] = &[
+    "battery",
+    "bms",
+    "bat",
+    "charger",
+    "usb",
+    "pa_therm",
+    "pa-therm",
+    "modem",
+    "wifi",
+    "wlan",
+    "gpu",
+    "camera",
+    "flash",
+    "led",
+    "pmic",
+    "buck",
+    "ldo",
+    "xo_therm",
+    "quiet",
+    "backlight",
+];
+
+pub(crate) fn get_storage_name() -> &'static str {
+    STORAGE_DEV.get_or_init(detect_storage_device)
+}
+
+pub fn get_read_ahead_path() -> &'static Path {
+    READ_AHEAD_PATH.get_or_init(|| {
+        PathBuf::from(format!(
+            "/sys/block/{}/queue/read_ahead_kb",
+            get_storage_name()
+        ))
+    })
+}
+
+pub fn get_nr_requests_path() -> &'static Path {
+    NR_REQUESTS_PATH.get_or_init(|| {
+        PathBuf::from(format!(
+            "/sys/block/{}/queue/nr_requests",
+            get_storage_name()
+        ))
+    })
+}
+
+pub fn get_diskstats_path() -> &'static Path {
+    DISKSTATS_PATH.get_or_init(|| PathBuf::from(format!("/sys/block/{}/stat", get_storage_name())))
+}
+
+pub fn get_cpu_temp_path() -> &'static Path {
+    CPU_ZONE_PATH.get_or_init(detect_cpu_thermal_path)
+}
+
+fn detect_storage_device() -> String {
+    let candidates = ["nvme0n1", "sda", "sdb", "mmcblk0"];
+    for &dev in &candidates {
+        if Path::new("/sys/block").join(dev).exists() {
+            return dev.to_string();
+        }
+    }
+    "mmcblk0".to_string()
+}
+
+fn detect_cpu_thermal_path() -> PathBuf {
+    let base_dir = Path::new("/sys/class/thermal");
+    let mut found_zones: Vec<(String, String)> = Vec::with_capacity(30);
+    if let Ok(entries) = fs::read_dir(base_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+            if file_name.starts_with("thermal_zone")
+                && let Ok(content) = fs::read_to_string(path.join("type"))
+            {
+                found_zones.push((content.trim().to_string(), file_name.to_string()));
+            }
+        }
+    }
+    for target in THERMAL_PRIORITY_LIST {
+        for (scan_type, scan_filename) in &found_zones {
+            if scan_type.eq_ignore_ascii_case(target) {
+                return base_dir.join(scan_filename).join("temp");
+            }
+        }
+    }
+    for (scan_type, scan_filename) in &found_zones {
+        let name_lower = scan_type.to_lowercase();
+        let looks_like_cpu = name_lower.contains("cpu")
+            || name_lower.contains("soc")
+            || name_lower.contains("cluster")
+            || name_lower.contains("ap");
+        let is_safe = !THERMAL_BLACKLIST.iter().any(|&b| name_lower.contains(b));
+        if looks_like_cpu && is_safe {
+            return base_dir.join(scan_filename).join("temp");
+        }
+    }
+    base_dir.join("thermal_zone3").join("temp")
+}

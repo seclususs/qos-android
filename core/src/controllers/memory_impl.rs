@@ -56,7 +56,8 @@ impl MemoryController {
         }
         let psi_monitor = PsiMonitor::new(K_PSI_MEMORY_PATH)?;
         let mut vm_monitor = VmMonitor::new(K_VMSTAT_PATH)?;
-        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 45.0);
+        let cpu_path = get_cpu_temp_path();
+        let cpu_sensor = ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 45.0);
         let initial_vm_stats = vm_monitor.read_stats().unwrap_or(VmStats::default());
         let tunables = MemoryTunables {
             min_swappiness: MIN_SWAPPINESS as f32,

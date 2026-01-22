@@ -89,7 +89,8 @@ impl CpuController {
             ));
         }
         let psi_monitor = PsiMonitor::new(K_PSI_CPU_PATH)?;
-        let cpu_sensor = ThermalSensor::new(K_CPU_TEMP_PATH, 70.0);
+        let cpu_path = get_cpu_temp_path();
+        let cpu_sensor = ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
         let battery_sensor = ThermalSensor::new(K_BATTERY_TEMP_PATH, 35.0);
         let battery_capacity_sensor = BatterySensor::new(K_BATTERY_CAPACITY_PATH);
         let tunables = CpuTunables {

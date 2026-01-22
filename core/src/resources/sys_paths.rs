@@ -1,5 +1,9 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+pub use crate::resources::discovery::{
+    get_cpu_temp_path, get_diskstats_path, get_nr_requests_path, get_read_ahead_path,
+};
+
 pub const K_PSI_CPU_PATH: &str = "/proc/pressure/cpu";
 pub const K_PSI_MEMORY_PATH: &str = "/proc/pressure/memory";
 pub const K_PSI_IO_PATH: &str = "/proc/pressure/io";
@@ -14,13 +18,8 @@ pub const K_SCHED_UCLAMP_UTIL_MIN: &str = "/proc/sys/kernel/sched_uclamp_util_mi
 pub const K_SWAPPINESS_PATH: &str = "/proc/sys/vm/swappiness";
 pub const K_VFS_CACHE_PRESSURE_PATH: &str = "/proc/sys/vm/vfs_cache_pressure";
 
-pub const K_READ_AHEAD_PATH: &str = "/sys/block/mmcblk0/queue/read_ahead_kb";
-pub const K_NR_REQUESTS_PATH: &str = "/sys/block/mmcblk0/queue/nr_requests";
-
-pub const K_CPU_TEMP_PATH: &str = "/sys/class/thermal/thermal_zone3/temp";
 pub const K_BATTERY_TEMP_PATH: &str = "/sys/class/power_supply/battery/temp";
 pub const K_BATTERY_CAPACITY_PATH: &str = "/sys/class/power_supply/battery/capacity";
-pub const K_MMC_DISKSTATS_PATH: &str = "/sys/block/mmcblk0/stat";
 pub const K_VMSTAT_PATH: &str = "/proc/vmstat";
 
 pub const K_TOUCH_DEVICE_PATH: &str = "/dev/input/event3";
