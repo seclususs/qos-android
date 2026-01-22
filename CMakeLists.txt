@@ -1,145 +1,151 @@
 cmake_minimum_required(VERSION 3.21)
-project(QoS LANGUAGES CXX C)
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    include(CheckIPOSupported)
-    check_ipo_supported(RESULT result OUTPUT output)
-    if(result)
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-        message(STATUS ">> LTO (Link Time Optimization): ENABLED")
-    else()
-        message(WARNING ">> LTO not supported: ${output}")
-    endif()
+project(QoS
+    VERSION 1.0
+    LANGUAGES C CXX
+)
 
-    message(STATUS ">> Release Mode: Enabling optimizations...")
-    add_compile_options(-Oz -ffunction-sections -fdata-sections)
+# ==============================================================================
+# Global Configuration
+# ==============================================================================
 
-    add_compile_options(
-        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions> 
-        $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
-        -fno-unwind-tables
-        -fno-asynchronous-unwind-tables
-    )
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-    add_link_options(-Wl,--gc-sections -Wl,--icf=all -Wl,-s)
-    add_link_options(-Wl,--build-id=none)
-else()
-    message(STATUS ">> Debug Mode: LTO Disabled")
+# Default build type
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
+
+# Detect IPO / LTO support once
+include(CheckIPOSupported)
+check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_ERROR)
+
+# Root paths
+set(RUST_ROOT_DIR   "${CMAKE_SOURCE_DIR}/core")
+set(NATIVE_ROOT_DIR "${CMAKE_SOURCE_DIR}/native")
+set(RUST_TARGET_TRIPLE "aarch64-linux-android")
+
+# ==============================================================================
+# Rust Build
+# ==============================================================================
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
-set(RUST_TARGET "aarch64-linux-android")
-set(ANDROID_ABI "arm64-v8a")
-
-message(STATUS "NDK ABI: ${ANDROID_ABI}")
-message(STATUS "Rust Target: ${RUST_TARGET}")
-
-set(RUST_CRATE_PATH ${CMAKE_SOURCE_DIR}/core)
-set(RUST_WORKSPACE_TARGET_DIR ${CMAKE_SOURCE_DIR}/target)
-
+# Determine Rust build mode
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(RUST_BUILD_TYPE_DIR "debug")
-    set(CARGO_FLAGS "")
+    set(RUST_PROFILE "debug")
+    set(CARGO_ARGS "")
 else()
-    set(RUST_BUILD_TYPE_DIR "release")
-    set(CARGO_FLAGS "--release")
+    set(RUST_PROFILE "release")
+    set(CARGO_ARGS "--release")
 endif()
 
+message(STATUS ">> Rust profile: ${RUST_PROFILE}")
+
+# Track all Rust sources
+file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS
+    "${RUST_ROOT_DIR}/src/*.rs"
+    "${RUST_ROOT_DIR}/Cargo.toml"
+)
+
+# Rust library output
 set(RUST_LIB_NAME "qos_logic")
-set(RUST_LIB_DIR ${RUST_WORKSPACE_TARGET_DIR}/${RUST_TARGET}/${RUST_BUILD_TYPE_DIR})
-set(RUST_STATIC_LIB ${RUST_LIB_DIR}/lib${RUST_LIB_NAME}.a)
+set(RUST_STATIC_LIB
+    "${CMAKE_SOURCE_DIR}/target/${RUST_TARGET_TRIPLE}/${RUST_PROFILE}/lib${RUST_LIB_NAME}.a"
+)
 
+# Cargo build step
 add_custom_command(
-    OUTPUT ${RUST_STATIC_LIB}
-    COMMAND ${CARGO_EXECUTABLE} build ${CARGO_FLAGS} --target ${RUST_TARGET}
-    WORKING_DIRECTORY ${RUST_CRATE_PATH}
-    DEPENDS ${RUST_CRATE_PATH}/Cargo.toml
-            ${RUST_CRATE_PATH}/src/lib.rs
-            ${RUST_CRATE_PATH}/src/algorithms/mod.rs
-            ${RUST_CRATE_PATH}/src/algorithms/cpu_math.rs
-            ${RUST_CRATE_PATH}/src/algorithms/filter_math.rs
-            ${RUST_CRATE_PATH}/src/algorithms/memory_math.rs
-            ${RUST_CRATE_PATH}/src/algorithms/poll_math.rs
-            ${RUST_CRATE_PATH}/src/algorithms/storage_math.rs
-            ${RUST_CRATE_PATH}/src/algorithms/thermal_math.rs
-            ${RUST_CRATE_PATH}/src/bindings/mod.rs
-            ${RUST_CRATE_PATH}/src/bindings/api_entry.rs
-            ${RUST_CRATE_PATH}/src/bindings/sys.rs
-            ${RUST_CRATE_PATH}/src/config/mod.rs
-            ${RUST_CRATE_PATH}/src/config/loop_settings.rs
-            ${RUST_CRATE_PATH}/src/config/tunables.rs
-            ${RUST_CRATE_PATH}/src/controllers/mod.rs
-            ${RUST_CRATE_PATH}/src/controllers/cpu_impl.rs
-            ${RUST_CRATE_PATH}/src/controllers/memory_impl.rs
-            ${RUST_CRATE_PATH}/src/controllers/display_impl.rs
-            ${RUST_CRATE_PATH}/src/controllers/signal_impl.rs
-            ${RUST_CRATE_PATH}/src/controllers/storage_impl.rs
-            ${RUST_CRATE_PATH}/src/daemon/mod.rs
-            ${RUST_CRATE_PATH}/src/daemon/traits.rs
-            ${RUST_CRATE_PATH}/src/daemon/runtime.rs
-            ${RUST_CRATE_PATH}/src/daemon/logging.rs
-            ${RUST_CRATE_PATH}/src/daemon/state.rs
-            ${RUST_CRATE_PATH}/src/daemon/types.rs
-            ${RUST_CRATE_PATH}/src/hal/mod.rs
-            ${RUST_CRATE_PATH}/src/hal/battery.rs
-            ${RUST_CRATE_PATH}/src/hal/bridge.rs
-            ${RUST_CRATE_PATH}/src/hal/cached_file.rs
-            ${RUST_CRATE_PATH}/src/hal/filesystem.rs
-            ${RUST_CRATE_PATH}/src/hal/kernel.rs
-            ${RUST_CRATE_PATH}/src/hal/monitored_file.rs
-            ${RUST_CRATE_PATH}/src/hal/properties.rs
-            ${RUST_CRATE_PATH}/src/hal/surface_flinger.rs
-            ${RUST_CRATE_PATH}/src/hal/thermal.rs
-            ${RUST_CRATE_PATH}/src/monitors/mod.rs
-            ${RUST_CRATE_PATH}/src/monitors/disk_monitor.rs
-            ${RUST_CRATE_PATH}/src/monitors/psi_monitor.rs
-            ${RUST_CRATE_PATH}/src/monitors/vm_monitor.rs
-            ${RUST_CRATE_PATH}/src/registry/mod.rs
-            ${RUST_CRATE_PATH}/src/registry/boot_tweaks.rs
-            ${RUST_CRATE_PATH}/src/resources/mod.rs
-            ${RUST_CRATE_PATH}/src/resources/sys_paths.rs
-    COMMENT "Building Rust static library (${CMAKE_BUILD_TYPE}) for ${RUST_TARGET}..."
+    OUTPUT  "${RUST_STATIC_LIB}"
+    COMMAND "${CARGO_EXECUTABLE}" build ${CARGO_ARGS} --target ${RUST_TARGET_TRIPLE}
+    WORKING_DIRECTORY "${RUST_ROOT_DIR}"
+    DEPENDS ${RUST_SOURCES}
+    COMMENT "Building Rust crate '${RUST_LIB_NAME}' (${RUST_PROFILE})"
+    VERBATIM
 )
 
-add_custom_target(RustLib DEPENDS ${RUST_STATIC_LIB})
+add_custom_target(rust_build ALL DEPENDS "${RUST_STATIC_LIB}")
 
-set(NATIVE_DIR ${CMAKE_SOURCE_DIR}/native)
-set(NATIVE_INCLUDE_DIR ${NATIVE_DIR}/include)
-set(NATIVE_SRC_DIR ${NATIVE_DIR}/src)
+# Imported Rust library
+add_library(rust_static_lib STATIC IMPORTED GLOBAL)
+set_target_properties(rust_static_lib PROPERTIES
+    IMPORTED_LOCATION "${RUST_STATIC_LIB}"
+)
+add_dependencies(rust_static_lib rust_build)
 
-file(GLOB_RECURSE ALL_CPP_SOURCES CONFIGURE_DEPENDS "${NATIVE_SRC_DIR}/*.cpp")
-file(GLOB_RECURSE CPP_HEADERS CONFIGURE_DEPENDS "${NATIVE_INCLUDE_DIR}/*.h")
+# ==============================================================================
+# C++ Library
+# ==============================================================================
 
-set(LIB_CPP_SOURCES ${ALL_CPP_SOURCES})
-list(REMOVE_ITEM LIB_CPP_SOURCES "${NATIVE_SRC_DIR}/main.cpp")
-
-add_library(qos_native
-    STATIC
-    ${LIB_CPP_SOURCES}
-    ${CPP_HEADERS}
+file(GLOB_RECURSE NATIVE_SOURCES CONFIGURE_DEPENDS
+    "${NATIVE_ROOT_DIR}/src/*.cpp"
+)
+file(GLOB_RECURSE NATIVE_HEADERS CONFIGURE_DEPENDS
+    "${NATIVE_ROOT_DIR}/include/*.h"
 )
 
-set_target_properties(qos_native PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON
+list(REMOVE_ITEM NATIVE_SOURCES
+    "${NATIVE_ROOT_DIR}/src/main.cpp"
 )
 
-target_include_directories(qos_native PUBLIC ${NATIVE_INCLUDE_DIR})
+add_library(qos_native STATIC
+    ${NATIVE_SOURCES}
+    ${NATIVE_HEADERS}
+)
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_definitions(qos_native PUBLIC DEBUG)
+target_include_directories(qos_native
+    PUBLIC "${NATIVE_ROOT_DIR}/include"
+)
+
+# Release-only optimizations
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_options(qos_native PRIVATE
+        -Oz
+        -ffunction-sections
+        -fdata-sections
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+        -fno-unwind-tables
+        -fno-asynchronous-unwind-tables
+        -fvisibility=hidden
+        -fvisibility-inlines-hidden
+    )
+
+    if(LTO_SUPPORTED)
+        set_property(TARGET qos_native PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+        message(STATUS ">> LTO enabled for qos_native")
+    endif()
+else()
+    target_compile_definitions(qos_native PRIVATE DEBUG)
 endif()
+
+# ==============================================================================
+# Daemon Executable
+# ==============================================================================
 
 add_executable(qos_daemon
-    ${NATIVE_SRC_DIR}/main.cpp
+    "${NATIVE_ROOT_DIR}/src/main.cpp"
 )
 
-add_dependencies(qos_daemon RustLib)
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_link_options(qos_daemon PRIVATE
+        -Wl,--gc-sections
+        -Wl,--icf=all
+        -Wl,-s
+        -Wl,--build-id=none
+    )
+
+    if(LTO_SUPPORTED)
+        set_property(TARGET qos_daemon PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+endif()
 
 target_link_libraries(qos_daemon
+    PRIVATE
     qos_native
-    ${RUST_STATIC_LIB}
+    rust_static_lib
     android
     log
     c
