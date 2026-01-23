@@ -15,7 +15,7 @@ impl SignalController {
     /// of this FD and close it when dropped.
     pub unsafe fn new(fd: os::fd::RawFd) -> Self {
         Self {
-            // UFCS: Menggunakan FromRawFd dari modul os::fd
+            // Safety: Inherits the safety requirements of FromRawFd::from_raw_fd
             file: unsafe { os::fd::FromRawFd::from_raw_fd(fd) },
         }
     }
