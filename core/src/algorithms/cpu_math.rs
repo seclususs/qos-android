@@ -125,6 +125,26 @@ pub struct DemandInput {
     pub is_structural_break: bool,
 }
 
+#[inline(always)]
+fn sigmoid_param(val: f32, k: f32, mid: f32) -> f32 {
+    let x = k * (val - mid);
+    0.5 * (x / (1.0 + x.abs()) + 1.0)
+}
+
+#[inline(always)]
+fn decay(val: f32, coeff: f32) -> f32 {
+    let x = coeff * val;
+    if x < 0.0 {
+        return 1.0;
+    }
+    1.0 / (1.0 + x + 0.5 * x * x)
+}
+
+#[inline(always)]
+fn tanh(x: f32) -> f32 {
+    x / (1.0 + x * x).sqrt()
+}
+
 pub fn sanitize_dt(secs: f32) -> f32 {
     secs.clamp(0.000001, 0.1)
 }
@@ -263,7 +283,7 @@ pub fn calculate_trend_gain(
     math_config: &CpuMathConfig,
 ) -> f32 {
     let delta = avg10 - avg60;
-    let base_gain = if delta > 0.0 { delta.tanh() } else { 0.0 };
+    let base_gain = if delta > 0.0 { tanh(delta) } else { 0.0 };
     let memory_penalty = (memory_psi / 100.0) * math_config.memory_volatility_cost;
     base_gain / (1.0 + memory_penalty)
 }
@@ -295,9 +315,10 @@ pub fn calculate_latency_and_granularity(
     math_config: &CpuMathConfig,
     kernel_limits: &CpuKernelLimits,
 ) -> (f32, f32) {
-    let denom = 1.0 + (math_config.sigmoid_k * (p_eff - math_config.sigmoid_mid)).exp();
+    let sigmoid_val = sigmoid_param(p_eff, math_config.sigmoid_k, math_config.sigmoid_mid);
+    let factor = 1.0 - sigmoid_val;
     let normal_latency = kernel_limits.min_latency_ns
-        + ((kernel_limits.max_latency_ns - kernel_limits.min_latency_ns) / denom);
+        + ((kernel_limits.max_latency_ns - kernel_limits.min_latency_ns) * factor);
     let latency_range = kernel_limits.max_latency_ns - kernel_limits.min_latency_ns;
     let effective_demand = (load_demand / 100.0).clamp(0.0, 1.0);
     let low_latency_target = kernel_limits.max_latency_ns - (effective_demand * latency_range);
@@ -321,7 +342,7 @@ pub fn calculate_wakeup_granularity(
     math_config: &CpuMathConfig,
     kernel_limits: &CpuKernelLimits,
 ) -> f32 {
-    let decay = (-math_config.decay_coeff * p_eff).exp();
+    let decay = decay(p_eff, math_config.decay_coeff);
     let raw_wake = kernel_limits.min_wakeup_ns
         + (kernel_limits.max_wakeup_ns - kernel_limits.min_wakeup_ns) * decay;
     raw_wake.clamp(kernel_limits.min_wakeup_ns, kernel_limits.max_wakeup_ns)
@@ -363,9 +384,8 @@ pub fn calculate_uclamp_min(
     math_config: &CpuMathConfig,
     kernel_limits: &CpuKernelLimits,
 ) -> f32 {
-    let exponent = -math_config.uclamp_k * (pressure - math_config.uclamp_mid);
-    let denominator = 1.0 + exponent.exp();
+    let sigmoid_val = sigmoid_param(pressure, math_config.uclamp_k, math_config.uclamp_mid);
     let range = kernel_limits.max_uclamp_min - kernel_limits.min_uclamp_min;
-    let ideal_uclamp = kernel_limits.min_uclamp_min + (range / denominator);
+    let ideal_uclamp = kernel_limits.min_uclamp_min + (range * sigmoid_val);
     (ideal_uclamp * thermal_scale).clamp(kernel_limits.min_uclamp_min, kernel_limits.max_uclamp_min)
 }
