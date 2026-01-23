@@ -1,8 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::fs;
-use std::path;
-use std::sync;
+use std::{collections, fs, path, sync};
 
 static STORAGE_DEV: sync::OnceLock<String> = sync::OnceLock::new();
 static READ_AHEAD_PATH: sync::OnceLock<path::PathBuf> = sync::OnceLock::new();
@@ -110,7 +108,7 @@ fn detect_storage_device() -> String {
 
 fn detect_cpu_thermal_path() -> path::PathBuf {
     let base_dir = path::Path::new("/sys/class/thermal");
-    let mut found_zones: Vec<(String, String)> = Vec::with_capacity(30);
+    let mut zones_map: collections::HashMap<String, String> = collections::HashMap::new();
     if let Ok(entries) = fs::read_dir(base_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -118,26 +116,31 @@ fn detect_cpu_thermal_path() -> path::PathBuf {
             if file_name.starts_with("thermal_zone")
                 && let Ok(content) = fs::read_to_string(path.join("type"))
             {
-                found_zones.push((content.trim().to_string(), file_name.to_string()));
+                let type_name = content.trim().to_string();
+                zones_map.insert(type_name, file_name.to_string());
             }
         }
     }
-    for target in THERMAL_PRIORITY_LIST {
-        for (scan_type, scan_filename) in &found_zones {
-            if scan_type.eq_ignore_ascii_case(target) {
-                return base_dir.join(scan_filename).join("temp");
-            }
+    for &target in THERMAL_PRIORITY_LIST {
+        if let Some(filename) = zones_map.get(target) {
+            return base_dir.join(filename).join("temp");
+        }
+        if let Some((_, filename)) = zones_map
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(target))
+        {
+            return base_dir.join(filename).join("temp");
         }
     }
-    for (scan_type, scan_filename) in &found_zones {
-        let name_lower = scan_type.to_lowercase();
+    for (type_name, filename) in &zones_map {
+        let name_lower = type_name.to_lowercase();
         let looks_like_cpu = name_lower.contains("cpu")
             || name_lower.contains("soc")
             || name_lower.contains("cluster")
             || name_lower.contains("ap");
         let is_safe = !THERMAL_BLACKLIST.iter().any(|&b| name_lower.contains(b));
         if looks_like_cpu && is_safe {
-            return base_dir.join(scan_filename).join("temp");
+            return base_dir.join(filename).join("temp");
         }
     }
     base_dir.join("thermal_zone3").join("temp")
