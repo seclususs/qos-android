@@ -114,6 +114,7 @@ fn epoll_mod(
     let res = match op {
         libc::EPOLL_CTL_ADD => event::epoll::add(epoll_fd, target_fd, event_data, events),
         libc::EPOLL_CTL_DEL => event::epoll::delete(epoll_fd, target_fd),
+        libc::EPOLL_CTL_MOD => event::epoll::modify(epoll_fd, target_fd, event_data, events),
         _ => return false,
     };
     if let Err(e) = res {
@@ -293,6 +294,16 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), types
             {
                 match handler.on_event(&mut context) {
                     Ok(traits::LoopAction::Continue) => {}
+                    Ok(traits::LoopAction::ReArm) => {
+                        let flags = handler.get_poll_flags();
+                        epoll_mod(
+                            os::fd::AsRawFd::as_raw_fd(&epoll_fd),
+                            traits::EventHandler::as_raw_fd(handler.as_ref()),
+                            id as u64,
+                            libc::EPOLL_CTL_MOD,
+                            flags,
+                        );
+                    }
                     Err(e) => {
                         log::error!("Service '{}' event error: {}", service.name, e);
                         service
@@ -322,6 +333,16 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), types
                         service.last_tick = now_after_wait;
                         match handler.on_timeout(&mut context) {
                             Ok(traits::LoopAction::Continue) => {}
+                            Ok(traits::LoopAction::ReArm) => {
+                                let flags = handler.get_poll_flags();
+                                epoll_mod(
+                                    os::fd::AsRawFd::as_raw_fd(&epoll_fd),
+                                    traits::EventHandler::as_raw_fd(handler.as_ref()),
+                                    i as u64,
+                                    libc::EPOLL_CTL_MOD,
+                                    flags,
+                                );
+                            }
                             Err(e) => {
                                 log::error!("Service '{}' timeout error: {}", service.name, e);
                                 service.unregister_if_active(

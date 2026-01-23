@@ -7,6 +7,7 @@ use std::os;
 #[derive(Debug, PartialEq)]
 pub enum LoopAction {
     Continue,
+    ReArm,
 }
 
 pub trait EventHandler {

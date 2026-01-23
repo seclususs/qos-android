@@ -150,10 +150,11 @@ impl traits::EventHandler for DisplayController {
             .as_millis() as i32;
         if elapsed >= self.tunables.touch_idle_timeout_ms {
             self.transition_to(DisplayState::Idle);
+            Ok(traits::LoopAction::ReArm)
         } else {
             self.next_wake_ms = self.tunables.touch_idle_timeout_ms - elapsed;
+            Ok(traits::LoopAction::Continue)
         }
-        Ok(traits::LoopAction::Continue)
     }
     fn get_timeout_ms(&self) -> i32 {
         match self.state {
@@ -162,6 +163,8 @@ impl traits::EventHandler for DisplayController {
         }
     }
     fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
-        rustix::event::epoll::EventFlags::IN | rustix::event::epoll::EventFlags::ERR
+        rustix::event::epoll::EventFlags::IN
+            | rustix::event::epoll::EventFlags::ERR
+            | rustix::event::epoll::EventFlags::ONESHOT
     }
 }
