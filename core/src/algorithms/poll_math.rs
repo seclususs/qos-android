@@ -18,13 +18,13 @@ pub struct PollerConfig {
 impl Default for PollerConfig {
     fn default() -> Self {
         Self {
-            sleep_tolerance_ms: 500,
-            min_effective_dt_ms: 500,
-            quantization_step_ms: 100,
-            hysteresis_threshold_ms: 500,
+            sleep_tolerance_ms: 200,
+            min_effective_dt_ms: 50,
+            quantization_step_ms: 50,
+            hysteresis_threshold_ms: 150,
             noise_percent: 5,
-            rise_factor: 1.0,
-            fall_factor: 0.2,
+            rise_factor: 0.1,
+            fall_factor: 0.8,
         }
     }
 }
@@ -88,20 +88,21 @@ impl AdaptivePoller {
         let effective_dt_ms = elapsed_ms.max(self.tunables.min_effective_dt_ms);
         let dt_sec = effective_dt_ms as f32 / 1000.0;
         let rate_change = (current_pressure - self.last_pressure) / dt_sec;
-        let prediction = current_pressure + (rate_change * self.tunables.rise_factor);
+        let prediction = current_pressure + (rate_change * 0.5);
         let p_term = prediction * self.weight_pressure;
         let d_term = rate_change.abs() * self.weight_derivative;
         let priority_score = (p_term + d_term).clamp(0.0, 100.0);
         let raw_interval =
             dynamic_max as f32 - ((priority_score / 100.0) * (dynamic_max - dynamic_min) as f32);
-        let target = if raw_interval < self.target_interval as f32 {
-            raw_interval
+        let target_f32 = self.target_interval as f32;
+        let next_target = if raw_interval < target_f32 {
+            let alpha = self.tunables.fall_factor;
+            (alpha * raw_interval) + ((1.0 - alpha) * target_f32)
         } else {
-            (raw_interval * self.tunables.fall_factor)
-                + (self.target_interval as f32
-                    * (self.tunables.rise_factor - self.tunables.fall_factor))
+            let alpha = self.tunables.rise_factor;
+            (alpha * raw_interval) + ((1.0 - alpha) * target_f32)
         };
-        self.target_interval = target as u64;
+        self.target_interval = next_target as u64;
         let diff = (self.target_interval as i64 - self.current_interval as i64).abs();
         self.last_pressure = current_pressure;
         self.last_tick = now;
@@ -116,11 +117,14 @@ impl AdaptivePoller {
         let quantized = ((interval as f32 / step).round() * step) as u64;
         let clamped = quantized.clamp(min_limit, max_limit);
         let noise_amplitude = (clamped * self.tunables.noise_percent) / 100;
-        let noise = self.next_random(noise_amplitude);
-        let final_val = if noise > noise_amplitude {
-            clamped + (noise - noise_amplitude)
+        if noise_amplitude == 0 {
+            return clamped;
+        }
+        let noise_val = self.next_random(noise_amplitude);
+        let final_val = if noise_val > noise_amplitude {
+            clamped + (noise_val - noise_amplitude)
         } else {
-            clamped.saturating_sub(noise_amplitude - noise)
+            clamped.saturating_sub(noise_amplitude - noise_val)
         };
         final_val.clamp(min_limit, max_limit)
     }
