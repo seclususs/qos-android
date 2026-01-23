@@ -6,14 +6,12 @@ pub static SHUTDOWN_REQUESTED: sync::atomic::AtomicBool = sync::atomic::AtomicBo
 pub static CLEANER_SERVICE_ENABLED: sync::atomic::AtomicBool = sync::atomic::AtomicBool::new(true);
 pub static CPU_SERVICE_ENABLED: sync::atomic::AtomicBool = sync::atomic::AtomicBool::new(true);
 pub static DISPLAY_SERVICE_ENABLED: sync::atomic::AtomicBool = sync::atomic::AtomicBool::new(true);
-pub static MEMORY_SERVICE_ENABLED: sync::atomic::AtomicBool = sync::atomic::AtomicBool::new(true);
 pub static STORAGE_SERVICE_ENABLED: sync::atomic::AtomicBool = sync::atomic::AtomicBool::new(true);
 pub static TWEAKS_ENABLED: sync::atomic::AtomicBool = sync::atomic::AtomicBool::new(true);
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GlobalPressure {
     pub cpu_psi: f32,
-    pub memory_psi: f32,
     pub io_psi: f32,
     pub io_saturation: f32,
 }

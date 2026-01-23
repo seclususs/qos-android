@@ -36,25 +36,6 @@ impl Default for CpuKernelLimitsConfig {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MemoryKernelLimitsConfig {
-    pub min_swappiness: u64,
-    pub max_swappiness: u64,
-    pub min_vfs: u64,
-    pub max_vfs: u64,
-}
-
-impl Default for MemoryKernelLimitsConfig {
-    fn default() -> Self {
-        Self {
-            min_swappiness: 20,
-            max_swappiness: 60,
-            min_vfs: 80,
-            max_vfs: 200,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct StorageKernelLimitsConfig {
     pub max_read_ahead: u64,
     pub min_read_ahead: u64,
@@ -76,6 +57,5 @@ impl Default for StorageKernelLimitsConfig {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GlobalConfig {
     pub cpu_config: CpuKernelLimitsConfig,
-    pub memory_config: MemoryKernelLimitsConfig,
     pub storage_config: StorageKernelLimitsConfig,
 }

@@ -1,8 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::controllers::{
-    cleaner_impl, cpu_impl, display_impl, memory_impl, signal_impl, storage_impl,
-};
+use crate::controllers::{cleaner_impl, cpu_impl, display_impl, signal_impl, storage_impl};
 use crate::daemon::{logging, runtime, state};
 use crate::hal::bridge;
 
@@ -23,11 +21,6 @@ pub extern "C" fn rust_set_cpu_service_enabled(enabled: bool) {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_display_service_enabled(enabled: bool) {
     state::DISPLAY_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_set_memory_service_enabled(enabled: bool) {
-    state::MEMORY_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
@@ -108,11 +101,6 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                         signal_impl::SignalController::new(signal_fd)
                     }))
                 }));
-                if state::MEMORY_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
-                    services.push(runtime::RecoverableService::new("Memory", || {
-                        Ok(Box::new(memory_impl::MemoryController::new()?))
-                    }));
-                }
                 if state::STORAGE_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     services.push(runtime::RecoverableService::new("Storage", || {
                         Ok(Box::new(storage_impl::StorageController::new()?))
