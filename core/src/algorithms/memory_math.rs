@@ -4,12 +4,16 @@ use crate::monitors::vm_monitor;
 
 const QUEUE_HISTORY_CAP: usize = 32;
 
-#[derive(Debug, Clone, Copy)]
-pub struct MemoryTunables {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MemoryKernelLimits {
     pub min_swappiness: f32,
     pub max_swappiness: f32,
     pub min_vfs: f32,
     pub max_vfs: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryMathConfig {
     pub pressure_kp: f32,
     pub pressure_kd: f32,
     pub inefficiency_cost: f32,
@@ -25,7 +29,27 @@ pub struct MemoryTunables {
     pub congestion_scaling_factor: f32,
 }
 
-#[derive(Default)]
+impl Default for MemoryMathConfig {
+    fn default() -> Self {
+        Self {
+            pressure_kp: 0.8,
+            pressure_kd: 0.2,
+            inefficiency_cost: 25.0,
+            pressure_vfs_k: 0.10,
+            fragmentation_impact_k: 2.0,
+            wss_cost_factor: 3.0,
+            zram_thermal_cost: 1.5,
+            general_smooth_factor: 0.20,
+            queue_history_size: 16,
+            queue_smoothing_alpha: 0.2,
+            residence_time_threshold: 30.0,
+            protection_curve_k: 3.0,
+            congestion_scaling_factor: 2.5,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct ActivityState {
     pub efficiency: f32,
     pub refault_index: f32,
@@ -48,6 +72,16 @@ impl Default for QueueState {
             smoothed_rate: 0.0,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SwappinessInput<'a> {
+    pub p_mem: f32,
+    pub dp_dt: f32,
+    pub activity: &'a ActivityState,
+    pub cpu_temp: f32,
+    pub io_sat: f32,
+    pub queue_correction: f32,
 }
 
 pub fn calculate_active_set(stats: &vm_monitor::VmStats) -> f32 {
@@ -105,17 +139,17 @@ pub fn update_congestion_model(
     state: &mut QueueState,
     active_set: f32,
     rate_raw: f32,
-    tunables: &MemoryTunables,
+    math_config: &MemoryMathConfig,
 ) -> f32 {
     if state.smoothed_rate == 0.0 {
         state.smoothed_rate = rate_raw;
     } else {
-        state.smoothed_rate = tunables.queue_smoothing_alpha * rate_raw
-            + (1.0 - tunables.queue_smoothing_alpha) * state.smoothed_rate;
+        state.smoothed_rate = math_config.queue_smoothing_alpha * rate_raw
+            + (1.0 - math_config.queue_smoothing_alpha) * state.smoothed_rate;
     }
     let safe_rate = state.smoothed_rate.max(1.0);
     let residence_time = active_set / safe_rate;
-    let history_limit = tunables.queue_history_size.min(QUEUE_HISTORY_CAP);
+    let history_limit = math_config.queue_history_size.min(QUEUE_HISTORY_CAP);
     state.rate_history[state.head] = rate_raw;
     state.head = (state.head + 1) % history_limit;
     if state.count < history_limit {
@@ -135,50 +169,50 @@ pub fn update_congestion_model(
         }
         let std_dev = (variance_sum / n).sqrt();
         let cv = if mean > 0.0 { std_dev / mean } else { 0.0 };
-        1.0 + (cv * tunables.congestion_scaling_factor)
+        1.0 + (cv * math_config.congestion_scaling_factor)
     } else {
         1.0
     };
-    let thrash_threshold = tunables.residence_time_threshold;
+    let thrash_threshold = math_config.residence_time_threshold;
     let risk_ratio = if residence_time > 0.0 {
         thrash_threshold / residence_time
     } else {
         100.0
     };
-    let protection_factor = 1.0 / (1.0 + risk_ratio.powf(tunables.protection_curve_k));
+    let protection_factor = 1.0 / (1.0 + risk_ratio.powf(math_config.protection_curve_k));
     let final_correction_factor = protection_factor / variability_factor;
     final_correction_factor.clamp(0.0, 1.5)
 }
 
 pub fn calculate_swappiness(
-    p_mem: f32,
-    dp_dt: f32,
-    activity: &ActivityState,
-    cpu_temp: f32,
-    io_sat: f32,
-    queue_correction: f32,
-    tunables: &MemoryTunables,
+    input: SwappinessInput,
+    math_config: &MemoryMathConfig,
+    kernel_limits: &MemoryKernelLimits,
 ) -> f32 {
-    let base_swap = tunables.min_swappiness;
-    let p_term = tunables.pressure_kp * p_mem;
-    let d_term = tunables.pressure_kd * dp_dt;
-    let inefficiency = tunables.inefficiency_cost * (1.0 - activity.efficiency);
+    let base_swap = kernel_limits.min_swappiness;
+    let p_term = math_config.pressure_kp * input.p_mem;
+    let d_term = math_config.pressure_kd * input.dp_dt;
+    let inefficiency = math_config.inefficiency_cost * (1.0 - input.activity.efficiency);
     let target_swap_raw = base_swap + p_term + d_term + inefficiency;
-    let target_swap_corrected = (target_swap_raw - base_swap) * queue_correction + base_swap;
-    let thermal_stress = (cpu_temp - 50.0).max(0.0) / 20.0;
-    let thermal_throttle = (1.0 - (thermal_stress * tunables.zram_thermal_cost)).clamp(0.0, 1.0);
-    let io_throttle = (1.0 - (io_sat * 0.6)).clamp(0.2, 1.0);
+    let target_swap_corrected = (target_swap_raw - base_swap) * input.queue_correction + base_swap;
+    let thermal_stress = (input.cpu_temp - 50.0).max(0.0) / 20.0;
+    let thermal_throttle = (1.0 - (thermal_stress * math_config.zram_thermal_cost)).clamp(0.0, 1.0);
+    let io_throttle = (1.0 - (input.io_sat * 0.6)).clamp(0.2, 1.0);
     let mut final_swap = target_swap_corrected * thermal_throttle * io_throttle;
-    let thrashing_cost = (activity.refault_index * tunables.wss_cost_factor).powi(2);
+    let thrashing_cost = (input.activity.refault_index * math_config.wss_cost_factor).powi(2);
     let wss_preservation = (1.0 - thrashing_cost).clamp(0.0, 1.0);
     final_swap *= wss_preservation;
-    final_swap.clamp(tunables.min_swappiness, tunables.max_swappiness)
+    final_swap.clamp(kernel_limits.min_swappiness, kernel_limits.max_swappiness)
 }
 
-pub fn calculate_vfs_pressure(p_mem: f32, tunables: &MemoryTunables) -> f32 {
-    let range = tunables.max_vfs - tunables.min_vfs;
-    let decay = (-tunables.pressure_vfs_k * p_mem).exp();
+pub fn calculate_vfs_pressure(
+    p_mem: f32,
+    math_config: &MemoryMathConfig,
+    kernel_limits: &MemoryKernelLimits,
+) -> f32 {
+    let range = kernel_limits.max_vfs - kernel_limits.min_vfs;
+    let decay = (-math_config.pressure_vfs_k * p_mem).exp();
     let inverse_decay = 1.0 - decay;
-    let vfs = tunables.min_vfs + (range * inverse_decay);
-    vfs.clamp(tunables.min_vfs, tunables.max_vfs)
+    let vfs = kernel_limits.min_vfs + (range * inverse_decay);
+    vfs.clamp(kernel_limits.min_vfs, kernel_limits.max_vfs)
 }

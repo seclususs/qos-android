@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::{memory_math, poll_math};
-use crate::config::{loop_settings, tunables};
+use crate::config::{kernel_limits, loop_settings};
 use crate::daemon::{state, traits, types};
 use crate::hal::{cached_file, filesystem, kernel, thermal};
 use crate::monitors::{psi_monitor, vm_monitor};
@@ -18,19 +18,27 @@ pub struct MemoryController {
     cpu_sensor: thermal::ThermalSensor,
     prev_vm_stats: vm_monitor::VmStats,
     prev_psi_mem: f32,
+    queue_state: memory_math::QueueState,
+    memory_math_config: memory_math::MemoryMathConfig,
+    memory_kernel_limits: memory_math::MemoryKernelLimits,
     last_tick: time::Instant,
     current_swappiness: f32,
     current_vfs: f32,
-    tunables: memory_math::MemoryTunables,
     poller: poll_math::AdaptivePoller,
-    queue_state: memory_math::QueueState,
     next_wake_ms: i32,
 }
 
 impl MemoryController {
     pub fn new() -> Result<Self, types::QosError> {
         log::info!("MemoryController: Initializing...");
-        let config = tunables::GlobalConfig::default();
+        let config_limits = kernel_limits::GlobalConfig::default().memory_config;
+        let memory_math_config = memory_math::MemoryMathConfig::default();
+        let memory_kernel_limits = memory_math::MemoryKernelLimits {
+            min_swappiness: config_limits.min_swappiness as f32,
+            max_swappiness: config_limits.max_swappiness as f32,
+            min_vfs: config_limits.min_vfs as f32,
+            max_vfs: config_limits.max_vfs as f32,
+        };
         let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_MEMORY_PATH, 150000, 1000000)
             .map_err(|e| types::QosError::FfiError(format!("Memory PSI Error: {}", e)))?;
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
@@ -54,25 +62,6 @@ impl MemoryController {
         let initial_vm_stats = vm_monitor
             .read_stats()
             .unwrap_or(vm_monitor::VmStats::default());
-        let tunables = memory_math::MemoryTunables {
-            min_swappiness: config.memory.min_swappiness as f32,
-            max_swappiness: config.memory.max_swappiness as f32,
-            min_vfs: config.memory.min_vfs as f32,
-            max_vfs: config.memory.max_vfs as f32,
-            pressure_kp: config.memory.pressure_kp,
-            pressure_kd: config.memory.pressure_kd,
-            inefficiency_cost: config.memory.inefficiency_cost,
-            pressure_vfs_k: config.memory.pressure_vfs_k,
-            fragmentation_impact_k: config.memory.fragmentation_impact_k,
-            wss_cost_factor: config.memory.wss_cost_factor,
-            zram_thermal_cost: config.memory.zram_thermal_cost,
-            general_smooth_factor: config.memory.general_smooth_factor,
-            queue_history_size: config.memory.queue_history_size,
-            queue_smoothing_alpha: config.memory.queue_smoothing_alpha,
-            residence_time_threshold: config.memory.residence_time_threshold,
-            protection_curve_k: config.memory.protection_curve_k,
-            congestion_scaling_factor: config.memory.congestion_scaling_factor,
-        };
         let poller = poll_math::AdaptivePoller::new(1.5, 0.5, poll_math::PollerConfig::default());
         let mut controller = Self {
             fd,
@@ -83,12 +72,13 @@ impl MemoryController {
             cpu_sensor,
             prev_vm_stats: initial_vm_stats,
             prev_psi_mem: 0.0,
-            last_tick: time::Instant::now(),
-            current_swappiness: config.memory.min_swappiness as f32,
-            current_vfs: config.memory.min_vfs as f32,
-            tunables,
-            poller,
             queue_state: memory_math::QueueState::default(),
+            memory_math_config,
+            memory_kernel_limits,
+            last_tick: time::Instant::now(),
+            current_swappiness: config_limits.min_swappiness as f32,
+            current_vfs: config_limits.min_vfs as f32,
+            poller,
             next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
         };
         controller.apply_values(true);
@@ -118,30 +108,37 @@ impl MemoryController {
             &mut self.queue_state,
             active_set,
             activity_delta.scan_rate,
-            &self.tunables,
+            &self.memory_math_config,
         );
         self.next_wake_ms =
             self.poller
                 .calculate_next_interval(p_mem, psi_data.some.avg300) as i32;
         let target_swap = memory_math::calculate_swappiness(
-            p_mem,
-            dp_dt,
-            &activity_delta,
-            cpu_temp,
-            io_sat,
-            queue_correction_factor,
-            &self.tunables,
+            memory_math::SwappinessInput {
+                p_mem,
+                dp_dt,
+                activity: &activity_delta,
+                cpu_temp,
+                io_sat,
+                queue_correction: queue_correction_factor,
+            },
+            &self.memory_math_config,
+            &self.memory_kernel_limits,
         );
-        let target_vfs = memory_math::calculate_vfs_pressure(p_mem, &self.tunables);
+        let target_vfs = memory_math::calculate_vfs_pressure(
+            p_mem,
+            &self.memory_math_config,
+            &self.memory_kernel_limits,
+        );
         self.current_swappiness = memory_math::smooth_value(
             self.current_swappiness,
             target_swap,
-            self.tunables.general_smooth_factor,
+            self.memory_math_config.general_smooth_factor,
         );
         self.current_vfs = memory_math::smooth_value(
             self.current_vfs,
             target_vfs,
-            self.tunables.general_smooth_factor,
+            self.memory_math_config.general_smooth_factor,
         );
         self.apply_values(false);
         Ok(())
@@ -149,10 +146,12 @@ impl MemoryController {
     fn apply_values(&mut self, force: bool) {
         let swap_u64 = crate::algorithms::sanitize_to_u64(
             self.current_swappiness,
-            self.tunables.min_swappiness as u64,
+            self.memory_kernel_limits.min_swappiness as u64,
         );
-        let vfs_u64 =
-            crate::algorithms::sanitize_to_u64(self.current_vfs, self.tunables.min_vfs as u64);
+        let vfs_u64 = crate::algorithms::sanitize_to_u64(
+            self.current_vfs,
+            self.memory_kernel_limits.min_vfs as u64,
+        );
         self.swap
             .update(swap_u64, force, cached_file::CheckStrategy::Absolute(5));
         self.vfs

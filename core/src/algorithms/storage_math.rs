@@ -2,12 +2,16 @@
 
 use crate::monitors::disk_monitor;
 
-#[derive(Debug, Clone, Copy)]
-pub struct StorageTunables {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StorageKernelLimits {
     pub min_read_ahead: f32,
     pub max_read_ahead: f32,
     pub min_nr_requests: f32,
     pub max_nr_requests: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StorageMathConfig {
     pub min_req_size_kb: f32,
     pub max_req_size_kb: f32,
     pub write_cost_factor: f32,
@@ -17,6 +21,22 @@ pub struct StorageTunables {
     pub queue_pressure_low: f32,
     pub queue_pressure_high: f32,
     pub smoothing_factor: f32,
+}
+
+impl Default for StorageMathConfig {
+    fn default() -> Self {
+        Self {
+            min_req_size_kb: 32.0,
+            max_req_size_kb: 256.0,
+            write_cost_factor: 5.0,
+            target_latency_base_ms: 75.0,
+            hysteresis_threshold: 0.15,
+            critical_threshold_psi: 40.0,
+            queue_pressure_low: 1.0,
+            queue_pressure_high: 4.0,
+            smoothing_factor: 0.25,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -41,20 +61,25 @@ impl Default for WorkloadState {
     }
 }
 
-pub fn is_congestion_critical(psi_avg10: f32, in_flight: f32, tunables: &StorageTunables) -> bool {
-    psi_avg10 > tunables.critical_threshold_psi || in_flight > tunables.queue_pressure_high
+pub fn is_congestion_critical(
+    psi_avg10: f32,
+    in_flight: f32,
+    math_config: &StorageMathConfig,
+) -> bool {
+    psi_avg10 > math_config.critical_threshold_psi || in_flight > math_config.queue_pressure_high
 }
 
 pub fn should_update_nr_requests(
     calculated: f32,
     current: f32,
-    tunables: &StorageTunables,
+    math_config: &StorageMathConfig,
+    kernel_limits: &StorageKernelLimits,
 ) -> bool {
     let diff = (calculated - current).abs();
     let error_ratio = diff / current;
-    error_ratio > tunables.hysteresis_threshold
-        || calculated <= tunables.min_nr_requests
-        || calculated >= tunables.max_nr_requests
+    error_ratio > math_config.hysteresis_threshold
+        || calculated <= kernel_limits.min_nr_requests
+        || calculated >= kernel_limits.max_nr_requests
 }
 
 pub fn calculate_io_deltas(
@@ -88,16 +113,16 @@ pub fn calculate_io_deltas(
     }
 }
 
-pub fn calculate_request_size_ratio(delta: &IoDelta, tunables: &StorageTunables) -> f32 {
+pub fn calculate_request_size_ratio(delta: &IoDelta, math_config: &StorageMathConfig) -> f32 {
     if delta.delta_read_ios <= 0.0 {
         return 0.0;
     }
     let avg_size_kb = (delta.delta_read_sectors / delta.delta_read_ios) * 0.5;
-    let range = tunables.max_req_size_kb - tunables.min_req_size_kb;
+    let range = math_config.max_req_size_kb - math_config.min_req_size_kb;
     if range <= 0.0 {
         return 0.0;
     }
-    let ratio = (avg_size_kb - tunables.min_req_size_kb) / range;
+    let ratio = (avg_size_kb - math_config.min_req_size_kb) / range;
     ratio.clamp(0.0, 1.0)
 }
 
@@ -109,12 +134,12 @@ pub fn calculate_merge_ratio(delta: &IoDelta) -> f32 {
     delta.delta_read_merges / total_submissions
 }
 
-pub fn calculate_pressure_ratio(in_flight: f32, tunables: &StorageTunables) -> f32 {
-    let range = tunables.queue_pressure_high - tunables.queue_pressure_low;
+pub fn calculate_pressure_ratio(in_flight: f32, math_config: &StorageMathConfig) -> f32 {
+    let range = math_config.queue_pressure_high - math_config.queue_pressure_low;
     if range <= 0.0 {
         return 0.0;
     }
-    let ratio = (in_flight - tunables.queue_pressure_low) / range;
+    let ratio = (in_flight - math_config.queue_pressure_low) / range;
     ratio.clamp(0.0, 1.0)
 }
 
@@ -123,18 +148,18 @@ pub fn resolve_sequentiality_factor(
     req_size_ratio: f32,
     merge_ratio: f32,
     pressure_ratio: f32,
-    tunables: &StorageTunables,
+    math_config: &StorageMathConfig,
 ) -> f32 {
     let pattern_factor = req_size_ratio.max(merge_ratio);
     let raw_sequentiality = pattern_factor * pressure_ratio;
-    let alpha = tunables.smoothing_factor;
+    let alpha = math_config.smoothing_factor;
     let smoothed = (raw_sequentiality * alpha) + (state.sequentiality_smoothed * (1.0 - alpha));
     state.sequentiality_smoothed = smoothed;
     smoothed
 }
 
-pub fn calculate_weighted_throughput(delta: &IoDelta, tunables: &StorageTunables) -> f32 {
-    delta.throughput_read + (tunables.write_cost_factor * delta.throughput_write)
+pub fn calculate_weighted_throughput(delta: &IoDelta, math_config: &StorageMathConfig) -> f32 {
+    delta.throughput_read + (math_config.write_cost_factor * delta.throughput_write)
 }
 
 pub fn calculate_effective_latency(delta: &IoDelta, lambda_eff: f32, in_flight: f32) -> f32 {
@@ -147,15 +172,15 @@ pub fn calculate_effective_latency(delta: &IoDelta, lambda_eff: f32, in_flight: 
     }
 }
 
-pub fn calculate_target_latency(psi_some_avg10: f32, tunables: &StorageTunables) -> f32 {
+pub fn calculate_target_latency(psi_some_avg10: f32, math_config: &StorageMathConfig) -> f32 {
     let psi_ratio = (psi_some_avg10 / 100.0).clamp(0.0, 1.0);
-    let target = tunables.target_latency_base_ms * (1.0 - psi_ratio);
+    let target = math_config.target_latency_base_ms * (1.0 - psi_ratio);
     target.max(1.0)
 }
 
-pub fn calculate_target_read_ahead(sequentiality: f32, tunables: &StorageTunables) -> f32 {
-    let range = tunables.max_read_ahead - tunables.min_read_ahead;
-    tunables.min_read_ahead + (range * sequentiality)
+pub fn calculate_target_read_ahead(sequentiality: f32, kernel_limits: &StorageKernelLimits) -> f32 {
+    let range = kernel_limits.max_read_ahead - kernel_limits.min_read_ahead;
+    kernel_limits.min_read_ahead + (range * sequentiality)
 }
 
 pub fn calculate_next_queue_depth(
@@ -164,10 +189,11 @@ pub fn calculate_next_queue_depth(
     target_latency_ms: f32,
     current_nr_requests: f32,
     psi_full_avg10: f32,
-    tunables: &StorageTunables,
+    math_config: &StorageMathConfig,
+    kernel_limits: &StorageKernelLimits,
 ) -> f32 {
-    if psi_full_avg10 > tunables.critical_threshold_psi {
-        return tunables.min_nr_requests;
+    if psi_full_avg10 > math_config.critical_threshold_psi {
+        return kernel_limits.min_nr_requests;
     }
     if lambda_eff < 1.0 || current_latency_ms < 0.1 {
         return current_nr_requests;
@@ -182,5 +208,5 @@ pub fn calculate_next_queue_depth(
     } else {
         next_nr = current_nr_requests;
     }
-    next_nr.clamp(tunables.min_nr_requests, tunables.max_nr_requests)
+    next_nr.clamp(kernel_limits.min_nr_requests, kernel_limits.max_nr_requests)
 }

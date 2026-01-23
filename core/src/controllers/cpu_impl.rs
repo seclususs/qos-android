@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::{cpu_math, poll_math, thermal_math};
-use crate::config::{loop_settings, tunables};
+use crate::config::{kernel_limits, loop_settings};
 use crate::daemon::{state, traits, types};
 use crate::hal::{battery, cached_file, filesystem, kernel, thermal};
 use crate::monitors::psi_monitor;
@@ -30,9 +30,10 @@ pub struct CpuController {
     current_walt_init: f32,
     current_uclamp_min: f32,
     load_state: cpu_math::LoadState,
+    cpu_math_config: cpu_math::CpuMathConfig,
+    cpu_kernel_limits: cpu_math::CpuKernelLimits,
     last_tick: time::Instant,
     prev_delta_smooth: f32,
-    tunables: cpu_math::CpuTunables,
     poller: poll_math::AdaptivePoller,
     next_wake_ms: i32,
 }
@@ -40,7 +41,22 @@ pub struct CpuController {
 impl CpuController {
     pub fn new() -> Result<Self, types::QosError> {
         log::info!("CpuController: Initializing...");
-        let config = tunables::GlobalConfig::default();
+        let config_limits = kernel_limits::GlobalConfig::default().cpu_config;
+        let cpu_math_config = cpu_math::CpuMathConfig::default();
+        let cpu_kernel_limits = cpu_math::CpuKernelLimits {
+            min_latency_ns: config_limits.min_latency_ns as f32,
+            max_latency_ns: config_limits.max_latency_ns as f32,
+            min_granularity_ns: config_limits.min_granularity_ns as f32,
+            max_granularity_ns: config_limits.max_granularity_ns as f32,
+            min_wakeup_ns: config_limits.min_wakeup_ns as f32,
+            max_wakeup_ns: config_limits.max_wakeup_ns as f32,
+            min_migration_cost: config_limits.min_migration_cost as f32,
+            max_migration_cost: config_limits.max_migration_cost as f32,
+            min_walt_init_pct: config_limits.min_walt_init_pct as f32,
+            max_walt_init_pct: config_limits.max_walt_init_pct as f32,
+            min_uclamp_min: config_limits.min_uclamp_min as f32,
+            max_uclamp_min: config_limits.max_uclamp_min as f32,
+        };
         let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_CPU_PATH, 100000, 1000000)
             .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
@@ -62,11 +78,11 @@ impl CpuController {
         );
         let walt_init = cached_file::CachedFile::new_opt(
             filesystem::open_file_for_write(sys_paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
-            config.cpu.min_walt_init_pct,
+            config_limits.min_walt_init_pct,
         );
         let uclamp_min = cached_file::CachedFile::new_opt(
             filesystem::open_file_for_write(sys_paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
-            config.cpu.min_uclamp_min,
+            config_limits.min_uclamp_min,
         );
         if !latency.is_active()
             && !min_gran.is_active()
@@ -86,50 +102,6 @@ impl CpuController {
         let battery_capacity_sensor =
             battery::BatterySensor::new(sys_paths::K_BATTERY_CAPACITY_PATH);
         let thermal_config = thermal_math::ThermalConfig::default();
-        let tunables = cpu_math::CpuTunables {
-            min_latency_ns: config.cpu.min_latency_ns as f32,
-            max_latency_ns: config.cpu.max_latency_ns as f32,
-            min_granularity_ns: config.cpu.min_granularity_ns as f32,
-            max_granularity_ns: config.cpu.max_granularity_ns as f32,
-            min_wakeup_ns: config.cpu.min_wakeup_ns as f32,
-            max_wakeup_ns: config.cpu.max_wakeup_ns as f32,
-            min_migration_cost: config.cpu.min_migration_cost as f32,
-            max_migration_cost: config.cpu.max_migration_cost as f32,
-            min_walt_init_pct: config.cpu.min_walt_init_pct as f32,
-            max_walt_init_pct: config.cpu.max_walt_init_pct as f32,
-            min_uclamp_min: config.cpu.min_uclamp_min as f32,
-            max_uclamp_min: config.cpu.max_uclamp_min as f32,
-            latency_gran_ratio: config.cpu.latency_gran_ratio,
-            decay_coeff: config.cpu.decay_coeff,
-            uclamp_k: config.cpu.uclamp_k,
-            uclamp_mid: config.cpu.uclamp_mid,
-            response_gain: config.cpu.response_gain,
-            stability_ratio: config.cpu.stability_ratio,
-            stability_margin: config.cpu.stability_margin,
-            gain_scheduling_alpha: config.cpu.gain_scheduling_alpha,
-            alpha_smooth: config.cpu.alpha_smooth,
-            sigmoid_k: config.cpu.sigmoid_k,
-            sigmoid_mid: config.cpu.sigmoid_mid,
-            lookahead_time: config.cpu.lookahead_time,
-            variance_sensitivity: config.cpu.variance_sensitivity,
-            efficiency_gain: config.cpu.efficiency_gain,
-            trend_amplification: config.cpu.trend_amplification,
-            surge_threshold: config.cpu.surge_threshold,
-            surge_gain: config.cpu.surge_gain,
-            transient_rate_threshold: config.cpu.transient_rate_threshold,
-            transient_diff_threshold: config.cpu.transient_diff_threshold,
-            transient_poll_interval: config.cpu.transient_poll_interval,
-            nis_threshold: config.cpu.nis_threshold,
-            safe_temp_limit: config.cpu.safe_temp_limit,
-            max_temp_limit: config.cpu.max_temp_limit,
-            temp_cost_weight: config.cpu.temp_cost_weight,
-            bat_temp_weight: config.cpu.bat_temp_weight,
-            bat_level_weight: config.cpu.bat_level_weight,
-            integral_acc_rate: config.cpu.integral_acc_rate,
-            memory_migration_alpha: config.cpu.memory_migration_alpha,
-            memory_granularity_scaling: config.cpu.memory_granularity_scaling,
-            memory_volatility_cost: config.cpu.memory_volatility_cost,
-        };
         let thermal_manager = thermal_math::ThermalManager::default();
         let poller = poll_math::AdaptivePoller::new(1.0, 2.5, poll_math::PollerConfig::default());
         let mut controller = Self {
@@ -146,16 +118,17 @@ impl CpuController {
             cpu_sensor,
             battery_sensor,
             battery_capacity_sensor,
-            current_latency: config.cpu.min_latency_ns as f32,
-            current_min_gran: config.cpu.min_granularity_ns as f32,
-            current_wakeup: config.cpu.min_wakeup_ns as f32,
-            current_migration: config.cpu.min_migration_cost as f32,
-            current_walt_init: config.cpu.min_walt_init_pct as f32,
-            current_uclamp_min: config.cpu.min_uclamp_min as f32,
+            current_latency: config_limits.min_latency_ns as f32,
+            current_min_gran: config_limits.min_granularity_ns as f32,
+            current_wakeup: config_limits.min_wakeup_ns as f32,
+            current_migration: config_limits.min_migration_cost as f32,
+            current_walt_init: config_limits.min_walt_init_pct as f32,
+            current_uclamp_min: config_limits.min_uclamp_min as f32,
             load_state: cpu_math::LoadState::default(),
+            cpu_math_config,
+            cpu_kernel_limits,
             last_tick: time::Instant::now(),
             prev_delta_smooth: 0.0,
-            tunables,
             poller,
             next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
         };
@@ -171,15 +144,19 @@ impl CpuController {
         let memory_psi = context.pressure.memory_psi;
         let io_psi = context.pressure.io_psi;
         let target_psi = some.current.max(some.avg10);
-        let is_break = some.nis > self.tunables.nis_threshold;
+        let is_break = some.nis > self.cpu_math_config.nis_threshold;
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
         let bat_level = self.battery_capacity_sensor.read();
         let thermal_scale =
             self.thermal_manager
                 .update(cpu_temp, bat_temp, target_psi, &self.thermal_config);
-        let trend_factor =
-            cpu_math::calculate_trend_gain(some.avg10, some.avg60, memory_psi, &self.tunables);
+        let trend_factor = cpu_math::calculate_trend_gain(
+            some.avg10,
+            some.avg60,
+            memory_psi,
+            &self.cpu_math_config,
+        );
         let now = time::Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
@@ -190,7 +167,7 @@ impl CpuController {
             bat_temp,
             bat_level,
             dt_sec,
-            &self.tunables,
+            &self.cpu_math_config,
         );
         let demand_input = cpu_math::DemandInput {
             target_psi,
@@ -201,39 +178,58 @@ impl CpuController {
             integral_dot,
             is_structural_break: is_break,
         };
-        let load_demand =
-            cpu_math::calculate_load_demand(&mut self.load_state, demand_input, &self.tunables);
+        let load_demand = cpu_math::calculate_load_demand(
+            &mut self.load_state,
+            demand_input,
+            &self.cpu_math_config,
+        );
         let p_eff = cpu_math::calculate_effective_pressure(
             load_demand,
             trend_factor,
             memory_psi,
             io_psi,
-            &self.tunables,
+            &self.cpu_math_config,
         );
         context.pressure.cpu_psi = p_eff;
         let mut calculated_poll = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
-        if cpu_math::is_transient(&self.load_state, target_psi, &self.tunables) {
-            calculated_poll = calculated_poll.min(self.tunables.transient_poll_interval as i32);
+        if cpu_math::is_transient(&self.load_state, target_psi, &self.cpu_math_config) {
+            calculated_poll =
+                calculated_poll.min(self.cpu_math_config.transient_poll_interval as i32);
         }
         self.next_wake_ms = calculated_poll;
         let thermal_min_latency_ns =
-            cpu_math::calculate_thermal_latency_limit(thermal_scale, &self.tunables);
+            cpu_math::calculate_thermal_latency_limit(thermal_scale, &self.cpu_kernel_limits);
         let (target_latency, target_min_gran) = cpu_math::calculate_latency_and_granularity(
             p_eff,
             load_demand,
             thermal_min_latency_ns,
             memory_psi,
-            &self.tunables,
+            &self.cpu_math_config,
+            &self.cpu_kernel_limits,
         );
         let delta_raw = some.current - some.avg10;
         let delta_smooth =
-            cpu_math::smooth_delta(delta_raw, self.prev_delta_smooth, &self.tunables);
+            cpu_math::smooth_delta(delta_raw, self.prev_delta_smooth, &self.cpu_math_config);
         self.prev_delta_smooth = delta_smooth;
-        let target_migration =
-            cpu_math::calculate_migration_cost(delta_smooth, p_eff, memory_psi, &self.tunables);
-        let target_wakeup = cpu_math::calculate_wakeup_granularity(p_eff, &self.tunables);
-        let target_walt_init = cpu_math::calculate_walt_init(p_eff, &self.tunables);
-        let target_uclamp = cpu_math::calculate_uclamp_min(p_eff, thermal_scale, &self.tunables);
+        let target_migration = cpu_math::calculate_migration_cost(
+            delta_smooth,
+            p_eff,
+            memory_psi,
+            &self.cpu_math_config,
+            &self.cpu_kernel_limits,
+        );
+        let target_wakeup = cpu_math::calculate_wakeup_granularity(
+            p_eff,
+            &self.cpu_math_config,
+            &self.cpu_kernel_limits,
+        );
+        let target_walt_init = cpu_math::calculate_walt_init(p_eff, &self.cpu_kernel_limits);
+        let target_uclamp = cpu_math::calculate_uclamp_min(
+            p_eff,
+            thermal_scale,
+            &self.cpu_math_config,
+            &self.cpu_kernel_limits,
+        );
         self.current_latency = target_latency;
         self.current_min_gran = target_min_gran;
         self.current_wakeup = target_wakeup;
@@ -246,31 +242,31 @@ impl CpuController {
     fn apply_values(&mut self, force: bool) {
         let lat_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_latency,
-            self.tunables.max_latency_ns as u64,
+            self.cpu_kernel_limits.max_latency_ns as u64,
             50_000,
         );
         let gran_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_min_gran,
-            self.tunables.max_granularity_ns as u64,
+            self.cpu_kernel_limits.max_granularity_ns as u64,
             50_000,
         );
         let wake_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_wakeup,
-            self.tunables.max_wakeup_ns as u64,
+            self.cpu_kernel_limits.max_wakeup_ns as u64,
             50_000,
         );
         let mig_u64 = crate::algorithms::sanitize_to_clean_u64(
             self.current_migration,
-            self.tunables.min_migration_cost as u64,
+            self.cpu_kernel_limits.min_migration_cost as u64,
             50_000,
         );
         let walt_u64 = crate::algorithms::sanitize_to_u64(
             self.current_walt_init,
-            self.tunables.min_walt_init_pct as u64,
+            self.cpu_kernel_limits.min_walt_init_pct as u64,
         );
         let uclamp_u64 = crate::algorithms::sanitize_to_u64(
             self.current_uclamp_min,
-            self.tunables.min_uclamp_min as u64,
+            self.cpu_kernel_limits.min_uclamp_min as u64,
         );
         self.latency
             .update(lat_u64, force, cached_file::CheckStrategy::Relative(0.05));
