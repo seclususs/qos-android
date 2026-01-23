@@ -3,7 +3,7 @@
 use crate::daemon::types;
 use crate::hal::filesystem;
 
-use std::{fs, io};
+use std::{fs, os};
 
 pub struct MonitoredFile<const BUFFER_SIZE: usize> {
     file: fs::File,
@@ -19,12 +19,16 @@ impl<const BUFFER_SIZE: usize> MonitoredFile<BUFFER_SIZE> {
         })
     }
     pub fn read_value(&mut self) -> Result<&str, types::QosError> {
-        io::Seek::seek(&mut self.file, io::SeekFrom::Start(0)).map_err(types::QosError::IoError)?;
-        let bytes_read =
-            io::Read::read(&mut self.file, &mut self.buffer).map_err(types::QosError::IoError)?;
+        let bytes_read = os::unix::fs::FileExt::read_at(&self.file, &mut self.buffer, 0)
+            .map_err(types::QosError::IoError)?;
         if bytes_read == 0 {
             return Ok("");
         }
         unsafe { Ok(std::str::from_utf8_unchecked(&self.buffer[..bytes_read])) }
+    }
+    pub fn read_bytes_raw(&mut self) -> Result<&[u8], types::QosError> {
+        let bytes_read = os::unix::fs::FileExt::read_at(&self.file, &mut self.buffer, 0)
+            .map_err(types::QosError::IoError)?;
+        Ok(&self.buffer[..bytes_read])
     }
 }
