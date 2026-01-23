@@ -6,6 +6,17 @@ use crate::daemon::types;
 use libc::c_char;
 use std::{ffi, io};
 
+pub fn property_exists(key: &str) -> bool {
+    let Ok(c_key) = bindings::to_cstring(key) else {
+        return false;
+    };
+    let mut buffer = [0u8; 1];
+    let len = unsafe {
+        sys::cpp_get_system_property(c_key.as_ptr(), buffer.as_mut_ptr() as *mut c_char, 1)
+    };
+    len > 0
+}
+
 pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError> {
     if !key
         .chars()

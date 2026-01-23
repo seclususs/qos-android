@@ -81,11 +81,12 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                     log::info!("Rust: System Tweaks are DISABLED by config.");
                     return;
                 }
+                runtime::apply_prop_tweaks();
                 runtime::wait_for_boot_completion("Tweaker");
                 if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
                     return;
                 }
-                runtime::apply_system_tweaks();
+                runtime::apply_file_tweaks();
             })
             .expect("Failed to spawn Tweaks thread");
         state::SHUTDOWN_REQUESTED.store(false, sync::atomic::Ordering::Release);

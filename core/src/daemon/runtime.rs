@@ -3,7 +3,7 @@
 use crate::config::loop_settings;
 use crate::daemon::{state, traits, types};
 use crate::hal::{bridge, filesystem, properties};
-use crate::registry::boot_tweaks;
+use crate::registry::{file_tweaks, prop_tweaks};
 
 use rustix::event;
 use std::{io, os, sync, thread, time};
@@ -140,12 +140,34 @@ fn is_fatal_runtime_error(e: &types::QosError) -> bool {
     }
 }
 
-pub fn apply_system_tweaks() {
-    log::info!("Rust: Applying boot tweaks...");
-    let file_tweaks = boot_tweaks::get_file_tweaks();
+pub fn apply_prop_tweaks() {
+    log::info!("Rust: Applying Prop tweaks...");
+    let prop_tweaks_list = prop_tweaks::get_prop_tweaks();
     let mut success_count = 0;
-    for tweak in file_tweaks.iter() {
-        match filesystem::write_to_file(tweak.path, tweak.value) {
+    for tweak in prop_tweaks_list.iter() {
+        if properties::property_exists(tweak.key) {
+            if let Err(e) = properties::set_system_property(tweak.key, tweak.value) {
+                log::warn!("Failed to set prop {}: {}", tweak.key, e);
+            } else {
+                success_count += 1;
+            }
+        } else {
+            log::debug!("Skipping missing prop: {}", tweak.key);
+        }
+    }
+    log::info!(
+        "Rust: Applied {}/{} prop tweaks.",
+        success_count,
+        prop_tweaks_list.len()
+    );
+}
+
+pub fn apply_file_tweaks() {
+    log::info!("Rust: Applying File tweaks...");
+    let file_tweaks_list = file_tweaks::generate_file_tweaks();
+    let mut success_count = 0;
+    for tweak in file_tweaks_list.iter() {
+        match filesystem::write_to_file(&tweak.path, tweak.value) {
             Ok(_) => success_count += 1,
             Err(e) => log::debug!("Failed to apply tweak {}: {}", tweak.path, e),
         }
@@ -153,15 +175,8 @@ pub fn apply_system_tweaks() {
     log::info!(
         "Rust: Applied {}/{} file tweaks.",
         success_count,
-        file_tweaks.len()
+        file_tweaks_list.len()
     );
-    let prop_tweaks = boot_tweaks::get_prop_tweaks();
-    for tweak in prop_tweaks.iter() {
-        if let Err(e) = properties::set_system_property(tweak.key, tweak.value) {
-            log::warn!("Failed to set prop {}: {}", tweak.key, e);
-        }
-    }
-    log::info!("Rust: Tweaks process finished.");
 }
 
 pub fn wait_for_boot_completion(tag: &str) {
