@@ -117,7 +117,8 @@ impl Default for CpuMathConfig {
 #[derive(Debug, Clone, Copy)]
 pub struct DemandInput {
     pub target_psi: f32,
-    pub dt_sec: f32,
+    pub dt_real: f32,
+    pub dt_safe: f32,
     pub thermal_scale: f32,
     pub trend_factor: f32,
     pub integral_total: f32,
@@ -180,7 +181,7 @@ pub fn update_integral_params(
     cpu_temp: f32,
     bat_temp: f32,
     bat_level: f32,
-    dt_sec: f32,
+    dt_safe: f32,
     math_config: &CpuMathConfig,
 ) -> (f32, f32) {
     let temp_ratio = (cpu_temp / math_config.max_temp_limit).clamp(0.0, 1.5);
@@ -192,7 +193,7 @@ pub fn update_integral_params(
     let cost_heuristic = term_cpu + term_bat_temp + term_bat_cap;
     let limit_violation = (cpu_temp - math_config.safe_temp_limit).max(0.0);
     let integration_rate = math_config.integral_acc_rate * limit_violation;
-    state.integral_accum += integration_rate * dt_sec;
+    state.integral_accum += integration_rate * dt_safe;
     if limit_violation <= 0.0 {
         state.integral_accum *= 0.98;
     }
@@ -205,8 +206,8 @@ pub fn update_integral_params(
         return (total_integral, 0.0);
     }
     state.smoothed_integral = (state.smoothed_integral * 0.8) + (total_integral * 0.2);
-    let integral_dot = if dt_sec > 0.0 {
-        (state.smoothed_integral - state.prev_integral) / dt_sec
+    let integral_dot = if dt_safe > 0.0 {
+        (state.smoothed_integral - state.prev_integral) / dt_safe
     } else {
         0.0
     };
@@ -238,7 +239,7 @@ pub fn calculate_load_demand(
     let std_dev = (variance_sum / 8.0).sqrt();
     let deviation_gain = 1.0 + (math_config.variance_sensitivity * std_dev);
     let slope_per_tick = calculate_regression_slope(state);
-    let load_rate = slope_per_tick / input.dt_sec.max(0.001);
+    let load_rate = slope_per_tick / input.dt_real.max(0.001);
     if load_rate.abs() > math_config.surge_threshold {
         state.rate += load_rate * math_config.surge_gain;
     }
@@ -263,8 +264,8 @@ pub fn calculate_load_demand(
     let deriv_term = c_final * state.rate;
     let net_correction = prop_term - deriv_term - limit_term;
     let rate_delta = net_correction;
-    state.rate += rate_delta * input.dt_sec;
-    state.psi_value += state.rate * input.dt_sec;
+    state.rate += rate_delta * input.dt_safe;
+    state.psi_value += state.rate * input.dt_real;
     if state.psi_value < 0.0 {
         state.psi_value = 0.0;
         state.rate = 0.0;

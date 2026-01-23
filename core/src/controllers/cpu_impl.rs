@@ -17,7 +17,8 @@ pub struct CpuController {
     migration: cached_file::CachedFile,
     walt_init: cached_file::CachedFile,
     uclamp_min: cached_file::CachedFile,
-    psi_monitor: psi_monitor::PsiMonitor,
+    psi_monitor_cpu: psi_monitor::PsiMonitor,
+    psi_monitor_mem: psi_monitor::PsiMonitor,
     thermal_manager: thermal_math::ThermalManager,
     thermal_config: thermal_math::ThermalConfig,
     cpu_sensor: thermal::ThermalSensor,
@@ -84,18 +85,8 @@ impl CpuController {
             filesystem::open_file_for_write(sys_paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
             config_limits.min_uclamp_min,
         );
-        if !latency.is_active()
-            && !min_gran.is_active()
-            && !wakeup.is_active()
-            && !migration.is_active()
-            && !walt_init.is_active()
-            && !uclamp_min.is_active()
-        {
-            return Err(types::QosError::SystemCheckFailed(
-                "No supported CPU kernel knobs found.".to_string(),
-            ));
-        }
-        let psi_monitor = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?;
+        let psi_monitor_cpu = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?;
+        let psi_monitor_mem = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_MEMORY_PATH)?;
         let cpu_path = sys_paths::get_cpu_temp_path();
         let cpu_sensor = thermal::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
         let battery_sensor = thermal::ThermalSensor::new(sys_paths::K_BATTERY_TEMP_PATH, 35.0);
@@ -103,7 +94,7 @@ impl CpuController {
             battery::BatterySensor::new(sys_paths::K_BATTERY_CAPACITY_PATH);
         let thermal_config = thermal_math::ThermalConfig::default();
         let thermal_manager = thermal_math::ThermalManager::default();
-        let poller = poll_math::AdaptivePoller::new(1.0, 2.5, poll_math::PollerConfig::default());
+        let poller = poll_math::AdaptivePoller::new(1.5, 0.05, poll_math::PollerConfig::default());
         let mut controller = Self {
             fd,
             latency,
@@ -112,7 +103,8 @@ impl CpuController {
             migration,
             walt_init,
             uclamp_min,
-            psi_monitor,
+            psi_monitor_cpu,
+            psi_monitor_mem,
             thermal_manager,
             thermal_config,
             cpu_sensor,
@@ -139,12 +131,16 @@ impl CpuController {
         &mut self,
         context: &mut state::DaemonContext,
     ) -> Result<(), types::QosError> {
-        let data = self.psi_monitor.read_state()?;
-        let some = data.some;
-        let memory_psi = context.pressure.memory_psi;
+        let data_cpu = self.psi_monitor_cpu.read_state()?;
+        let some_cpu = data_cpu.some;
+        let memory_psi = self
+            .psi_monitor_mem
+            .read_state()
+            .map(|d| d.some.avg10)
+            .unwrap_or(0.0);
         let io_psi = context.pressure.io_psi;
-        let target_psi = some.current.max(some.avg10);
-        let is_break = some.nis > self.cpu_math_config.nis_threshold;
+        let target_psi = some_cpu.current.max(some_cpu.avg10);
+        let is_break = some_cpu.nis > self.cpu_math_config.nis_threshold;
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
         let bat_level = self.battery_capacity_sensor.read();
@@ -152,26 +148,28 @@ impl CpuController {
             self.thermal_manager
                 .update(cpu_temp, bat_temp, target_psi, &self.thermal_config);
         let trend_factor = cpu_math::calculate_trend_gain(
-            some.avg10,
-            some.avg60,
+            some_cpu.avg10,
+            some_cpu.avg60,
             memory_psi,
             &self.cpu_math_config,
         );
         let now = time::Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
-        let dt_sec = cpu_math::sanitize_dt(dt_duration.as_secs_f32());
+        let dt_real = dt_duration.as_secs_f32().max(0.000001);
+        let dt_safe = cpu_math::sanitize_dt(dt_real);
         let (integral_total, integral_dot) = cpu_math::update_integral_params(
             &mut self.load_state,
             cpu_temp,
             bat_temp,
             bat_level,
-            dt_sec,
+            dt_safe,
             &self.cpu_math_config,
         );
         let demand_input = cpu_math::DemandInput {
             target_psi,
-            dt_sec,
+            dt_real,
+            dt_safe,
             thermal_scale,
             trend_factor,
             integral_total,
@@ -191,7 +189,8 @@ impl CpuController {
             &self.cpu_math_config,
         );
         context.pressure.cpu_psi = p_eff;
-        let mut calculated_poll = self.poller.calculate_next_interval(p_eff, some.avg300) as i32;
+        let mut calculated_poll =
+            self.poller.calculate_next_interval(p_eff, some_cpu.avg300) as i32;
         if cpu_math::is_transient(&self.load_state, target_psi, &self.cpu_math_config) {
             calculated_poll =
                 calculated_poll.min(self.cpu_math_config.transient_poll_interval as i32);
@@ -207,7 +206,7 @@ impl CpuController {
             &self.cpu_math_config,
             &self.cpu_kernel_limits,
         );
-        let delta_raw = some.current - some.avg10;
+        let delta_raw = some_cpu.current - some_cpu.avg10;
         let delta_smooth =
             cpu_math::smooth_delta(delta_raw, self.prev_delta_smooth, &self.cpu_math_config);
         self.prev_delta_smooth = delta_smooth;
