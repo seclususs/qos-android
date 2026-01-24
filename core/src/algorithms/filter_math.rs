@@ -30,6 +30,7 @@ pub struct KalmanFilter {
     head: usize,
     count: usize,
     first_run: bool,
+    sum_sq_innov: f32,
 }
 
 impl KalmanFilter {
@@ -50,6 +51,7 @@ impl KalmanFilter {
             head: 0,
             count: 0,
             first_run: true,
+            sum_sq_innov: 0.0,
         }
     }
     pub fn reset(&mut self) {
@@ -59,6 +61,8 @@ impl KalmanFilter {
         self.last_nis = 0.0;
         self.head = 0;
         self.count = 0;
+        self.sum_sq_innov = 0.0;
+        self.history = [0.0; MAX_WINDOW_SIZE];
     }
     pub fn update(&mut self, mut z_measured: f32, dt_sec: f32) -> f32 {
         if !z_measured.is_finite() {
@@ -79,14 +83,20 @@ impl KalmanFilter {
         let q_k_base = self.config.q_base * dt_sec;
         let p_pred = (self.config.fading_factor * self.p) + q_k_base;
         let innovation = z_measured - x_pred;
+        let innov_sq = innovation * innovation;
+        let old_val = self.history[self.head];
+        self.sum_sq_innov -= old_val * old_val;
         self.history[self.head] = innovation;
+        self.sum_sq_innov += innov_sq;
+        if self.sum_sq_innov < 0.0 {
+            self.sum_sq_innov = 0.0;
+        }
         self.head = (self.head + 1) % self.config.window_size;
         if self.count < self.config.window_size {
             self.count += 1;
         }
-        let sum_sq_innov: f32 = self.history.iter().take(self.count).map(|&y| y * y).sum();
         let c_y = if self.count > 0 {
-            sum_sq_innov / (self.count as f32)
+            self.sum_sq_innov / (self.count as f32)
         } else {
             0.0
         };
@@ -94,7 +104,7 @@ impl KalmanFilter {
         let r_eff = r_adaptive.max(self.config.r_base);
         let s_temp = p_pred + r_eff;
         let nis = if s_temp > 1e-6 {
-            (innovation * innovation) / s_temp
+            innov_sq / s_temp
         } else {
             0.0
         };
