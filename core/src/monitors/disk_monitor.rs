@@ -25,43 +25,54 @@ impl DiskMonitor {
         })
     }
     pub fn read_stats(&mut self) -> Result<IoStats, types::QosError> {
-        let content = self.monitor.read_value()?;
-        if content.is_empty() {
-            return Err(types::QosError::SystemCheckFailed(
-                "Empty diskstats file".to_string(),
-            ));
+        let buffer = self.monitor.read_bytes_raw()?;
+        if buffer.is_empty() {
+            return Err(types::QosError::SystemCheckFailed("Empty diskstats".into()));
         }
-        let mut parts = content.split_ascii_whitespace();
-        let read_ios = parts.next().and_then(|v| v.parse::<u64>().ok());
-        let read_merges = parts.next().and_then(|v| v.parse::<u64>().ok());
-        let read_sectors = parts.next().and_then(|v| v.parse::<u64>().ok());
-        let read_ticks = parts.next().and_then(|v| v.parse::<u64>().ok());
-        let write_ios = parts.next().and_then(|v| v.parse::<u64>().ok());
-        let _ = parts.next();
-        let _ = parts.next();
-        let write_ticks = parts.next().and_then(|v| v.parse::<u64>().ok());
-        let in_flight = parts.next().and_then(|v| v.parse::<u64>().ok());
-        if let (Some(ri), Some(rm), Some(rs), Some(rt), Some(wi), Some(wt), Some(infl)) = (
-            read_ios,
-            read_merges,
-            read_sectors,
-            read_ticks,
-            write_ios,
-            write_ticks,
-            in_flight,
-        ) {
-            Ok(IoStats {
-                read_ios: ri,
-                read_merges: rm,
-                read_sectors: rs,
-                read_ticks: rt,
-                write_ios: wi,
-                write_ticks: wt,
-                in_flight: infl,
-            })
+        let mut stats = IoStats::default();
+        let mut field_idx = 0;
+        let mut cursor = 0;
+        while cursor < buffer.len() {
+            while cursor < buffer.len()
+                && (buffer[cursor] == b' ' || buffer[cursor] == b'\t' || buffer[cursor] == b'\n')
+            {
+                cursor += 1;
+            }
+            if cursor >= buffer.len() {
+                break;
+            }
+            let mut val: u64 = 0;
+            let start = cursor;
+            while cursor < buffer.len() && buffer[cursor].is_ascii_digit() {
+                val = val * 10 + (buffer[cursor] - b'0') as u64;
+                cursor += 1;
+            }
+            if cursor > start {
+                match field_idx {
+                    0 => stats.read_ios = val,
+                    1 => stats.read_merges = val,
+                    2 => stats.read_sectors = val,
+                    3 => stats.read_ticks = val,
+                    4 => stats.write_ios = val,
+                    7 => stats.write_ticks = val,
+                    8 => stats.in_flight = val,
+                    _ => {}
+                }
+                field_idx += 1;
+                if field_idx > 8 {
+                    break;
+                }
+            } else {
+                while cursor < buffer.len() && !buffer[cursor].is_ascii_whitespace() {
+                    cursor += 1;
+                }
+            }
+        }
+        if field_idx > 8 {
+            Ok(stats)
         } else {
             Err(types::QosError::SystemCheckFailed(
-                "Incomplete diskstats format".to_string(),
+                "Incomplete diskstats".into(),
             ))
         }
     }
