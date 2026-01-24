@@ -83,9 +83,24 @@ impl LeadLagFilter {
     }
 }
 
+#[derive(Clone, Copy)]
+struct HistoryPoint {
+    value: f32,
+    timestamp: time::Instant,
+}
+
+impl Default for HistoryPoint {
+    fn default() -> Self {
+        Self {
+            value: 0.0,
+            timestamp: time::Instant::now(),
+        }
+    }
+}
+
 struct SmithPredictor {
     model_output_no_delay: f32,
-    delay_buffer: [f32; SMITH_BUFFER_SIZE],
+    delay_buffer: [HistoryPoint; SMITH_BUFFER_SIZE],
     head: usize,
     count: usize,
     capacity: usize,
@@ -94,9 +109,14 @@ struct SmithPredictor {
 impl SmithPredictor {
     fn new(capacity: usize) -> Self {
         let safe_capacity = capacity.min(SMITH_BUFFER_SIZE);
+        let now = time::Instant::now();
+        let init_point = HistoryPoint {
+            value: 0.0,
+            timestamp: now,
+        };
         Self {
             model_output_no_delay: 0.0,
-            delay_buffer: [0.0; SMITH_BUFFER_SIZE],
+            delay_buffer: [init_point; SMITH_BUFFER_SIZE],
             head: 0,
             count: 0,
             capacity: safe_capacity,
@@ -113,21 +133,27 @@ impl SmithPredictor {
         let alpha = dt / (tau + dt);
         let y_no_delay = alpha * (u_control * k_gain) + (1.0 - alpha) * self.model_output_no_delay;
         self.model_output_no_delay = y_no_delay;
-        self.delay_buffer[self.head] = y_no_delay;
+        let now = time::Instant::now();
+        self.delay_buffer[self.head] = HistoryPoint {
+            value: y_no_delay,
+            timestamp: now,
+        };
+        let current_head_idx = self.head;
         self.head = (self.head + 1) % self.capacity;
         if self.count < self.capacity {
             self.count += 1;
         }
-        let steps_needed = (delay_sec / dt.max(0.001)).round() as usize;
-        let y_delayed = if self.count == 0 {
-            0.0
-        } else if steps_needed >= self.count {
-            let oldest_idx = (self.head + self.capacity - self.count) % self.capacity;
-            self.delay_buffer[oldest_idx]
-        } else {
-            let idx = (self.head + self.capacity - 1 - steps_needed) % self.capacity;
-            self.delay_buffer[idx]
-        };
+        let target_delay = time::Duration::from_secs_f32(delay_sec);
+        let mut y_delayed = y_no_delay;
+        for i in 0..self.count {
+            let idx = (current_head_idx + self.capacity - i) % self.capacity;
+            let point = &self.delay_buffer[idx];
+            let age = now.duration_since(point.timestamp);
+            if age >= target_delay {
+                y_delayed = point.value;
+                break;
+            }
+        }
         (y_no_delay, y_delayed)
     }
 }
