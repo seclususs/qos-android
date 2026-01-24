@@ -2,7 +2,7 @@
 
 use crate::algorithms::filter_math;
 use crate::daemon::types;
-use crate::hal::monitored_file;
+use crate::utils::monitored_file;
 
 use std::time;
 

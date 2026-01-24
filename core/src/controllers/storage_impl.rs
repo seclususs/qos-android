@@ -3,9 +3,10 @@
 use crate::algorithms::{poll_math, storage_math};
 use crate::config::{kernel_limits, loop_settings};
 use crate::daemon::{state, traits, types};
-use crate::hal::{cached_file, filesystem, kernel};
+use crate::hal::{filesystem, kernel};
 use crate::monitors::{disk_monitor, psi_monitor};
 use crate::resources::sys_paths;
+use crate::utils::{cached_file, math};
 
 use std::{fs, io, os, time};
 
@@ -156,12 +157,12 @@ impl StorageController {
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let ra_u64 = crate::algorithms::sanitize_to_clean_u64(
+        let ra_u64 = math::sanitize_to_clean_u64(
             self.current_read_ahead,
             self.storage_kernel_limits.max_read_ahead as u64,
             32,
         );
-        let nr_u64 = crate::algorithms::sanitize_to_clean_u64(
+        let nr_u64 = math::sanitize_to_clean_u64(
             self.current_nr_requests,
             self.storage_kernel_limits.min_nr_requests as u64,
             16,

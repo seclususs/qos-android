@@ -3,9 +3,10 @@
 use crate::algorithms::{cpu_math, poll_math, thermal_math};
 use crate::config::{kernel_limits, loop_settings};
 use crate::daemon::{state, traits, types};
-use crate::hal::{battery, cached_file, filesystem, kernel, thermal};
+use crate::hal::{battery, filesystem, kernel, thermal};
 use crate::monitors::psi_monitor;
 use crate::resources::sys_paths;
+use crate::utils::{cached_file, math};
 
 use std::{fs, io, os, time};
 
@@ -219,31 +220,31 @@ impl CpuController {
         Ok(())
     }
     fn apply_values(&mut self, force: bool) {
-        let lat_u64 = crate::algorithms::sanitize_to_clean_u64(
+        let lat_u64 = math::sanitize_to_clean_u64(
             self.current_latency,
             self.cpu_kernel_limits.max_latency_ns as u64,
             50_000,
         );
-        let gran_u64 = crate::algorithms::sanitize_to_clean_u64(
+        let gran_u64 = math::sanitize_to_clean_u64(
             self.current_min_gran,
             self.cpu_kernel_limits.max_granularity_ns as u64,
             50_000,
         );
-        let wake_u64 = crate::algorithms::sanitize_to_clean_u64(
+        let wake_u64 = math::sanitize_to_clean_u64(
             self.current_wakeup,
             self.cpu_kernel_limits.max_wakeup_ns as u64,
             50_000,
         );
-        let mig_u64 = crate::algorithms::sanitize_to_clean_u64(
+        let mig_u64 = math::sanitize_to_clean_u64(
             self.current_migration,
             self.cpu_kernel_limits.min_migration_cost as u64,
             50_000,
         );
-        let walt_u64 = crate::algorithms::sanitize_to_u64(
+        let walt_u64 = math::sanitize_to_u64(
             self.current_walt_init,
             self.cpu_kernel_limits.min_walt_init_pct as u64,
         );
-        let uclamp_u64 = crate::algorithms::sanitize_to_u64(
+        let uclamp_u64 = math::sanitize_to_u64(
             self.current_uclamp_min,
             self.cpu_kernel_limits.min_uclamp_min as u64,
         );

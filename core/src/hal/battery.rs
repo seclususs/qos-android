@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::monitored_file;
+use crate::utils::monitored_file;
 
 pub struct BatterySensor {
     monitor: Option<monitored_file::MonitoredFile<16>>,

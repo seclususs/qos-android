@@ -1,13 +1,14 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::bindings::{self, sys};
+use crate::bindings::sys;
 use crate::daemon::types;
+use crate::utils::strings;
 
 use libc::c_char;
 use std::{ffi, io};
 
 pub fn property_exists(key: &str) -> bool {
-    let Ok(c_key) = bindings::to_cstring(key) else {
+    let Ok(c_key) = strings::to_cstring(key) else {
         return false;
     };
     let mut buffer = [0u8; 1];
@@ -27,14 +28,14 @@ pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError
             key
         )));
     }
-    if !super::validate_value(value) {
+    if !strings::validate_value(value) {
         return Err(types::QosError::InvalidInput(format!(
             "Invalid characters in value: '{}'",
             value
         )));
     }
-    let c_key = bindings::to_cstring(key)?;
-    let c_val = bindings::to_cstring(value)?;
+    let c_key = strings::to_cstring(key)?;
+    let c_val = strings::to_cstring(value)?;
     let res = unsafe { sys::cpp_set_system_property(c_key.as_ptr(), c_val.as_ptr()) };
     if res < 0 {
         Err(types::QosError::IoError(io::Error::last_os_error()))
@@ -44,7 +45,7 @@ pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError
 }
 
 pub fn get_system_property(key: &str) -> Result<String, types::QosError> {
-    let c_key = bindings::to_cstring(key)?;
+    let c_key = strings::to_cstring(key)?;
     const PROP_VALUE_MAX: usize = 92;
     let mut buffer = vec![0u8; PROP_VALUE_MAX];
     let len = unsafe {

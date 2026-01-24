@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::daemon::types;
-use crate::hal::monitored_file;
+use crate::utils::monitored_file;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoStats {

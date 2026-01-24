@@ -10,5 +10,6 @@ pub mod hal;
 pub mod monitors;
 pub mod registry;
 pub mod resources;
+pub mod utils;
 
 pub use bindings::api_entry::*;
