@@ -7,6 +7,19 @@ use crate::resources::sys_paths;
 
 use std::{collections, ffi, fs, io, os, path, sync, thread, time};
 
+const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x10000001b3;
+
+#[inline(always)]
+fn hash_bytes(bytes: &[u8]) -> u64 {
+    let mut hash = FNV_OFFSET;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
 #[derive(Debug, Clone, Copy)]
 struct CleanerTunables {
     sweep_interval_ms: i32,
@@ -51,31 +64,37 @@ impl CleanerWorker {
             }
         }
     }
-    fn get_active_packages(&self) -> collections::HashSet<String> {
-        let mut active = collections::HashSet::new();
+    fn get_active_packages_hash(&self) -> collections::HashSet<u64> {
+        let mut active_hashes = collections::HashSet::with_capacity(512);
+        let mut buf = [0u8; 256];
         if let Ok(entries) = fs::read_dir("/proc") {
             for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_dir() {
+                if let Ok(ft) = entry.file_type() {
+                    if !ft.is_dir() {
+                        continue;
+                    }
+                } else {
                     continue;
                 }
-                if let Some(name) = path.file_name().and_then(|n| n.to_str())
-                    && name.as_bytes().first().is_some_and(|b| b.is_ascii_digit())
+                let file_name = entry.file_name();
+                let name_bytes = os::unix::ffi::OsStrExt::as_bytes(file_name.as_os_str());
+                if !name_bytes.first().is_some_and(|b| b.is_ascii_digit()) {
+                    continue;
+                }
+                let path = entry.path().join("cmdline");
+                if let Ok(mut f) = fs::File::open(path)
+                    && let Ok(n) = io::Read::read(&mut f, &mut buf)
+                    && n > 0
                 {
-                    let mut buf = [0u8; 128];
-                    if let Ok(mut f) = fs::File::open(path.join("cmdline"))
-                        && let Ok(n) = io::Read::read(&mut f, &mut buf)
-                        && let Ok(s) = std::str::from_utf8(&buf[..n])
-                    {
-                        let pkg = s.split('\0').next().unwrap_or("").trim();
-                        if pkg.contains('.') {
-                            active.insert(pkg.to_string());
-                        }
+                    let slice = &buf[..n];
+                    let pkg_name = slice.split(|&b| b == 0).next().unwrap_or(slice);
+                    if pkg_name.contains(&b'.') {
+                        active_hashes.insert(hash_bytes(pkg_name));
                     }
                 }
             }
         }
-        active
+        active_hashes
     }
     fn is_storage_critical(&self) -> bool {
         if let Ok(stats) = rustix::fs::statvfs("/data") {
@@ -128,7 +147,7 @@ impl CleanerWorker {
         false
     }
     fn perform_cycle(&self) -> usize {
-        let active_pkgs = self.get_active_packages();
+        let active_pkgs_hash = self.get_active_packages_hash();
         let is_critical = self.is_storage_critical();
         let now = time::SystemTime::now();
         let mut total_cleaned = 0;
@@ -165,14 +184,20 @@ impl CleanerWorker {
             }
             if let Ok(entries) = fs::read_dir(root_path) {
                 for entry in entries.flatten() {
+                    if let Ok(ft) = entry.file_type() {
+                        if !ft.is_dir() {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                    let pkg_os_str = entry.file_name();
+                    let pkg_bytes = os::unix::ffi::OsStrExt::as_bytes(pkg_os_str.as_os_str());
+                    let pkg_hash = hash_bytes(pkg_bytes);
+                    if active_pkgs_hash.contains(&pkg_hash) && !is_critical {
+                        continue;
+                    }
                     let app_dir = entry.path();
-                    if !app_dir.is_dir() {
-                        continue;
-                    }
-                    let pkg = app_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if active_pkgs.contains(pkg) && !is_critical {
-                        continue;
-                    }
                     let cache_dir = app_dir.join("cache");
                     if cache_dir.exists() {
                         let size = traversal::get_tree_size_capped(
