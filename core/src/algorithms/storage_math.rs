@@ -26,15 +26,15 @@ pub struct StorageMathConfig {
 impl Default for StorageMathConfig {
     fn default() -> Self {
         Self {
-            min_req_size_kb: 32.0,
-            max_req_size_kb: 256.0,
-            write_cost_factor: 5.0,
-            target_latency_base_ms: 75.0,
-            hysteresis_threshold: 0.15,
-            critical_threshold_psi: 40.0,
-            queue_pressure_low: 1.0,
-            queue_pressure_high: 4.0,
-            smoothing_factor: 0.25,
+            min_req_size_kb: 8.0,
+            max_req_size_kb: 512.0,
+            write_cost_factor: 3.5,
+            target_latency_base_ms: 50.0,
+            hysteresis_threshold: 0.25,
+            critical_threshold_psi: 30.0,
+            queue_pressure_low: 0.5,
+            queue_pressure_high: 6.0,
+            smoothing_factor: 0.35,
         }
     }
 }
