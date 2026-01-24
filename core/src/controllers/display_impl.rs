@@ -44,7 +44,7 @@ pub struct DisplayController {
     last_transition: time::Instant,
     next_wake_ms: i32,
     tx: sync::mpsc::Sender<DisplayMode>,
-    io_buffer: Box<[u8; BUFFER_CAPACITY]>,
+    io_buffer: [u8; BUFFER_CAPACITY],
 }
 
 impl DisplayController {
@@ -78,7 +78,7 @@ impl DisplayController {
             last_transition: time::Instant::now(),
             next_wake_ms: -1,
             tx,
-            io_buffer: Box::new([0u8; BUFFER_CAPACITY]),
+            io_buffer: [0u8; BUFFER_CAPACITY],
         })
     }
     fn transition_to(&mut self, new_state: DisplayState) {
@@ -117,7 +117,7 @@ impl traits::EventHandler for DisplayController {
         _context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
         loop {
-            match io::Read::read(&mut self.touch_fd, self.io_buffer.as_mut_slice()) {
+            match io::Read::read(&mut self.touch_fd, &mut self.io_buffer) {
                 Ok(0) => break,
                 Ok(_) => {
                     self.last_activity = time::Instant::now();
