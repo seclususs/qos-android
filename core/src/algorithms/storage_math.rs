@@ -76,7 +76,7 @@ pub fn should_update_nr_requests(
     kernel_limits: &StorageKernelLimits,
 ) -> bool {
     let diff = (calculated - current).abs();
-    let error_ratio = diff / current;
+    let error_ratio = if current > 0.0 { diff / current } else { 1.0 };
     error_ratio > math_config.hysteresis_threshold
         || calculated <= kernel_limits.min_nr_requests
         || calculated >= kernel_limits.max_nr_requests
@@ -85,9 +85,9 @@ pub fn should_update_nr_requests(
 pub fn calculate_io_deltas(
     current: &disk_monitor::IoStats,
     prev: &disk_monitor::IoStats,
-    dt_sec: f32,
+    dt_real: f32,
 ) -> IoDelta {
-    if dt_sec <= 0.0 {
+    if dt_real <= 0.000001 {
         return IoDelta::default();
     }
     let delta_read_ios = current.read_ios.saturating_sub(prev.read_ios) as f32;
@@ -104,8 +104,8 @@ pub fn calculate_io_deltas(
         0.0
     };
     IoDelta {
-        throughput_read: delta_read_ios / dt_sec,
-        throughput_write: delta_write_ios / dt_sec,
+        throughput_read: delta_read_ios / dt_real,
+        throughput_write: delta_write_ios / dt_real,
         service_time_ms,
         delta_read_ios,
         delta_read_merges,
@@ -188,20 +188,20 @@ pub fn calculate_next_queue_depth(
     current_latency_ms: f32,
     target_latency_ms: f32,
     current_nr_requests: f32,
-    psi_full_avg10: f32,
+    psi_avg10: f32,
     math_config: &StorageMathConfig,
     kernel_limits: &StorageKernelLimits,
 ) -> f32 {
-    if psi_full_avg10 > math_config.critical_threshold_psi {
+    if psi_avg10 > math_config.critical_threshold_psi {
         return kernel_limits.min_nr_requests;
     }
     if lambda_eff < 1.0 || current_latency_ms < 0.1 {
         return current_nr_requests;
     }
-    let gradient = target_latency_ms / current_latency_ms;
+    let gradient = target_latency_ms / current_latency_ms.max(0.1);
     let next_nr;
     if gradient > 1.2 {
-        next_nr = current_nr_requests + 1.0;
+        next_nr = current_nr_requests + 2.0;
     } else if gradient < 0.8 {
         let smoothing_factor = gradient.sqrt();
         next_nr = current_nr_requests * smoothing_factor;

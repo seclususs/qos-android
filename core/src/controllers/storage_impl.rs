@@ -62,7 +62,7 @@ impl StorageController {
         let initial_stats = disk_monitor
             .read_stats()
             .unwrap_or(disk_monitor::IoStats::default());
-        let poller = poll_math::AdaptivePoller::new(1.0, 1.0, poll_math::PollerConfig::default());
+        let poller = poll_math::AdaptivePoller::new(1.2, 0.08, poll_math::PollerConfig::default());
         let mut controller = Self {
             fd,
             read_ahead,
@@ -89,12 +89,12 @@ impl StorageController {
         let psi_data = self.psi_monitor.read_state()?;
         let current_io_stats = self.disk_monitor.read_stats()?;
         let now = time::Instant::now();
-        let dt = now.duration_since(self.last_tick).as_secs_f32();
-        let dt_safe = dt.max(0.001);
-        let delta =
-            storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_safe);
-        self.prev_io_stats = current_io_stats;
+        let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
+        let dt_real = dt_duration.as_secs_f32().max(0.000001);
+        let delta =
+            storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_real);
+        self.prev_io_stats = current_io_stats;
         context.pressure.io_psi = psi_data.some.avg10;
         context.pressure.io_saturation = current_io_stats.in_flight as f32;
         let req_size_ratio =
@@ -127,7 +127,7 @@ impl StorageController {
             current_latency,
             target_latency,
             self.current_nr_requests,
-            psi_data.full.avg10,
+            psi_data.some.avg10,
             &self.storage_math_config,
             &self.storage_kernel_limits,
         );
