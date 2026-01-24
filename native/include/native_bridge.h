@@ -49,17 +49,6 @@ void rust_set_cleaner_service_enabled(bool enabled);
 void rust_set_cpu_service_enabled(bool enabled);
 
 /**
- * @brief Configures the enabled state of the Memory Controller service.
- *
- * Updates the configuration state for the Memory pressure monitor.
- * This operation is thread-safe and the new state takes effect immediately
- * for the next polling cycle.
- *
- * @param[in] enabled True to enable the service, false to disable.
- */
-void rust_set_memory_service_enabled(bool enabled);
-
-/**
  * @brief Configures the enabled state of the Storage Controller service.
  *
  * Updates the configuration state for the Storage/IO pressure monitor.
