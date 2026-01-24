@@ -1,6 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::daemon::types;
+use crate::utils::strings;
 
 use std::{fs, io, os, path};
 
@@ -49,25 +50,45 @@ pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::Qos
     io::Write::write_fmt(&mut cursor, format_args!("{}", value))
         .map_err(types::QosError::IoError)?;
     let len = cursor.position() as usize;
-    let valid_slice = &buffer[..len];
-    os::unix::fs::FileExt::write_all_at(file, valid_slice, 0).map_err(|e| {
-        log::warn!("Write via pwrite failed: {}", e);
-        types::QosError::IoError(e)
+    let fd = os::fd::AsFd::as_fd(file);
+    rustix::io::pwrite(fd, &buffer[..len], 0).map_err(|e| {
+        log::warn!("Write via rustix::pwrite failed: {}", e);
+        types::QosError::IoError(e.into())
     })?;
     Ok(())
 }
 
 pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
     validate_path_secure(path)?;
-    if !super::validate_value(value) {
+    if !strings::validate_value(value) {
         return Err(types::QosError::SystemCheckFailed(format!(
             "Invalid characters in value for {}: '{}'",
             path, value
         )));
     }
-    let content = format!("{}\n", value);
-    fs::write(path, content).map_err(|e| {
-        log::debug!("Write failed '{}' -> {}: {}", value, path, e);
-        types::QosError::IoError(e)
-    })
+    let mut buffer = [0u8; 64];
+    let val_bytes = value.as_bytes();
+    if val_bytes.len() + 1 > buffer.len() {
+        return Err(types::QosError::InvalidInput(
+            "Value too long for stack buffer".into(),
+        ));
+    }
+    buffer[..val_bytes.len()].copy_from_slice(val_bytes);
+    buffer[val_bytes.len()] = b'\n';
+    let final_slice = &buffer[..val_bytes.len() + 1];
+    let fd = rustix::fs::openat(
+        rustix::fs::CWD,
+        path,
+        rustix::fs::OFlags::WRONLY | rustix::fs::OFlags::TRUNC | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|e| {
+        log::debug!("Openat failed for {}: {}", path, e);
+        types::QosError::IoError(e.into())
+    })?;
+    rustix::io::write(&fd, final_slice).map_err(|e| {
+        log::debug!("Write raw failed '{}' -> {}: {}", value, path, e);
+        types::QosError::IoError(e.into())
+    })?;
+    Ok(())
 }
