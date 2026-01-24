@@ -12,7 +12,6 @@ std::map<std::string, bool> load(const char *path) {
   // Initialize defaults to ensure deterministic behavior if the file is missing
   // or empty.
   config["cpu"] = false;
-  config["mem"] = false;
   config["io"] = false;
   config["display"] = false;
   config["cleaner"] = false;
@@ -75,8 +74,6 @@ std::map<std::string, bool> load(const char *path) {
       // Daemon.
       if (key == "cpu_enabled")
         config["cpu"] = bool_val;
-      else if (key == "memory_enabled")
-        config["mem"] = bool_val;
       else if (key == "storage_enabled")
         config["io"] = bool_val;
       else if (key == "display_enabled")
