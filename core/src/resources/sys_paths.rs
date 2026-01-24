@@ -5,7 +5,6 @@ pub use crate::resources::discovery::{
 };
 
 pub const K_PSI_CPU_PATH: &str = "/proc/pressure/cpu";
-pub const K_PSI_MEMORY_PATH: &str = "/proc/pressure/memory";
 pub const K_PSI_IO_PATH: &str = "/proc/pressure/io";
 
 pub const K_SCHED_LATENCY_NS: &str = "/proc/sys/kernel/sched_latency_ns";

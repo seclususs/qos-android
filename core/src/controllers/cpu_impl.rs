@@ -17,8 +17,7 @@ pub struct CpuController {
     migration: cached_file::CachedFile,
     walt_init: cached_file::CachedFile,
     uclamp_min: cached_file::CachedFile,
-    psi_monitor_cpu: psi_monitor::PsiMonitor,
-    psi_monitor_mem: psi_monitor::PsiMonitor,
+    psi_cpu: psi_monitor::PsiMonitor,
     thermal_manager: thermal_math::ThermalManager,
     thermal_config: thermal_math::ThermalConfig,
     cpu_sensor: thermal::ThermalSensor,
@@ -85,8 +84,7 @@ impl CpuController {
             filesystem::open_file_for_write(sys_paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
             config_limits.min_uclamp_min,
         );
-        let psi_monitor_cpu = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?;
-        let psi_monitor_mem = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_MEMORY_PATH)?;
+        let psi_cpu = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?;
         let cpu_path = sys_paths::get_cpu_temp_path();
         let cpu_sensor = thermal::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
         let battery_sensor = thermal::ThermalSensor::new(sys_paths::K_BATTERY_TEMP_PATH, 35.0);
@@ -103,8 +101,7 @@ impl CpuController {
             migration,
             walt_init,
             uclamp_min,
-            psi_monitor_cpu,
-            psi_monitor_mem,
+            psi_cpu,
             thermal_manager,
             thermal_config,
             cpu_sensor,
@@ -131,13 +128,8 @@ impl CpuController {
         &mut self,
         context: &mut state::DaemonContext,
     ) -> Result<(), types::QosError> {
-        let data_cpu = self.psi_monitor_cpu.read_state()?;
+        let data_cpu = self.psi_cpu.read_state()?;
         let some_cpu = data_cpu.some;
-        let memory_psi = self
-            .psi_monitor_mem
-            .read_state()
-            .map(|d| d.some.avg10)
-            .unwrap_or(0.0);
         let io_psi = context.pressure.io_psi;
         let target_psi = some_cpu.current.max(some_cpu.avg10);
         let is_break = some_cpu.nis > self.cpu_math_config.nis_threshold;
@@ -147,12 +139,7 @@ impl CpuController {
         let thermal_scale =
             self.thermal_manager
                 .update(cpu_temp, bat_temp, target_psi, &self.thermal_config);
-        let trend_factor = cpu_math::calculate_trend_gain(
-            some_cpu.avg10,
-            some_cpu.avg60,
-            memory_psi,
-            &self.cpu_math_config,
-        );
+        let trend_factor = cpu_math::calculate_trend_gain(some_cpu.avg10, some_cpu.avg60);
         let now = time::Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
@@ -184,7 +171,6 @@ impl CpuController {
         let p_eff = cpu_math::calculate_effective_pressure(
             load_demand,
             trend_factor,
-            memory_psi,
             io_psi,
             &self.cpu_math_config,
         );
@@ -202,7 +188,6 @@ impl CpuController {
             p_eff,
             load_demand,
             thermal_min_latency_ns,
-            memory_psi,
             &self.cpu_math_config,
             &self.cpu_kernel_limits,
         );
@@ -210,13 +195,8 @@ impl CpuController {
         let delta_smooth =
             cpu_math::smooth_delta(delta_raw, self.prev_delta_smooth, &self.cpu_math_config);
         self.prev_delta_smooth = delta_smooth;
-        let target_migration = cpu_math::calculate_migration_cost(
-            delta_smooth,
-            p_eff,
-            memory_psi,
-            &self.cpu_math_config,
-            &self.cpu_kernel_limits,
-        );
+        let target_migration =
+            cpu_math::calculate_migration_cost(delta_smooth, p_eff, &self.cpu_kernel_limits);
         let target_wakeup = cpu_math::calculate_wakeup_granularity(
             p_eff,
             &self.cpu_math_config,

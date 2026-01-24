@@ -72,9 +72,6 @@ pub struct CpuMathConfig {
     pub bat_temp_weight: f32,
     pub bat_level_weight: f32,
     pub integral_acc_rate: f32,
-    pub memory_migration_alpha: f32,
-    pub memory_granularity_scaling: f32,
-    pub memory_volatility_cost: f32,
 }
 
 impl Default for CpuMathConfig {
@@ -107,9 +104,6 @@ impl Default for CpuMathConfig {
             bat_temp_weight: 5.0,
             bat_level_weight: 70.0,
             integral_acc_rate: 0.15,
-            memory_migration_alpha: 1.8,
-            memory_granularity_scaling: 1.0,
-            memory_volatility_cost: 2.0,
         }
     }
 }
@@ -277,27 +271,19 @@ pub fn calculate_load_demand(
     state.psi_value
 }
 
-pub fn calculate_trend_gain(
-    avg10: f32,
-    avg60: f32,
-    memory_psi: f32,
-    math_config: &CpuMathConfig,
-) -> f32 {
+pub fn calculate_trend_gain(avg10: f32, avg60: f32) -> f32 {
     let delta = avg10 - avg60;
-    let base_gain = if delta > 0.0 { tanh(delta) } else { 0.0 };
-    let memory_penalty = (memory_psi / 100.0) * math_config.memory_volatility_cost;
-    base_gain / (1.0 + memory_penalty)
+    if delta > 0.0 { tanh(delta) } else { 0.0 }
 }
 
 pub fn calculate_effective_pressure(
     load_demand: f32,
     trend_factor: f32,
-    memory_psi: f32,
     io_psi: f32,
     math_config: &CpuMathConfig,
 ) -> f32 {
     let p_response = load_demand * (1.0 + trend_factor * math_config.trend_amplification);
-    let ratio_stall = (memory_psi + io_psi) / (load_demand + 1.0);
+    let ratio_stall = io_psi / (load_demand + 1.0);
     let throughput_ratio = 1.0 / (1.0 + (ratio_stall * math_config.efficiency_gain));
     p_response * throughput_ratio
 }
@@ -312,7 +298,6 @@ pub fn calculate_latency_and_granularity(
     p_eff: f32,
     load_demand: f32,
     thermal_min_latency_ns: f32,
-    memory_psi: f32,
     math_config: &CpuMathConfig,
     kernel_limits: &CpuKernelLimits,
 ) -> (f32, f32) {
@@ -325,9 +310,8 @@ pub fn calculate_latency_and_granularity(
     let low_latency_target = kernel_limits.max_latency_ns - (effective_demand * latency_range);
     let ideal_latency = normal_latency.min(low_latency_target);
     let final_latency = ideal_latency.max(thermal_min_latency_ns);
-    let memory_dilation = 1.0 + (math_config.memory_granularity_scaling * (memory_psi / 100.0));
-    let adjusted_latency = (final_latency * memory_dilation)
-        .clamp(kernel_limits.min_latency_ns, kernel_limits.max_latency_ns);
+    let adjusted_latency =
+        final_latency.clamp(kernel_limits.min_latency_ns, kernel_limits.max_latency_ns);
     let raw_gran = adjusted_latency * math_config.latency_gran_ratio;
     let final_gran = raw_gran
         .clamp(
@@ -352,8 +336,6 @@ pub fn calculate_wakeup_granularity(
 pub fn calculate_migration_cost(
     delta_smooth: f32,
     p_eff: f32,
-    memory_psi: f32,
-    math_config: &CpuMathConfig,
     kernel_limits: &CpuKernelLimits,
 ) -> f32 {
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
@@ -361,8 +343,7 @@ pub fn calculate_migration_cost(
         + (kernel_limits.max_migration_cost - kernel_limits.min_migration_cost) * (x * x);
     let volatility_ratio = (delta_smooth / 50.0).clamp(0.0, 1.0);
     let dynamic_cost = raw_mig * (1.0 - (volatility_ratio * 0.5));
-    let pressure_scale = 1.0 + (math_config.memory_migration_alpha * (memory_psi / 100.0));
-    (dynamic_cost * pressure_scale).clamp(
+    dynamic_cost.clamp(
         kernel_limits.min_migration_cost,
         kernel_limits.max_migration_cost,
     )

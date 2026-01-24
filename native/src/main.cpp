@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
   auto cfg = qos::config::load("/data/adb/modules/sys_qos/config.ini");
 
   // Reconcile configuration with available kernel features.
-  bool final_cpu = cfg["cpu"] && features.has_cpu_psi && features.has_mem_psi;
+  bool final_cpu = cfg["cpu"] && features.has_cpu_psi;
   bool final_io = cfg["io"] && features.has_io_psi;
   bool final_display = cfg["display"] && features.display_supported;
   bool final_cleaner = cfg["cleaner"] && features.cleaner_supported &&
