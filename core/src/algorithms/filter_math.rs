@@ -1,126 +1,114 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-const MAX_WINDOW_SIZE: usize = 16;
-
 #[derive(Debug, Clone, Copy)]
 pub struct KalmanConfig {
-    pub q_base: f32,
-    pub r_base: f32,
+    pub q_pos: f32,
+    pub q_vel: f32,
+    pub r_meas: f32,
     pub fading_factor: f32,
-    pub window_size: usize,
 }
 
 impl Default for KalmanConfig {
     fn default() -> Self {
         Self {
-            q_base: 2.0,
-            r_base: 10.0,
-            fading_factor: 1.05,
-            window_size: 10,
+            q_pos: 0.1,
+            q_vel: 10.0,
+            r_meas: 5.0,
+            fading_factor: 1.0,
         }
     }
 }
 
 pub struct KalmanFilter {
-    x: f32,
-    p: f32,
-    last_nis: f32,
+    x_pos: f32,
+    x_vel: f32,
+    p00: f32,
+    p01: f32,
+    p10: f32,
+    p11: f32,
     config: KalmanConfig,
-    history: [f32; MAX_WINDOW_SIZE],
-    head: usize,
-    count: usize,
     first_run: bool,
-    sum_sq_innov: f32,
+    last_nis: f32,
 }
 
 impl KalmanFilter {
     pub fn new(config: KalmanConfig) -> Self {
-        let safe_config = if config.window_size > MAX_WINDOW_SIZE {
-            let mut c = config;
-            c.window_size = MAX_WINDOW_SIZE;
-            c
-        } else {
-            config
-        };
         Self {
-            x: 0.0,
-            p: 1.0,
-            last_nis: 0.0,
-            config: safe_config,
-            history: [0.0; MAX_WINDOW_SIZE],
-            head: 0,
-            count: 0,
+            x_pos: 0.0,
+            x_vel: 0.0,
+            p00: 100.0,
+            p01: 0.0,
+            p10: 0.0,
+            p11: 100.0,
+            config,
             first_run: true,
-            sum_sq_innov: 0.0,
+            last_nis: 0.0,
         }
     }
     pub fn reset(&mut self) {
         self.first_run = true;
-        self.p = self.config.r_base;
-        self.x = 0.0;
+        self.x_pos = 0.0;
+        self.x_vel = 0.0;
+        self.p00 = 100.0;
+        self.p01 = 0.0;
+        self.p10 = 0.0;
+        self.p11 = 100.0;
         self.last_nis = 0.0;
-        self.head = 0;
-        self.count = 0;
-        self.sum_sq_innov = 0.0;
-        self.history = [0.0; MAX_WINDOW_SIZE];
     }
-    pub fn update(&mut self, mut z_measured: f32, dt_sec: f32) -> f32 {
-        if !z_measured.is_finite() {
-            return self.x;
+    pub fn update(&mut self, z_meas: f32, dt_sec: f32) -> f32 {
+        if !z_meas.is_finite() {
+            return self.x_pos;
         }
-        z_measured = z_measured.clamp(0.0, 100.0);
+        let z = z_meas.clamp(0.0, 500.0);
         if dt_sec > 5.0 {
             self.reset();
         }
         if self.first_run {
-            self.x = z_measured;
-            self.p = self.config.r_base;
-            self.last_nis = 0.0;
+            self.x_pos = z;
+            self.x_vel = 0.0;
             self.first_run = false;
-            return self.x;
+            return z;
         }
-        let x_pred = self.x;
-        let q_k_base = self.config.q_base * dt_sec;
-        let p_pred = (self.config.fading_factor * self.p) + q_k_base;
-        let innovation = z_measured - x_pred;
-        let innov_sq = innovation * innovation;
-        let old_val = self.history[self.head];
-        self.sum_sq_innov -= old_val * old_val;
-        self.history[self.head] = innovation;
-        self.sum_sq_innov += innov_sq;
-        if self.sum_sq_innov < 0.0 {
-            self.sum_sq_innov = 0.0;
-        }
-        self.head = (self.head + 1) % self.config.window_size;
-        if self.count < self.config.window_size {
-            self.count += 1;
-        }
-        let c_y = if self.count > 0 {
-            self.sum_sq_innov / (self.count as f32)
-        } else {
-            0.0
-        };
-        let r_adaptive = c_y - p_pred;
-        let r_eff = r_adaptive.max(self.config.r_base);
-        let s_temp = p_pred + r_eff;
-        let nis = if s_temp > 1e-6 {
-            innov_sq / s_temp
-        } else {
-            0.0
-        };
-        self.last_nis = nis;
-        let q_adaptive = if nis > 2.0 {
-            let scale = nis.min(10.0);
-            q_k_base * scale
-        } else {
-            q_k_base
-        };
-        let p_pred_final = p_pred + (q_adaptive - q_k_base).max(0.0);
-        let s_k = p_pred_final + r_eff;
-        let k_gain = if s_k > 1e-6 { p_pred_final / s_k } else { 0.0 };
-        self.x = (x_pred + (k_gain * innovation)).clamp(0.0, 100.0);
-        self.p = (1.0 - k_gain) * p_pred_final;
-        self.x
+        let dt = dt_sec.max(0.0001);
+        let x_pos_pred = self.x_pos + self.x_vel * dt;
+        let x_vel_pred = self.x_vel;
+        let dt2 = dt * dt;
+        let dt3 = dt2 * dt;
+        let dt4 = dt2 * dt2;
+        let q_scale = self.config.q_vel;
+        let q00 = q_scale * dt4 * 0.25 + self.config.q_pos * dt;
+        let q01 = q_scale * dt3 * 0.5;
+        let q10 = q01;
+        let q11 = q_scale * dt2 + self.config.q_vel * dt;
+        let f_p00 = self.p00 + self.p10 * dt;
+        let f_p01 = self.p01 + self.p11 * dt;
+        let f_p10 = self.p10;
+        let f_p11 = self.p11;
+        let alpha = self.config.fading_factor;
+        let p00_pred = (f_p00 + f_p01 * dt) * alpha + q00;
+        let p01_pred = f_p01 * alpha + q01;
+        let p10_pred = (f_p10 + f_p11 * dt) * alpha + q10;
+        let p11_pred = f_p11 * alpha + q11;
+        let y = z - x_pos_pred;
+        let s = p00_pred + self.config.r_meas;
+        let inv_s = if s.abs() > 1e-9 { 1.0 / s } else { 0.0 };
+        let k0 = p00_pred * inv_s;
+        let k1 = p10_pred * inv_s;
+        self.x_pos = x_pos_pred + k0 * y;
+        self.x_vel = x_vel_pred + k1 * y;
+        let p00_new = (1.0 - k0) * p00_pred;
+        let p01_new = (1.0 - k0) * p01_pred;
+        let p10_new = -k1 * p00_pred + p10_pred;
+        let p11_new = -k1 * p01_pred + p11_pred;
+        self.p00 = p00_new;
+        self.p01 = p01_new;
+        self.p10 = p10_new;
+        self.p11 = p11_new;
+        self.last_nis = y * y * inv_s;
+        self.x_pos.max(0.0)
+    }
+    pub fn get_velocity(&self) -> f32 {
+        self.x_vel
     }
     pub fn get_last_nis(&self) -> f32 {
         self.last_nis
