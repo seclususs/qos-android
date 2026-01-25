@@ -34,7 +34,6 @@ pub struct CpuController {
     cpu_math_config: cpu_math::CpuMathConfig,
     cpu_kernel_limits: cpu_math::CpuKernelLimits,
     last_tick: time::Instant,
-    prev_delta_smooth: f32,
     poller: poll_math::AdaptivePoller,
     next_wake_ms: i32,
 }
@@ -118,7 +117,6 @@ impl CpuController {
             cpu_math_config,
             cpu_kernel_limits,
             last_tick: time::Instant::now(),
-            prev_delta_smooth: 0.0,
             poller,
             next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
         };
@@ -132,7 +130,7 @@ impl CpuController {
         let data_cpu = self.psi_cpu.read_state()?;
         let some_cpu = data_cpu.some;
         let io_psi = context.pressure.io_psi;
-        let target_psi = some_cpu.current.max(some_cpu.avg10);
+        let target_psi = some_cpu.current;
         let is_break = some_cpu.nis > self.cpu_math_config.nis_threshold;
         let cpu_temp = self.cpu_sensor.read();
         let bat_temp = self.battery_sensor.read();
@@ -140,7 +138,7 @@ impl CpuController {
         let thermal_scale =
             self.thermal_manager
                 .update(cpu_temp, bat_temp, target_psi, &self.thermal_config);
-        let trend_factor = cpu_math::calculate_trend_gain(some_cpu.avg10, some_cpu.avg60);
+        let trend_factor = cpu_math::calculate_trend_gain(some_cpu.velocity);
         let now = time::Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
@@ -156,6 +154,7 @@ impl CpuController {
         );
         let demand_input = cpu_math::DemandInput {
             target_psi,
+            psi_velocity: some_cpu.velocity,
             dt_real,
             dt_safe,
             thermal_scale,
@@ -177,7 +176,9 @@ impl CpuController {
         );
         context.pressure.cpu_psi = p_eff;
         let mut calculated_poll =
-            self.poller.calculate_next_interval(p_eff, some_cpu.avg300) as i32;
+            self.poller
+                .calculate_next_interval(p_eff, some_cpu.avg300, some_cpu.velocity)
+                as i32;
         if cpu_math::is_transient(&self.load_state, target_psi, &self.cpu_math_config) {
             calculated_poll =
                 calculated_poll.min(self.cpu_math_config.transient_poll_interval as i32);
@@ -192,12 +193,8 @@ impl CpuController {
             &self.cpu_math_config,
             &self.cpu_kernel_limits,
         );
-        let delta_raw = some_cpu.current - some_cpu.avg10;
-        let delta_smooth =
-            cpu_math::smooth_delta(delta_raw, self.prev_delta_smooth, &self.cpu_math_config);
-        self.prev_delta_smooth = delta_smooth;
         let target_migration =
-            cpu_math::calculate_migration_cost(delta_smooth, p_eff, &self.cpu_kernel_limits);
+            cpu_math::calculate_migration_cost(some_cpu.velocity, p_eff, &self.cpu_kernel_limits);
         let target_wakeup = cpu_math::calculate_wakeup_granularity(
             p_eff,
             &self.cpu_math_config,

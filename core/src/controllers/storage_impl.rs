@@ -96,7 +96,7 @@ impl StorageController {
         let delta =
             storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_real);
         self.prev_io_stats = current_io_stats;
-        context.pressure.io_psi = psi_data.some.avg10;
+        context.pressure.io_psi = psi_data.some.current;
         context.pressure.io_saturation = current_io_stats.in_flight as f32;
         let req_size_ratio =
             storage_math::calculate_request_size_ratio(&delta, &self.storage_math_config);
@@ -116,8 +116,10 @@ impl StorageController {
             storage_math::calculate_target_read_ahead(sequentiality, &self.storage_kernel_limits);
         let lambda_eff =
             storage_math::calculate_weighted_throughput(&delta, &self.storage_math_config);
-        let target_latency =
-            storage_math::calculate_target_latency(psi_data.some.avg10, &self.storage_math_config);
+        let target_latency = storage_math::calculate_target_latency(
+            psi_data.some.current,
+            &self.storage_math_config,
+        );
         let current_latency = storage_math::calculate_effective_latency(
             &delta,
             lambda_eff,
@@ -128,7 +130,7 @@ impl StorageController {
             current_latency,
             target_latency,
             self.current_nr_requests,
-            psi_data.some.avg10,
+            psi_data.some.current,
             &self.storage_math_config,
             &self.storage_kernel_limits,
         );
@@ -142,16 +144,17 @@ impl StorageController {
         }
         self.current_read_ahead = calculated_ra;
         if storage_math::is_congestion_critical(
-            psi_data.some.avg10,
+            psi_data.some.current,
             current_io_stats.in_flight as f32,
             &self.storage_math_config,
         ) {
             self.next_wake_ms = loop_settings::MIN_POLLING_MS as i32;
         } else {
-            self.next_wake_ms = self
-                .poller
-                .calculate_next_interval(psi_data.some.avg10, psi_data.some.avg300)
-                as i32;
+            self.next_wake_ms = self.poller.calculate_next_interval(
+                psi_data.some.current,
+                psi_data.some.avg300,
+                psi_data.some.velocity,
+            ) as i32;
         }
         self.apply_values(false);
         Ok(())

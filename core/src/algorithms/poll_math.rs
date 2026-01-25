@@ -31,7 +31,6 @@ impl Default for PollerConfig {
 
 pub struct AdaptivePoller {
     current_interval: u64,
-    last_pressure: f32,
     last_tick: time::Instant,
     target_interval: u64,
     weight_pressure: f32,
@@ -48,7 +47,6 @@ impl AdaptivePoller {
             .as_nanos() as u64;
         Self {
             current_interval: loop_settings::MIN_POLLING_MS,
-            last_pressure: 0.0,
             last_tick: time::Instant::now(),
             target_interval: loop_settings::MIN_POLLING_MS,
             weight_pressure,
@@ -68,12 +66,16 @@ impl AdaptivePoller {
         let limit = range * 2;
         self.rng_state % (limit + 1)
     }
-    pub fn calculate_next_interval(&mut self, current_pressure: f32, avg300: f32) -> u64 {
+    pub fn calculate_next_interval(
+        &mut self,
+        current_pressure: f32,
+        avg300: f32,
+        pressure_velocity: f32,
+    ) -> u64 {
         let now = time::Instant::now();
         let elapsed_ms = now.duration_since(self.last_tick).as_millis() as u64;
         if elapsed_ms > (self.current_interval + self.tunables.sleep_tolerance_ms) {
             log::debug!("Time Discontinuity (Sleep?): {}ms.", elapsed_ms);
-            self.last_pressure = current_pressure;
             self.last_tick = now;
             self.current_interval = loop_settings::MIN_POLLING_MS;
             return loop_settings::MIN_POLLING_MS;
@@ -85,9 +87,7 @@ impl AdaptivePoller {
         } else {
             (loop_settings::MIN_POLLING_MS, loop_settings::MAX_POLLING_MS)
         };
-        let effective_dt_ms = elapsed_ms.max(self.tunables.min_effective_dt_ms);
-        let dt_sec = effective_dt_ms as f32 / 1000.0;
-        let rate_change = (current_pressure - self.last_pressure) / dt_sec;
+        let rate_change = pressure_velocity;
         let prediction = current_pressure + (rate_change * 0.5);
         let p_term = prediction * self.weight_pressure;
         let d_term = rate_change.abs() * self.weight_derivative;
@@ -104,7 +104,6 @@ impl AdaptivePoller {
         };
         self.target_interval = next_target as u64;
         let diff = (self.target_interval as i64 - self.current_interval as i64).abs();
-        self.last_pressure = current_pressure;
         self.last_tick = now;
         if diff < self.tunables.hysteresis_threshold_ms as i64 {
             return self.apply_discrete_math_mut(self.current_interval, dynamic_min, dynamic_max);
