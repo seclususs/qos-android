@@ -9,6 +9,7 @@ use std::time;
 #[derive(Debug, Clone, Copy)]
 pub struct PsiTrend {
     pub current: f32,
+    pub velocity: f32,
     pub avg10: f32,
     pub avg60: f32,
     pub avg300: f32,
@@ -20,6 +21,7 @@ impl Default for PsiTrend {
     fn default() -> Self {
         Self {
             current: 0.0,
+            velocity: 0.0,
             avg10: 0.0,
             avg60: 0.0,
             avg300: 0.0,
@@ -156,9 +158,11 @@ impl PsiMonitor {
             let delta_some = some_trend.total.saturating_sub(self.last_some_total) as f32;
             let raw_some = delta_some / dt_calc * 100.0;
             some_trend.current = self.filter_some.update(raw_some, dt_sec);
+            some_trend.velocity = self.filter_some.get_velocity();
             some_trend.nis = self.filter_some.get_last_nis();
         } else {
             some_trend.current = some_trend.avg10;
+            some_trend.velocity = 0.0;
             self.filter_some.reset();
             self.filter_some.update(some_trend.avg10, 1.0);
             self.first_run = false;
