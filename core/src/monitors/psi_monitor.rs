@@ -11,9 +11,7 @@ pub struct PsiTrend {
     pub current: f32,
     pub velocity: f32,
     pub avg10: f32,
-    pub avg60: f32,
     pub avg300: f32,
-    pub total: u64,
     pub nis: f32,
 }
 
@@ -23,9 +21,7 @@ impl Default for PsiTrend {
             current: 0.0,
             velocity: 0.0,
             avg10: 0.0,
-            avg60: 0.0,
             avg300: 0.0,
-            total: 0,
             nis: 0.0,
         }
     }
@@ -113,6 +109,7 @@ impl PsiMonitor {
         };
         let dt_calc = elapsed_micros.max(1000.0);
         let mut some_trend = PsiTrend::default();
+        let mut current_total = 0u64;
         let mut cursor = 0;
         let len = buffer.len();
         while cursor < len {
@@ -126,17 +123,13 @@ impl PsiMonitor {
                         let (val, next) = Self::parse_f32_bytes(buffer, cursor + 6);
                         some_trend.avg10 = val;
                         cursor = next;
-                    } else if cursor + 6 < len && &buffer[cursor..cursor + 6] == b"avg60=" {
-                        let (val, next) = Self::parse_f32_bytes(buffer, cursor + 6);
-                        some_trend.avg60 = val;
-                        cursor = next;
                     } else if cursor + 7 < len && &buffer[cursor..cursor + 7] == b"avg300=" {
                         let (val, next) = Self::parse_f32_bytes(buffer, cursor + 7);
                         some_trend.avg300 = val;
                         cursor = next;
                     } else if cursor + 6 < len && &buffer[cursor..cursor + 6] == b"total=" {
                         let (val, next) = Self::parse_u64_bytes(buffer, cursor + 6);
-                        some_trend.total = val;
+                        current_total = val;
                         cursor = next;
                     } else {
                         while cursor < len && buffer[cursor] != b' ' && buffer[cursor] != b'\n' {
@@ -155,7 +148,7 @@ impl PsiMonitor {
             }
         }
         if !self.first_run {
-            let delta_some = some_trend.total.saturating_sub(self.last_some_total) as f32;
+            let delta_some = current_total.saturating_sub(self.last_some_total) as f32;
             let raw_some = delta_some / dt_calc * 100.0;
             some_trend.current = self.filter_some.update(raw_some, dt_sec);
             some_trend.velocity = self.filter_some.get_velocity();
@@ -168,7 +161,7 @@ impl PsiMonitor {
             self.first_run = false;
         }
         self.last_read_time = now;
-        self.last_some_total = some_trend.total;
+        self.last_some_total = current_total;
         Ok(PsiData { some: some_trend })
     }
 }
