@@ -28,13 +28,13 @@ impl Default for StorageMathConfig {
         Self {
             min_req_size_kb: 8.0,
             max_req_size_kb: 512.0,
-            write_cost_factor: 3.5,
-            target_latency_base_ms: 50.0,
-            hysteresis_threshold: 0.25,
-            critical_threshold_psi: 30.0,
-            queue_pressure_low: 0.5,
-            queue_pressure_high: 6.0,
-            smoothing_factor: 0.35,
+            write_cost_factor: 4.5,
+            target_latency_base_ms: 45.0,
+            hysteresis_threshold: 0.35,
+            critical_threshold_psi: 22.0,
+            queue_pressure_low: 0.3,
+            queue_pressure_high: 4.5,
+            smoothing_factor: 0.45,
         }
     }
 }
@@ -62,11 +62,11 @@ impl Default for WorkloadState {
 }
 
 pub fn is_congestion_critical(
-    psi_avg10: f32,
+    psi_pressure: f32,
     in_flight: f32,
     math_config: &StorageMathConfig,
 ) -> bool {
-    psi_avg10 > math_config.critical_threshold_psi || in_flight > math_config.queue_pressure_high
+    psi_pressure > math_config.critical_threshold_psi || in_flight > math_config.queue_pressure_high
 }
 
 pub fn should_update_nr_requests(
@@ -188,11 +188,11 @@ pub fn calculate_next_queue_depth(
     current_latency_ms: f32,
     target_latency_ms: f32,
     current_nr_requests: f32,
-    psi_avg10: f32,
+    psi_pressure: f32,
     math_config: &StorageMathConfig,
     kernel_limits: &StorageKernelLimits,
 ) -> f32 {
-    if psi_avg10 > math_config.critical_threshold_psi {
+    if psi_pressure > math_config.critical_threshold_psi {
         return kernel_limits.min_nr_requests;
     }
     if lambda_eff < 1.0 || current_latency_ms < 0.1 {
