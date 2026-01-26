@@ -21,10 +21,10 @@ impl Default for PollerConfig {
             sleep_tolerance_ms: 200,
             min_effective_dt_ms: 50,
             quantization_step_ms: 50,
-            hysteresis_threshold_ms: 150,
+            hysteresis_threshold_ms: 200,
             noise_percent: 5,
-            rise_factor: 0.1,
-            fall_factor: 0.8,
+            rise_factor: 0.03,
+            fall_factor: 0.95,
         }
     }
 }
