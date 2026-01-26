@@ -11,10 +11,10 @@ pub struct KalmanConfig {
 impl Default for KalmanConfig {
     fn default() -> Self {
         Self {
-            q_pos: 0.1,
-            q_vel: 10.0,
-            r_meas: 5.0,
-            fading_factor: 1.0,
+            q_pos: 0.08,
+            q_vel: 8.0,
+            r_meas: 4.0,
+            fading_factor: 1.02,
         }
     }
 }
