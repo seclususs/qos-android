@@ -1,6 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::monitors::disk_monitor;
+use crate::utils::tier::DeviceTier;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StorageKernelLimits {
@@ -25,16 +26,41 @@ pub struct StorageMathConfig {
 
 impl Default for StorageMathConfig {
     fn default() -> Self {
-        Self {
-            min_req_size_kb: 8.0,
-            max_req_size_kb: 512.0,
-            write_cost_factor: 4.5,
-            target_latency_base_ms: 45.0,
-            hysteresis_threshold: 0.35,
-            critical_threshold_psi: 22.0,
-            queue_pressure_low: 0.3,
-            queue_pressure_high: 4.5,
-            smoothing_factor: 0.45,
+        let tier = DeviceTier::get();
+        match tier {
+            DeviceTier::Flagship => Self {
+                min_req_size_kb: 8.0,
+                max_req_size_kb: 512.0,
+                write_cost_factor: 4.0,
+                target_latency_base_ms: 35.0,
+                hysteresis_threshold: 0.30,
+                critical_threshold_psi: 20.0,
+                queue_pressure_low: 0.2,
+                queue_pressure_high: 5.0,
+                smoothing_factor: 0.50,
+            },
+            DeviceTier::MidRange => Self {
+                min_req_size_kb: 8.0,
+                max_req_size_kb: 512.0,
+                write_cost_factor: 4.25,
+                target_latency_base_ms: 40.0,
+                hysteresis_threshold: 0.32,
+                critical_threshold_psi: 21.0,
+                queue_pressure_low: 0.25,
+                queue_pressure_high: 4.75,
+                smoothing_factor: 0.47,
+            },
+            DeviceTier::LowEnd => Self {
+                min_req_size_kb: 8.0,
+                max_req_size_kb: 512.0,
+                write_cost_factor: 4.5,
+                target_latency_base_ms: 45.0,
+                hysteresis_threshold: 0.35,
+                critical_threshold_psi: 22.0,
+                queue_pressure_low: 0.3,
+                queue_pressure_high: 4.5,
+                smoothing_factor: 0.45,
+            },
         }
     }
 }

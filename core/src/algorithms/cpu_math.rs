@@ -1,5 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::utils::tier::DeviceTier;
+
 #[derive(Debug, Clone, Copy)]
 pub struct LoadState {
     pub psi_value: f32,
@@ -61,27 +63,74 @@ pub struct CpuMathConfig {
 
 impl Default for CpuMathConfig {
     fn default() -> Self {
-        Self {
-            latency_gran_ratio: 0.33,
-            decay_coeff: 0.02,
-            uclamp_k: 0.18,
-            uclamp_mid: 10.0,
-            response_gain: 30.0,
-            stability_ratio: 2.20,
-            stability_margin: 3.0,
-            gain_scheduling_alpha: 0.97,
-            sigmoid_k: 0.07,
-            sigmoid_mid: 7.0,
-            lookahead_time: 0.18,
-            efficiency_gain: 5.5,
-            trend_amplification: 0.12,
-            surge_threshold: 18.0,
-            surge_gain: 0.10,
-            transient_rate_threshold: 0.12,
-            transient_diff_threshold: 0.6,
-            transient_poll_interval: 50.0,
-            nis_threshold: 8.0,
-            bat_level_weight: 98.0,
+        let tier = DeviceTier::get();
+        match tier {
+            DeviceTier::Flagship => Self {
+                latency_gran_ratio: 0.33,
+                decay_coeff: 0.015,
+                uclamp_k: 0.20,
+                uclamp_mid: 8.0,
+                response_gain: 35.0,
+                stability_ratio: 2.10,
+                stability_margin: 3.5,
+                gain_scheduling_alpha: 0.98,
+                sigmoid_k: 0.08,
+                sigmoid_mid: 6.0,
+                lookahead_time: 0.15,
+                efficiency_gain: 6.0,
+                trend_amplification: 0.14,
+                surge_threshold: 16.0,
+                surge_gain: 0.12,
+                transient_rate_threshold: 0.10,
+                transient_diff_threshold: 0.5,
+                transient_poll_interval: 50.0,
+                nis_threshold: 7.0,
+                bat_level_weight: 95.0,
+            },
+            DeviceTier::MidRange => Self {
+                latency_gran_ratio: 0.33,
+                decay_coeff: 0.018,
+                uclamp_k: 0.19,
+                uclamp_mid: 9.0,
+                response_gain: 32.0,
+                stability_ratio: 2.15,
+                stability_margin: 3.2,
+                gain_scheduling_alpha: 0.975,
+                sigmoid_k: 0.075,
+                sigmoid_mid: 6.5,
+                lookahead_time: 0.16,
+                efficiency_gain: 5.75,
+                trend_amplification: 0.13,
+                surge_threshold: 17.0,
+                surge_gain: 0.11,
+                transient_rate_threshold: 0.11,
+                transient_diff_threshold: 0.55,
+                transient_poll_interval: 50.0,
+                nis_threshold: 7.5,
+                bat_level_weight: 96.0,
+            },
+            DeviceTier::LowEnd => Self {
+                latency_gran_ratio: 0.33,
+                decay_coeff: 0.02,
+                uclamp_k: 0.18,
+                uclamp_mid: 10.0,
+                response_gain: 30.0,
+                stability_ratio: 2.20,
+                stability_margin: 3.0,
+                gain_scheduling_alpha: 0.97,
+                sigmoid_k: 0.07,
+                sigmoid_mid: 7.0,
+                lookahead_time: 0.18,
+                efficiency_gain: 5.5,
+                trend_amplification: 0.12,
+                surge_threshold: 18.0,
+                surge_gain: 0.10,
+                transient_rate_threshold: 0.12,
+                transient_diff_threshold: 0.6,
+                transient_poll_interval: 50.0,
+                nis_threshold: 8.0,
+                bat_level_weight: 98.0,
+            },
         }
     }
 }

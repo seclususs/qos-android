@@ -1,5 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::utils::tier::DeviceTier;
+
 use std::time;
 
 const SMITH_BUFFER_SIZE: usize = 512;
@@ -28,25 +30,68 @@ pub struct ThermalConfig {
 
 impl Default for ThermalConfig {
     fn default() -> Self {
-        Self {
-            hard_limit_cpu: 52.0,
-            hard_limit_bat: 40.0,
-            sched_temp_cool: 26.0,
-            sched_temp_hot: 45.0,
-            kp_base: 0.6,
-            ki_base: 0.01,
-            kd_base: 0.8,
-            kp_fast: 4.0,
-            ki_fast: 0.06,
-            kd_fast: 3.5,
-            anti_windup_k: 2.0,
-            deriv_filter_n: 18.0,
-            ff_gain: 2.5,
-            ff_lead_time: 5.0,
-            ff_lag_time: 2.5,
-            smith_gain: 1.5,
-            smith_tau: 12.0,
-            smith_delay_sec: 1.8,
+        let tier = DeviceTier::get();
+        match tier {
+            DeviceTier::Flagship => Self {
+                hard_limit_cpu: 55.0,
+                hard_limit_bat: 42.0,
+                sched_temp_cool: 25.0,
+                sched_temp_hot: 48.0,
+                kp_base: 0.7,
+                ki_base: 0.015,
+                kd_base: 1.0,
+                kp_fast: 4.5,
+                ki_fast: 0.07,
+                kd_fast: 4.0,
+                anti_windup_k: 1.8,
+                deriv_filter_n: 20.0,
+                ff_gain: 3.0,
+                ff_lead_time: 4.0,
+                ff_lag_time: 2.0,
+                smith_gain: 1.7,
+                smith_tau: 10.0,
+                smith_delay_sec: 1.5,
+            },
+            DeviceTier::MidRange => Self {
+                hard_limit_cpu: 53.0,
+                hard_limit_bat: 41.0,
+                sched_temp_cool: 25.5,
+                sched_temp_hot: 46.0,
+                kp_base: 0.65,
+                ki_base: 0.012,
+                kd_base: 0.9,
+                kp_fast: 4.2,
+                ki_fast: 0.065,
+                kd_fast: 3.75,
+                anti_windup_k: 1.9,
+                deriv_filter_n: 19.0,
+                ff_gain: 2.75,
+                ff_lead_time: 4.5,
+                ff_lag_time: 2.25,
+                smith_gain: 1.6,
+                smith_tau: 11.0,
+                smith_delay_sec: 1.65,
+            },
+            DeviceTier::LowEnd => Self {
+                hard_limit_cpu: 52.0,
+                hard_limit_bat: 40.0,
+                sched_temp_cool: 26.0,
+                sched_temp_hot: 45.0,
+                kp_base: 0.6,
+                ki_base: 0.01,
+                kd_base: 0.8,
+                kp_fast: 4.0,
+                ki_fast: 0.06,
+                kd_fast: 3.5,
+                anti_windup_k: 2.0,
+                deriv_filter_n: 18.0,
+                ff_gain: 2.5,
+                ff_lead_time: 5.0,
+                ff_lag_time: 2.5,
+                smith_gain: 1.5,
+                smith_tau: 12.0,
+                smith_delay_sec: 1.8,
+            },
         }
     }
 }
