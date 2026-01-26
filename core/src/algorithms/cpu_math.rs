@@ -4,11 +4,7 @@
 pub struct LoadState {
     pub psi_value: f32,
     pub rate: f32,
-    pub load_history: [f32; 8],
-    pub history_idx: usize,
-    pub integral_accum: f32,
     pub prev_integral: f32,
-    pub smoothed_integral: f32,
     pub first_run: bool,
 }
 
@@ -17,11 +13,7 @@ impl Default for LoadState {
         Self {
             psi_value: 0.0,
             rate: 0.0,
-            load_history: [0.0; 8],
-            history_idx: 0,
-            integral_accum: 0.0,
             prev_integral: 0.0,
-            smoothed_integral: 0.0,
             first_run: true,
         }
     }
@@ -53,11 +45,9 @@ pub struct CpuMathConfig {
     pub stability_ratio: f32,
     pub stability_margin: f32,
     pub gain_scheduling_alpha: f32,
-    pub alpha_smooth: f32,
     pub sigmoid_k: f32,
     pub sigmoid_mid: f32,
     pub lookahead_time: f32,
-    pub variance_sensitivity: f32,
     pub efficiency_gain: f32,
     pub trend_amplification: f32,
     pub surge_threshold: f32,
@@ -66,44 +56,32 @@ pub struct CpuMathConfig {
     pub transient_diff_threshold: f32,
     pub transient_poll_interval: f32,
     pub nis_threshold: f32,
-    pub safe_temp_limit: f32,
-    pub max_temp_limit: f32,
-    pub temp_cost_weight: f32,
-    pub bat_temp_weight: f32,
     pub bat_level_weight: f32,
-    pub integral_acc_rate: f32,
 }
 
 impl Default for CpuMathConfig {
     fn default() -> Self {
         Self {
-            latency_gran_ratio: 0.50,
-            decay_coeff: 0.10,
-            uclamp_k: 0.15,
-            uclamp_mid: 15.0,
-            response_gain: 35.0,
-            stability_ratio: 1.70,
-            stability_margin: 2.0,
-            gain_scheduling_alpha: 0.90,
-            alpha_smooth: 0.80,
-            sigmoid_k: 0.20,
-            sigmoid_mid: 25.0,
-            lookahead_time: 0.12,
-            variance_sensitivity: 0.08,
-            efficiency_gain: 4.0,
-            trend_amplification: 0.20,
-            surge_threshold: 25.0,
-            surge_gain: 0.15,
-            transient_rate_threshold: 0.20,
-            transient_diff_threshold: 1.0,
-            transient_poll_interval: 80.0,
-            nis_threshold: 12.0,
-            safe_temp_limit: 45.0,
-            max_temp_limit: 85.0,
-            temp_cost_weight: 9.0,
-            bat_temp_weight: 7.0,
-            bat_level_weight: 90.0,
-            integral_acc_rate: 0.10,
+            latency_gran_ratio: 0.33,
+            decay_coeff: 0.02,
+            uclamp_k: 0.18,
+            uclamp_mid: 10.0,
+            response_gain: 30.0,
+            stability_ratio: 2.20,
+            stability_margin: 3.0,
+            gain_scheduling_alpha: 0.97,
+            sigmoid_k: 0.07,
+            sigmoid_mid: 7.0,
+            lookahead_time: 0.18,
+            efficiency_gain: 5.5,
+            trend_amplification: 0.12,
+            surge_threshold: 18.0,
+            surge_gain: 0.10,
+            transient_rate_threshold: 0.12,
+            transient_diff_threshold: 0.6,
+            transient_poll_interval: 50.0,
+            nis_threshold: 8.0,
+            bat_level_weight: 98.0,
         }
     }
 }
@@ -111,6 +89,7 @@ impl Default for CpuMathConfig {
 #[derive(Debug, Clone, Copy)]
 pub struct DemandInput {
     pub target_psi: f32,
+    pub psi_velocity: f32,
     pub dt_real: f32,
     pub dt_safe: f32,
     pub thermal_scale: f32,
@@ -144,27 +123,6 @@ pub fn sanitize_dt(secs: f32) -> f32 {
     secs.clamp(0.000001, 0.1)
 }
 
-fn calculate_regression_slope(state: &LoadState) -> f32 {
-    const N: f32 = 8.0;
-    const SUM_X: f32 = 28.0;
-    const DENOMINATOR: f32 = 336.0;
-    let mut sum_y = 0.0;
-    let mut sum_xy = 0.0;
-    for i in 0..8 {
-        let idx = (state.history_idx + i) % 8;
-        let y = state.load_history[idx];
-        let x = i as f32;
-        sum_y += y;
-        sum_xy += x * y;
-    }
-    let numerator = (N * sum_xy) - (SUM_X * sum_y);
-    numerator / DENOMINATOR
-}
-
-pub fn smooth_delta(current_delta: f32, prev_smooth: f32, math_config: &CpuMathConfig) -> f32 {
-    math_config.alpha_smooth * current_delta + (1.0 - math_config.alpha_smooth) * prev_smooth
-}
-
 pub fn is_transient(state: &LoadState, target_psi: f32, math_config: &CpuMathConfig) -> bool {
     state.rate.abs() > math_config.transient_rate_threshold
         || (state.psi_value - target_psi).abs() > math_config.transient_diff_threshold
@@ -172,41 +130,25 @@ pub fn is_transient(state: &LoadState, target_psi: f32, math_config: &CpuMathCon
 
 pub fn update_integral_params(
     state: &mut LoadState,
-    cpu_temp: f32,
-    bat_temp: f32,
     bat_level: f32,
     dt_safe: f32,
     math_config: &CpuMathConfig,
 ) -> (f32, f32) {
-    let temp_ratio = (cpu_temp / math_config.max_temp_limit).clamp(0.0, 1.5);
-    let term_cpu = math_config.temp_cost_weight * temp_ratio.powi(2);
-    let bat_stress = (bat_temp / 45.0).clamp(0.0, 1.0);
-    let term_bat_temp = math_config.bat_temp_weight * bat_stress;
     let depletion = (100.0 - bat_level).max(0.0) / 100.0;
-    let term_bat_cap = math_config.bat_level_weight * depletion.powi(3);
-    let cost_heuristic = term_cpu + term_bat_temp + term_bat_cap;
-    let limit_violation = (cpu_temp - math_config.safe_temp_limit).max(0.0);
-    let integration_rate = math_config.integral_acc_rate * limit_violation;
-    state.integral_accum += integration_rate * dt_safe;
-    if limit_violation <= 0.0 {
-        state.integral_accum *= 0.98;
-    }
-    state.integral_accum = state.integral_accum.clamp(0.0, 200.0);
-    let total_integral = cost_heuristic + state.integral_accum;
+    let cost_heuristic = math_config.bat_level_weight * depletion.powi(3);
+    let total_integral = cost_heuristic;
     if state.first_run {
-        state.smoothed_integral = total_integral;
         state.prev_integral = total_integral;
         state.first_run = false;
         return (total_integral, 0.0);
     }
-    state.smoothed_integral = (state.smoothed_integral * 0.8) + (total_integral * 0.2);
     let integral_dot = if dt_safe > 0.0 {
-        (state.smoothed_integral - state.prev_integral) / dt_safe
+        (total_integral - state.prev_integral) / dt_safe
     } else {
         0.0
     };
-    state.prev_integral = state.smoothed_integral;
-    (state.smoothed_integral, integral_dot)
+    state.prev_integral = total_integral;
+    (total_integral, integral_dot)
 }
 
 pub fn calculate_load_demand(
@@ -215,32 +157,17 @@ pub fn calculate_load_demand(
     math_config: &CpuMathConfig,
 ) -> f32 {
     if input.is_structural_break {
-        for i in 0..8 {
-            state.load_history[i] = input.target_psi;
-        }
+        state.psi_value = input.target_psi;
+        state.rate = 0.0;
     }
-    state.load_history[state.history_idx] = input.target_psi;
-    state.history_idx = (state.history_idx + 1) % 8;
-    let mut sum = 0.0;
-    for val in state.load_history.iter() {
-        sum += val;
-    }
-    let mean = sum / 8.0;
-    let mut variance_sum = 0.0;
-    for val in state.load_history.iter() {
-        variance_sum += (val - mean).powi(2);
-    }
-    let std_dev = (variance_sum / 8.0).sqrt();
-    let deviation_gain = 1.0 + (math_config.variance_sensitivity * std_dev);
-    let slope_per_tick = calculate_regression_slope(state);
-    let load_rate = slope_per_tick / input.dt_real.max(0.001);
+    let load_rate = input.psi_velocity;
     if load_rate.abs() > math_config.surge_threshold {
         state.rate += load_rate * math_config.surge_gain;
     }
     let prediction_target = input.target_psi + (load_rate * math_config.lookahead_time);
     let k_base = math_config.response_gain;
     let k_dynamic = k_base * (1.0 + (math_config.gain_scheduling_alpha * input.trend_factor));
-    let k_final = k_dynamic * deviation_gain * input.thermal_scale.clamp(0.1, 1.0).powi(2);
+    let k_final = k_dynamic * input.thermal_scale.clamp(0.1, 1.0).powi(2);
     let displacement = prediction_target - state.psi_value;
     let prop_term = k_final * displacement;
     let mut limit_term = input.integral_total * state.psi_value;
@@ -248,7 +175,7 @@ pub fn calculate_load_demand(
     limit_term = limit_term.min(max_possible_response * 1.5);
     let crit_damp = 2.0 * k_final.sqrt();
     let base_damp = crit_damp * math_config.stability_ratio;
-    let rate_sq = state.rate.powi(2) + 0.001;
+    let rate_sq = load_rate.powi(2) + 0.001;
     let stability_damping_req =
         (0.5 * input.integral_dot.abs() * state.psi_value.powi(2)) / rate_sq;
     let c_stability =
@@ -271,9 +198,8 @@ pub fn calculate_load_demand(
     state.psi_value
 }
 
-pub fn calculate_trend_gain(avg10: f32, avg60: f32) -> f32 {
-    let delta = avg10 - avg60;
-    if delta > 0.0 { tanh(delta) } else { 0.0 }
+pub fn calculate_trend_gain(velocity: f32) -> f32 {
+    if velocity > 0.0 { tanh(velocity) } else { 0.0 }
 }
 
 pub fn calculate_effective_pressure(
@@ -333,15 +259,11 @@ pub fn calculate_wakeup_granularity(
     raw_wake.clamp(kernel_limits.min_wakeup_ns, kernel_limits.max_wakeup_ns)
 }
 
-pub fn calculate_migration_cost(
-    delta_smooth: f32,
-    p_eff: f32,
-    kernel_limits: &CpuKernelLimits,
-) -> f32 {
+pub fn calculate_migration_cost(velocity: f32, p_eff: f32, kernel_limits: &CpuKernelLimits) -> f32 {
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
     let raw_mig = kernel_limits.min_migration_cost
         + (kernel_limits.max_migration_cost - kernel_limits.min_migration_cost) * (x * x);
-    let volatility_ratio = (delta_smooth / 50.0).clamp(0.0, 1.0);
+    let volatility_ratio = (velocity.abs() / 25.0).clamp(0.0, 1.0);
     let dynamic_cost = raw_mig * (1.0 - (volatility_ratio * 0.5));
     dynamic_cost.clamp(
         kernel_limits.min_migration_cost,

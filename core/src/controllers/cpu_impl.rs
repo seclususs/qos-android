@@ -146,8 +146,6 @@ impl CpuController {
         let dt_safe = cpu_math::sanitize_dt(dt_real);
         let (integral_total, integral_dot) = cpu_math::update_integral_params(
             &mut self.load_state,
-            cpu_temp,
-            bat_temp,
             bat_level,
             dt_safe,
             &self.cpu_math_config,
