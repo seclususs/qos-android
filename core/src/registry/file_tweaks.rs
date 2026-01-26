@@ -27,6 +27,8 @@ pub fn generate_file_tweaks() -> Vec<FileTweak> {
     let mut tweaks = Vec::with_capacity(40);
     tweaks.extend_from_slice(&[
         FileTweak::new_static("/proc/sys/vm/oom_dump_tasks", "0"),
+        FileTweak::new_static("/proc/sys/vm/swappiness", "30"),
+        FileTweak::new_static("/proc/sys/vm/vfs_cache_pressure", "100"),
         FileTweak::new_static("/proc/sys/kernel/printk", "0 0 0 0"),
         FileTweak::new_static("/proc/sys/kernel/printk_devkmsg", "off"),
         FileTweak::new_static("/proc/sys/kernel/dmesg_restrict", "1"),
@@ -36,6 +38,7 @@ pub fn generate_file_tweaks() -> Vec<FileTweak> {
         FileTweak::new_static("/proc/sys/kernel/sched_schedstats", "0"),
         FileTweak::new_static("/proc/sys/kernel/perf_event_paranoid", "2"),
         FileTweak::new_static("/proc/sys/kernel/perf_cpu_time_max_percent", "1"),
+        FileTweak::new_static("/proc/sys/kernel/sched_stune_task_threshold", "0"),
         FileTweak::new_static("/proc/sys/fs/lease-break-time", "10"),
         FileTweak::new_static("/proc/sys/fs/file-max", "524288"),
         FileTweak::new_static("/proc/sys/fs/protected_symlinks", "1"),
@@ -54,6 +57,7 @@ pub fn generate_file_tweaks() -> Vec<FileTweak> {
         FileTweak::new_static("/proc/sys/net/ipv6/conf/all/use_tempaddr", "2"),
         FileTweak::new_static("/proc/sys/net/ipv4/conf/default/rp_filter", "1"),
         FileTweak::new_static("/proc/sys/debug/exception-trace", "0"),
+        // FileTweak::new_static("/proc/sys/net/ipv4/tcp_congestion_control", "westwood"),
     ]);
     tweaks.extend(super::scheduler_io::generate_scheduler_tweaks());
     tweaks
