@@ -19,16 +19,16 @@ pub struct CpuKernelLimitsConfig {
 impl Default for CpuKernelLimitsConfig {
     fn default() -> Self {
         Self {
-            min_latency_ns: 8_000_000,
-            max_latency_ns: 18_000_000,
-            min_granularity_ns: 2_000_000,
-            max_granularity_ns: 10_000_000,
+            min_latency_ns: 10_000_000,
+            max_latency_ns: 15_000_000,
+            min_granularity_ns: 3_000_000,
+            max_granularity_ns: 5_000_000,
             min_wakeup_ns: 2_000_000,
-            max_wakeup_ns: 8_000_000,
+            max_wakeup_ns: 5_000_000,
             min_migration_cost: 250_000,
             max_migration_cost: 500_000,
             min_walt_init_pct: 15,
-            max_walt_init_pct: 40,
+            max_walt_init_pct: 35,
             min_uclamp_min: 0,
             max_uclamp_min: 256,
         }
@@ -48,8 +48,8 @@ impl Default for StorageKernelLimitsConfig {
         Self {
             max_read_ahead: 512,
             min_read_ahead: 128,
-            max_nr_requests: 256,
-            min_nr_requests: 128,
+            max_nr_requests: 128,
+            min_nr_requests: 64,
         }
     }
 }
