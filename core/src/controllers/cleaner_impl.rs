@@ -21,7 +21,7 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CleanerTunables {
+struct CleanerConfig {
     sweep_interval_ms: i32,
     bloat_limit_bytes: u64,
     storage_critical_threshold: f32,
@@ -32,7 +32,7 @@ struct CleanerTunables {
     age_trash: time::Duration,
 }
 
-impl Default for CleanerTunables {
+impl Default for CleanerConfig {
     fn default() -> Self {
         Self {
             sweep_interval_ms: 600_000,
@@ -48,12 +48,12 @@ impl Default for CleanerTunables {
 }
 
 struct CleanerWorker {
-    tunables: CleanerTunables,
+    tunables: CleanerConfig,
     rx: sync::mpsc::Receiver<()>,
 }
 
 impl CleanerWorker {
-    fn new(tunables: CleanerTunables, rx: sync::mpsc::Receiver<()>) -> Self {
+    fn new(tunables: CleanerConfig, rx: sync::mpsc::Receiver<()>) -> Self {
         Self { tunables, rx }
     }
     fn run(&self) {
@@ -273,7 +273,7 @@ pub struct CleanerController {
     io_monitor: psi_monitor::PsiMonitor,
     cpu_monitor: psi_monitor::PsiMonitor,
     thermal: thermal::ThermalSensor,
-    tunables: CleanerTunables,
+    tunables: CleanerConfig,
     last_sweep: time::Instant,
     dummy_fd: fs::File,
     tx: sync::mpsc::Sender<()>,
@@ -284,7 +284,7 @@ impl CleanerController {
         log::info!("CleanerController: Initializing...");
         let dummy = fs::File::open("/dev/null")
             .map_err(|e| types::QosError::SystemCheckFailed(format!("Placeholder error: {}", e)))?;
-        let tunables = CleanerTunables::default();
+        let tunables = CleanerConfig::default();
         let (tx, rx) = sync::mpsc::channel();
         let worker_tunables = tunables;
         thread::Builder::new()

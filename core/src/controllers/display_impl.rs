@@ -21,12 +21,12 @@ pub enum DisplayMode {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct DisplayTunables {
+pub struct DisplayConfig {
     pub touch_idle_timeout_ms: i32,
     pub activity_throttle_ms: u128,
 }
 
-impl Default for DisplayTunables {
+impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
             touch_idle_timeout_ms: 3000,
@@ -39,7 +39,7 @@ pub struct DisplayController {
     touch_fd: fs::File,
     state: DisplayState,
     current_mode: DisplayMode,
-    tunables: DisplayTunables,
+    tunables: DisplayConfig,
     last_activity: time::Instant,
     last_transition: time::Instant,
     next_wake_ms: i32,
@@ -73,7 +73,7 @@ impl DisplayController {
             touch_fd,
             state: DisplayState::Idle,
             current_mode: DisplayMode::Low60Hz,
-            tunables: DisplayTunables::default(),
+            tunables: DisplayConfig::default(),
             last_activity: time::Instant::now(),
             last_transition: time::Instant::now(),
             next_wake_ms: -1,
