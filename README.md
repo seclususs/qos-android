@@ -49,7 +49,7 @@ end
 
 subgraph CORE["CONTROL CORE"]
     style CORE fill:#1e1e1e,stroke:#ffffff,stroke-width:2px
-    R_ENTRY["api_entry.rs"]
+    R_ENTRY["ffi.rs"]
     N_BRIDGE ==> R_ENTRY
 
     subgraph WORKERS["WORKERS"]
