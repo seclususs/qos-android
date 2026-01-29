@@ -169,22 +169,22 @@ ask_bootanimation() {
   fi
 }
 
-REQUIRED_PROPS=(
-  "ro.vendor.mtk.bt_sap_enable"
-  "ro.vendor.mtk_wappush_support"
-  "ro.vendor.mtk_c2k_support"
-  "ro.vendor.mtk_c2k_lte_mode"
-  "ro.vendor.mtk_embms_support"
-  "ro.vendor.mtk_md_world_mode_support"
-  "ro.vendor.connsys.dedicated.log"
-  "ro.vendor.mtk_protocol1_rat_config"
-  "ro.vendor.mtk_wapi_support"
-)
+REQUIRED_PROPS="
+ro.vendor.mtk.bt_sap_enable
+ro.vendor.mtk_wappush_support
+ro.vendor.mtk_c2k_support
+ro.vendor.mtk_c2k_lte_mode
+ro.vendor.mtk_embms_support
+ro.vendor.mtk_md_world_mode_support
+ro.vendor.connsys.dedicated.log
+ro.vendor.mtk_protocol1_rat_config
+ro.vendor.mtk_wapi_support
+"
 
 validate_system_props() {
   local remove_system_prop=0
 
-  for prop in "${REQUIRED_PROPS[@]}"; do
+  for prop in $REQUIRED_PROPS; do
     key=$(echo "$prop" | cut -d'=' -f1)
     value=$(echo "$prop" | cut -d'=' -f2-)
 
