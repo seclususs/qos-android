@@ -27,7 +27,7 @@ pub fn generate_file_tweaks() -> Vec<FileTweak> {
     let mut tweaks = Vec::with_capacity(40);
     tweaks.extend_from_slice(&[
         FileTweak::new_static("/proc/sys/vm/oom_dump_tasks", "0"),
-        FileTweak::new_static("/proc/sys/vm/swappiness", "30"),
+        FileTweak::new_static("/proc/sys/vm/swappiness", "40"),
         FileTweak::new_static("/proc/sys/vm/vfs_cache_pressure", "100"),
         FileTweak::new_static("/proc/sys/kernel/printk", "0 0 0 0"),
         FileTweak::new_static("/proc/sys/kernel/printk_devkmsg", "off"),
