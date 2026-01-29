@@ -12,4 +12,4 @@ pub mod registry;
 pub mod resources;
 pub mod utils;
 
-pub use bindings::api_entry::*;
+pub use bindings::ffi::*;

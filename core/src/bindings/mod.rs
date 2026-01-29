@@ -1,2 +1,2 @@
-pub mod api_entry;
+pub mod ffi;
 pub mod sys;
