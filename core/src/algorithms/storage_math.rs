@@ -33,7 +33,7 @@ impl Default for StorageMathConfig {
                 max_req_size_kb: 768.0,
                 write_cost_factor: 3.5,
                 target_latency_base_ms: 30.0,
-                hysteresis_threshold: 0.25,
+                hysteresis_threshold: 0.15,
                 critical_threshold_psi: 18.0,
                 queue_pressure_low: 0.15,
                 queue_pressure_high: 6.0,
@@ -44,7 +44,7 @@ impl Default for StorageMathConfig {
                 max_req_size_kb: 640.0,
                 write_cost_factor: 4.0,
                 target_latency_base_ms: 35.0,
-                hysteresis_threshold: 0.28,
+                hysteresis_threshold: 0.18,
                 critical_threshold_psi: 19.5,
                 queue_pressure_low: 0.2,
                 queue_pressure_high: 5.5,
@@ -55,7 +55,7 @@ impl Default for StorageMathConfig {
                 max_req_size_kb: 512.0,
                 write_cost_factor: 4.5,
                 target_latency_base_ms: 50.0,
-                hysteresis_threshold: 0.3,
+                hysteresis_threshold: 0.20,
                 critical_threshold_psi: 22.0,
                 queue_pressure_low: 0.25,
                 queue_pressure_high: 5.0,
@@ -104,6 +104,7 @@ pub fn should_update_nr_requests(
     let diff = (calculated - current).abs();
     let error_ratio = if current > 0.0 { diff / current } else { 1.0 };
     error_ratio > math_config.hysteresis_threshold
+        || diff > 4.0
         || calculated <= kernel_limits.min_nr_requests
         || calculated >= kernel_limits.max_nr_requests
 }
@@ -221,18 +222,16 @@ pub fn calculate_next_queue_depth(
     if psi_pressure > math_config.critical_threshold_psi {
         return kernel_limits.min_nr_requests;
     }
-    if lambda_eff < 1.0 || current_latency_ms < 0.1 {
-        return current_nr_requests;
-    }
-    let gradient = target_latency_ms / current_latency_ms.max(0.1);
-    let next_nr;
-    if gradient > 1.2 {
-        next_nr = current_nr_requests + 2.0;
-    } else if gradient < 0.8 {
-        let smoothing_factor = gradient.sqrt();
-        next_nr = current_nr_requests * smoothing_factor;
+    let safe_latency = current_latency_ms.max(0.05);
+    let gradient = target_latency_ms / safe_latency;
+    let next_nr = if gradient > 1.25 {
+        current_nr_requests * 1.15 + 2.0
+    } else if gradient < 0.75 {
+        current_nr_requests * gradient.sqrt().max(0.6)
+    } else if lambda_eff > 0.6 && gradient > 1.05 {
+        current_nr_requests * 1.05 + 1.0
     } else {
-        next_nr = current_nr_requests;
-    }
+        current_nr_requests
+    };
     next_nr.clamp(kernel_limits.min_nr_requests, kernel_limits.max_nr_requests)
 }
