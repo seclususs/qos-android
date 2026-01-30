@@ -1,6 +1,34 @@
 # Changelog
 
-## v2.1 (Latest)
+## v2.2 (Latest)
+
+- **Thermal:** Refactored Smith Predictor to use timestamp-based lookups instead of array indexing, ensuring accurate thermal delay compensation under variable polling rates.
+- **CPU:** Fixed "Time Dilation" bug by decoupling physical time (`dt_real`) from control time (`dt_safe`) to prevent load model freezing during long sleeps.
+- **CPU & Memory:** Removed Memory PSI dependency from CPU controller, frequency scaling now strictly based on computational load and thermal constraints.
+- **CPU Math:** Cleaned up algorithms by removing unused coefficients, and **inverted pressure scaling for migration cost** allowing tasks to migrate more freely under high load to improve balancing.
+- **Storage Controller:** Switched metrics from `psi_full` to `psi_some`, fixed throughput calculations using real-time delta to prevent artificial spikes, and added aggressive 50ms polling fast-path during critical I/O congestion.
+- **Storage Math:** **Refined queue depth scaling dynamics**, added idle/low-latency bypass and optimized gradient thresholds to prevent oscillation during I/O throttling.
+- **Adaptive Polling:** Lowered minimum polling floor from 3000ms to 50ms, added **Asymmetric EMA smoothing** for responsive and stable operation.
+- **Memory Controller:** Removed dedicated memory module to reduce runtime footprint and simplify logic.
+- **Dependencies:** Updated startup logic in `main.cpp` to allow CPU service on kernels without Memory/IO PSI, Cleaner service still requires PSI.
+- **Metrics Parsing:** Implemented **Zero-Copy parsing** for PSI and Disk statistics to reduce memory allocation overhead.
+- **Kalman Filter:** Upgraded from static 1D to kinematic Constant Velocity (2D) model for zero-lag load tracking and accurate derivatives.
+- **Stream I/O:** Updated low-level write handling to use positional I/O for predictability.
+- **System Tweaks:** Expanded runtime property tweaks to reduce logging overhead and background noise.
+- **Signal Handling:** Refined signal consumption logic for non-blocking reads and transient I/O states.
+- **Cleaner Prerequisites:** Added runtime checks for storage and process filesystem accessibility.
+- **DeviceCompat:** Integrated layer to validate feature compatibility against specific devices.
+- **Display Service:** Added blacklist mechanism to auto-disable on incompatible firmware, implemented touch-driven frequency scaling (60Hz/90Hz) with optimized vfork/execve.
+- **PSI Data Model:** Removed redundant fields (`avg60`, `total`) and implemented zero-copy skipping to reduce per-tick overhead.
+- **Adaptive Poller:** Removed internal `rate_change` relying on variable dt, now accepts explicit `pressure_velocity` from Kalman filter.
+- **Auto-Tuning:** Added Tier-Based Auto-Tuning, device classification (Low/Mid/Flagship) dynamically applies optimized PID coefficients and Storage latency targets.
+- **Topology Detection:** Replaced hardcoded CPU affinity with universal detection using EAS capacity and peak frequency, supports all big.LITTLE architectures.
+- **Affinity Fallback:** Implemented fail-safe to default to all cores if topology metrics unreadable.
+- **Sysfs Helper:** Added `read_sysfs_long` for safe, error-tolerant kernel parameter reading during init.
+
+---
+
+### v2.1
 - **Memory:** Refined control behavior with bounded history tracking and smoother extfrag scaling
 - **Monitoring:** Improved vmstat parsing robustness by avoiding implicit default values
 - **CPU:** Retuned control parameters to improve stability under transient load
