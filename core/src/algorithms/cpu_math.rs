@@ -310,8 +310,10 @@ pub fn calculate_wakeup_granularity(
 
 pub fn calculate_migration_cost(velocity: f32, p_eff: f32, kernel_limits: &CpuKernelLimits) -> f32 {
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
+    let factor = 1.0 - x;
+    let curve = factor * factor;
     let raw_mig = kernel_limits.min_migration_cost
-        + (kernel_limits.max_migration_cost - kernel_limits.min_migration_cost) * (x * x);
+        + (kernel_limits.max_migration_cost - kernel_limits.min_migration_cost) * curve;
     let volatility_ratio = (velocity.abs() / 25.0).clamp(0.0, 1.0);
     let dynamic_cost = raw_mig * (1.0 - (volatility_ratio * 0.5));
     dynamic_cost.clamp(
