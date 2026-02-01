@@ -16,5 +16,4 @@ unsafe extern "C" {
         value: *mut c_char,
         max_len: size_t,
     ) -> c_int;
-    pub fn cpp_set_refresh_rate(refresh_rate_mode: c_int) -> c_int;
 }

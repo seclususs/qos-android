@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::controllers::{cleaner_impl, cpu_impl, display_impl, signal_impl, storage_impl};
+use crate::controllers::{cleaner_impl, cpu_impl, signal_impl, storage_impl};
 use crate::daemon::{logging, runtime, state};
 use crate::hal::bridge;
 
@@ -16,11 +16,6 @@ pub extern "C" fn rust_set_cleaner_service_enabled(enabled: bool) {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_cpu_service_enabled(enabled: bool) {
     state::CPU_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_set_display_service_enabled(enabled: bool) {
-    state::DISPLAY_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
@@ -109,11 +104,6 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                 if state::CPU_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     services.push(runtime::RecoverableService::new("CPU", || {
                         Ok(Box::new(cpu_impl::CpuController::new()?))
-                    }));
-                }
-                if state::DISPLAY_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
-                    services.push(runtime::RecoverableService::new("Display", || {
-                        Ok(Box::new(display_impl::DisplayController::new()?))
                     }));
                 }
                 if state::CLEANER_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
