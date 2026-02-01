@@ -282,8 +282,14 @@ pub struct CleanerController {
 impl CleanerController {
     pub fn new() -> Result<Self, types::QosError> {
         log::info!("CleanerController: Initializing...");
-        let dummy = fs::File::open("/dev/null")
-            .map_err(|e| types::QosError::SystemCheckFailed(format!("Placeholder error: {}", e)))?;
+        let evt = rustix::event::eventfd(
+            0,
+            rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK,
+        )
+        .map_err(|e| {
+            types::QosError::SystemCheckFailed(format!("Failed to create eventfd: {}", e))
+        })?;
+        let dummy = unsafe { os::fd::FromRawFd::from_raw_fd(os::fd::IntoRawFd::into_raw_fd(evt)) };
         let tunables = CleanerConfig::default();
         let (tx, rx) = sync::mpsc::channel();
         let worker_tunables = tunables;
@@ -327,6 +333,8 @@ impl traits::EventHandler for CleanerController {
         &mut self,
         _context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
+        let mut buf = [0u8; 8];
+        let _ = io::Read::read(&mut self.dummy_fd, &mut buf);
         Ok(traits::LoopAction::Continue)
     }
     fn on_timeout(
