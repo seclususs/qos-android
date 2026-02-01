@@ -13,7 +13,6 @@ std::map<std::string, bool> load(const char *path) {
   // or empty.
   config["cpu"] = false;
   config["io"] = false;
-  config["display"] = false;
   config["cleaner"] = false;
   config["tweaks"] = false;
 
@@ -76,8 +75,6 @@ std::map<std::string, bool> load(const char *path) {
         config["cpu"] = bool_val;
       else if (key == "storage_enabled")
         config["io"] = bool_val;
-      else if (key == "display_enabled")
-        config["display"] = bool_val;
       else if (key == "cleaner_enabled")
         config["cleaner"] = bool_val;
       else if (key == "tweaks_enabled")

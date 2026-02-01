@@ -20,7 +20,6 @@ namespace qos::runtime {
 struct KernelFeatures {
   bool has_cpu_psi;       ///< True if /proc/pressure/cpu is readable.
   bool has_io_psi;        ///< True if /proc/pressure/io is readable.
-  bool display_supported; ///< True if the device is compatible.
   bool cleaner_supported; ///< True if environment supports cleaning ops.
 };
 

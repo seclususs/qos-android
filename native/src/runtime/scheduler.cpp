@@ -7,13 +7,13 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
-#include <string>
-#include <vector>
 #include <linux/types.h>
 #include <sched.h>
+#include <string>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <vector>
 
 // System call numbers for sched_setattr, varying by architecture.
 #ifndef __NR_sched_setattr

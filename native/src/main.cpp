@@ -63,13 +63,11 @@ int main(int argc, char *argv[]) {
   // Reconcile configuration with available kernel features.
   bool final_cpu = cfg["cpu"] && features.has_cpu_psi;
   bool final_io = cfg["io"] && features.has_io_psi;
-  bool final_display = cfg["display"] && features.display_supported;
   bool final_cleaner = cfg["cleaner"] && features.cleaner_supported &&
                        features.has_cpu_psi && features.has_io_psi;
   bool final_tweaks = cfg["tweaks"];
 
-  if (!final_cpu && !final_io && !final_tweaks && !final_display &&
-      !final_cleaner) {
+  if (!final_cpu && !final_io && !final_tweaks && !final_cleaner) {
     LOGE("Daemon shutting down to save resources (No services enabled).");
     return EXIT_FAILURE;
   }
@@ -78,7 +76,6 @@ int main(int argc, char *argv[]) {
   LOGI("Activating Services...");
   rust_set_cpu_service_enabled(final_cpu);
   rust_set_storage_service_enabled(final_io);
-  rust_set_display_service_enabled(final_display);
   rust_set_cleaner_service_enabled(final_cleaner);
   rust_set_tweaks_enabled(final_tweaks);
 
