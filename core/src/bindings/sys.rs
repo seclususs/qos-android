@@ -16,4 +16,5 @@ unsafe extern "C" {
         value: *mut c_char,
         max_len: size_t,
     ) -> c_int;
+    pub fn mallopt(param: c_int, value: c_int) -> c_int;
 }

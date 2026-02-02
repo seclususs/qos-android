@@ -1,5 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::bindings::sys;
 use crate::daemon::{state, traits, types};
 use crate::hal::{thermal, traversal};
 use crate::monitors::psi_monitor;
@@ -61,6 +62,9 @@ impl CleanerWorker {
             let items = self.perform_cycle();
             if items > 0 {
                 log::info!("Cleaner: Cycle complete. Removed {} items.", items);
+            }
+            unsafe {
+                sys::mallopt(-101, 0);
             }
         }
     }
@@ -295,6 +299,7 @@ impl CleanerController {
         let worker_tunables = tunables;
         thread::Builder::new()
             .name("CleanerWorker".into())
+            .stack_size(64 * 1024)
             .spawn(move || {
                 let worker = CleanerWorker::new(worker_tunables, rx);
                 worker.run();

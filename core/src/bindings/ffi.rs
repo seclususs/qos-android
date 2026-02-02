@@ -63,7 +63,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
         );
         thread::Builder::new()
             .name("Tweaks".into())
-            .stack_size(256 * 1024)
+            .stack_size(64 * 1024)
             .spawn(|| {
                 if !state::TWEAKS_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     log::info!("Rust: System Tweaks are DISABLED by config.");
@@ -80,7 +80,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
         state::SHUTDOWN_REQUESTED.store(false, sync::atomic::Ordering::Release);
         let handle = thread::Builder::new()
             .name("MainLoop".into())
-            .stack_size(1024 * 1024)
+            .stack_size(128 * 1024)
             .spawn(move || {
                 if let Err(e) = tx.send(()) {
                     log::error!("Rust: Failed to send handshake: {}.", e);
