@@ -39,11 +39,8 @@ int main(int argc, char *argv[]) {
   qos::runtime::Sentinel::arm();
   qos::runtime::Protection::harden_process();
   qos::runtime::Limits::expand_resources();
-  qos::runtime::Memory::lock_all_pages();
 
   // Phase 2: Scheduling Optimization
-  // Bind to Efficiency Cores (Helio G88 A55 cluster), set RT priority,
-  // and clamp utilization to prevent thermal throttling.
   qos::runtime::Scheduler::enforce_efficiency_mode();
   qos::runtime::Scheduler::set_realtime_policy();
   qos::runtime::Scheduler::maximize_timer_slack();
@@ -56,16 +53,25 @@ int main(int argc, char *argv[]) {
   LOGI("Checking Hardware Support...");
   auto features = qos::runtime::Diagnostics::check_kernel_features();
 
-  // Phase 4: Configuration
-  LOGI("Loading Configuration...");
-  auto cfg = qos::config::load("/data/adb/modules/sys_qos/config.ini");
+  bool final_cpu = false;
+  bool final_io = false;
+  bool final_cleaner = false;
+  bool final_tweaks = false;
 
-  // Reconcile configuration with available kernel features.
-  bool final_cpu = cfg["cpu"] && features.has_cpu_psi;
-  bool final_io = cfg["io"] && features.has_io_psi;
-  bool final_cleaner = cfg["cleaner"] && features.cleaner_supported &&
-                       features.has_cpu_psi && features.has_io_psi;
-  bool final_tweaks = cfg["tweaks"];
+  // Phase 4: Configuration
+  // Enclose in a block scope to ensure 'cfg' (std::map) is destroyed
+  // automatically after this block finishes.
+  {
+    LOGI("Loading Configuration...");
+    auto cfg = qos::config::load("/data/adb/modules/sys_qos/config.ini");
+
+    // Reconcile configuration with available kernel features.
+    final_cpu = cfg["cpu"] && features.has_cpu_psi;
+    final_io = cfg["io"] && features.has_io_psi;
+    final_cleaner = cfg["cleaner"] && features.cleaner_supported &&
+                    features.has_cpu_psi && features.has_io_psi;
+    final_tweaks = cfg["tweaks"];
+  }
 
   if (!final_cpu && !final_io && !final_tweaks && !final_cleaner) {
     LOGE("Daemon shutting down to save resources (No services enabled).");
@@ -78,6 +84,12 @@ int main(int argc, char *argv[]) {
   rust_set_storage_service_enabled(final_io);
   rust_set_cleaner_service_enabled(final_cleaner);
   rust_set_tweaks_enabled(final_tweaks);
+
+  // Force the allocator to purge dirty pages to minimize the resident set size
+  // before locking memory.
+  mallopt(M_PURGE, 0);
+
+  qos::runtime::Memory::lock_all_pages();
 
   // Prepare signal handling for the event loop.
   // We block standard signals here so they can be consumed via a file
