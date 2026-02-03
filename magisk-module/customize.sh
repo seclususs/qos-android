@@ -101,7 +101,7 @@ run_setup_wizard() {
   ui_print_log "Starting Setup..."
   ui_print " "
   
-  FEATURES="Cleaner:cleaner_enabled CPU_Controller:cpu_enabled Storage_Controller:storage_enabled Display_Tweaks:display_enabled System_Tweaks:tweaks_enabled"
+  FEATURES="Cleaner:cleaner_enabled CPU_Controller:cpu_enabled Storage_Controller:storage_enabled System_Tweaks:tweaks_enabled"
   
   for item in $FEATURES; do
     local name=$(echo "$item" | cut -d':' -f1 | tr '_' ' ')
@@ -114,13 +114,6 @@ run_setup_wizard() {
          ;;
       "storage_enabled")
          [ ! -e "/proc/pressure/io" ] && warning="PSI IO missing (/proc/pressure/io). Service will fail."
-         ;;
-      "display_enabled")
-         local DEV=$(get_prop "ro.product.device")
-         local BID=$(get_prop "ro.build.id")
-         if [ "$DEV" != "selene" ] || [ "$BID" != "TQ3A.230901.001.B1" ]; then
-            warning="Device mismatch ($DEV). Feature might be auto-disabled."
-         fi
          ;;
       "cleaner_enabled")
          if [ ! -d "/data/data" ] || [ ! -d "/proc" ]; then
