@@ -1,6 +1,15 @@
 # Changelog
 
-## v2.2 (Latest)
+## v2.3 (Latest)
+- **Cleaner:** Migrated internal signaling to eventfd via rustix, replacing dummy file handles to reduce syscall overhead and improve resource efficiency.
+- **Display:** Removed experimental touch-boost and refresh rate control to streamline architecture and reduce runtime overhead.
+- **Native:** Removed display service initialization logic and diagnostics from the C++ runtime, but retained the low-level SurfaceFlinger FFI bridge for future use.
+- **Memory:** Optimized resident footprint by constraining stack limits to 512KB and removing aggressive heap purging to streamline allocation dynamics.
+- **CPU:** Tuned scheduler update thresholds to minimize redundant sysfs writes and filter out transient fluctuations.
+
+---
+
+### v2.2
 
 - **Thermal:** Refactored Smith Predictor to use timestamp-based lookups instead of array indexing, ensuring accurate thermal delay compensation under variable polling rates.
 - **CPU:** Fixed "Time Dilation" bug by decoupling physical time (`dt_real`) from control time (`dt_safe`) to prevent load model freezing during long sleeps.
