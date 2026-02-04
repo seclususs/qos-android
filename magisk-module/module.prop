@@ -1,7 +1,7 @@
 id=sys_qos
 name=QoS
-version=2.2
-versionCode=13
+version=2.3
+versionCode=14
 author=seclususs
 description=Native daemon for system optimization.
 updateJson=https://raw.githubusercontent.com/seclususs/qos-android/main/update.json
