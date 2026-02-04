@@ -244,15 +244,15 @@ impl CpuController {
             self.cpu_kernel_limits.min_uclamp_min as u64,
         );
         self.latency
-            .update(lat_u64, force, cached_file::CheckStrategy::Relative(0.05));
+            .update(lat_u64, force, cached_file::CheckStrategy::Relative(0.10));
         self.min_gran
-            .update(gran_u64, force, cached_file::CheckStrategy::Relative(0.05));
+            .update(gran_u64, force, cached_file::CheckStrategy::Relative(0.10));
         self.wakeup
-            .update(wake_u64, force, cached_file::CheckStrategy::Relative(0.10));
+            .update(wake_u64, force, cached_file::CheckStrategy::Relative(0.15));
         self.migration
             .update(mig_u64, force, cached_file::CheckStrategy::Absolute(50000));
         self.walt_init
-            .update(walt_u64, force, cached_file::CheckStrategy::Absolute(3));
+            .update(walt_u64, force, cached_file::CheckStrategy::Absolute(5));
         self.uclamp_min
             .update(uclamp_u64, force, cached_file::CheckStrategy::Absolute(32));
     }
