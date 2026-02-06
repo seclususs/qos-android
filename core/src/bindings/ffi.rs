@@ -1,12 +1,17 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::controllers::{cleaner_impl, cpu_impl, signal_impl, storage_impl};
+use crate::controllers::{blocker_impl, cleaner_impl, cpu_impl, signal_impl, storage_impl};
 use crate::daemon::{logging, runtime, state};
 use crate::hal::bridge;
 
 use std::{sync, thread, time};
 
 static MAIN_THREAD: sync::Mutex<Option<thread::JoinHandle<()>>> = sync::Mutex::new(None);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_set_blocker_service_enabled(enabled: bool) {
+    state::BLOCKER_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_set_cleaner_service_enabled(enabled: bool) {
@@ -109,6 +114,11 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                 if state::CLEANER_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     services.push(runtime::RecoverableService::new("Cleaner", || {
                         Ok(Box::new(cleaner_impl::CleanerController::new()?))
+                    }));
+                }
+                if state::BLOCKER_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
+                    services.push(runtime::RecoverableService::new("Blocker", || {
+                        Ok(Box::new(blocker_impl::BlockerController::new()?))
                     }));
                 }
                 log::info!(
