@@ -57,6 +57,7 @@ int main(int argc, char *argv[]) {
   bool final_io = false;
   bool final_cleaner = false;
   bool final_tweaks = false;
+  bool final_blocker = false;
 
   // Phase 4: Configuration
   // Enclose in a block scope to ensure 'cfg' (std::map) is destroyed
@@ -71,9 +72,11 @@ int main(int argc, char *argv[]) {
     final_cleaner = cfg["cleaner"] && features.cleaner_supported &&
                     features.has_cpu_psi && features.has_io_psi;
     final_tweaks = cfg["tweaks"];
+    final_blocker = cfg["blocker"];
   }
 
-  if (!final_cpu && !final_io && !final_tweaks && !final_cleaner) {
+  if (!final_cpu && !final_io && !final_tweaks && !final_cleaner &&
+      !final_blocker) {
     LOGE("Daemon shutting down to save resources (No services enabled).");
     return EXIT_FAILURE;
   }
@@ -84,6 +87,7 @@ int main(int argc, char *argv[]) {
   rust_set_storage_service_enabled(final_io);
   rust_set_cleaner_service_enabled(final_cleaner);
   rust_set_tweaks_enabled(final_tweaks);
+  rust_set_blocker_service_enabled(final_blocker);
 
   // Force the allocator to purge dirty pages to minimize the resident set size
   // before locking memory.

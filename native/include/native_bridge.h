@@ -24,6 +24,20 @@ extern "C" {
 // -----------------------------------------------------------------------------
 
 /**
+ * @brief Configures the enabled state of the Blocker Controller service.
+ *
+ * Updates the configuration state for the component blocker service.
+ * When enabled, this service enforces the disabled state of targeted
+ * background components (such as specific GMS analytics and ad services)
+ * to reduce unnecessary resource consumption and wakeups.
+ *
+ * This operation is thread-safe and the new state takes effect immediately.
+ *
+ * @param[in] enabled True to enable the service, false to disable.
+ */
+void rust_set_blocker_service_enabled(bool enabled);
+
+/**
  * @brief Configures the enabled state of the Cleaner Controller service.
  *
  * Updates the configuration state for the background cache and stale data

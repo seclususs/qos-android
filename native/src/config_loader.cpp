@@ -15,6 +15,7 @@ std::map<std::string, bool> load(const char *path) {
   config["io"] = false;
   config["cleaner"] = false;
   config["tweaks"] = false;
+  config["blocker"] = false;
 
   std::ifstream file(path);
   if (!file.is_open()) {
@@ -79,6 +80,8 @@ std::map<std::string, bool> load(const char *path) {
         config["cleaner"] = bool_val;
       else if (key == "tweaks_enabled")
         config["tweaks"] = bool_val;
+      else if (key == "blocker_enabled")
+        config["blocker"] = bool_val;
     }
   }
 
