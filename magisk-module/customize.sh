@@ -101,7 +101,7 @@ run_setup_wizard() {
   ui_print_log "Starting Setup..."
   ui_print " "
   
-  FEATURES="Cleaner:cleaner_enabled CPU_Controller:cpu_enabled Storage_Controller:storage_enabled System_Tweaks:tweaks_enabled"
+  FEATURES="Blocker:blocker_enabled Cleaner:cleaner_enabled CPU_Controller:cpu_enabled Storage_Controller:storage_enabled System_Tweaks:tweaks_enabled"
   
   for item in $FEATURES; do
     local name=$(echo "$item" | cut -d':' -f1 | tr '_' ' ')
