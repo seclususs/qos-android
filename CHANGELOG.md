@@ -1,6 +1,15 @@
 # Changelog
 
-## v2.3 (Latest)
+## v2.4 (Latest)
+- **Blocker:** Introduced a new Component Blocker service to selectively disable targeted GMS background tasks, reducing resource drain and unnecessary wakeups.
+- **Build:** Switched global optimization profile from Size (`-Oz`) to Speed (`-O3`) for both Native and Rust targets, prioritizing raw execution throughput over binary size.
+- **Logging:** Enforced static compile-time log filtering (`release_max_level_warn`), completely stripping Debug and Info symbols from the release binary to minimize runtime overhead.
+- **Polling:** Relaxed the minimum adaptive polling interval floor (50ms → 100ms) to reduce CPU cycle consumption during high-frequency sampling states.
+- **Config:** Updated runtime configuration loader to support the new `blocker` module toggle and initialization sequence.
+
+---
+
+### v2.3
 - **Cleaner:** Migrated internal signaling to eventfd via rustix, replacing dummy file handles to reduce syscall overhead and improve resource efficiency.
 - **Display:** Removed experimental touch-boost and refresh rate control to streamline architecture and reduce runtime overhead.
 - **Native:** Removed display service initialization logic and diagnostics from the C++ runtime, but retained the low-level SurfaceFlinger FFI bridge for future use.
