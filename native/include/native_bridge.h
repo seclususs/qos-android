@@ -213,6 +213,36 @@ int cpp_get_system_property(const char *key, char *value, size_t max_len);
  */
 int cpp_set_refresh_rate(int refresh_rate_mode);
 
+/**
+ * @brief Opens a file descriptor for the input device (touchscreen).
+ *
+ * Returns a file descriptor in non-blocking mode (`O_NONBLOCK`).
+ * This FD is intended to be registered with the Rust event loop (e.g., epoll)
+ * to monitor touch events without polling.
+ *
+ * @param[in] path The filesystem path to the input device.
+ *
+ * @return A valid file descriptor (>= 0) on success.
+ * @return -1 on failure.
+ */
+int cpp_touch_monitor_open(const char *path);
+
+/**
+ * @brief Checks the current touch status by draining the kernel buffer.
+ *
+ * Reads all pending input events from the file descriptor to determine
+ * the most recent touch state. This function consumes the entire batch of
+ * events to minimize context switching and only returns the final state
+ * relevant for refresh rate control.
+ *
+ * @param[in] fd The file descriptor returned by cpp_touch_monitor_open.
+ *
+ * @return 1 if the screen is currently touched (DOWN).
+ * @return 0 if the screen was released (UP).
+ * @return -1 if no state change (DOWN/UP) occurred in the drained batch.
+ */
+int cpp_touch_monitor_check(int fd);
+
 #ifdef __cplusplus
 }
 #endif

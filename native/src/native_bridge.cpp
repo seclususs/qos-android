@@ -206,3 +206,57 @@ extern "C" int cpp_set_refresh_rate(int refresh_rate_mode) {
   errno = EPROTO;
   return -1;
 }
+
+extern "C" int cpp_touch_monitor_open(const char *path) {
+  if (!path) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  // Open the input device in non-blocking mode to integrate with the
+  // event loop mechanism (e.g., epoll or Rust reactor).
+  // O_CLOEXEC ensures the file descriptor is not leaked to child processes.
+  int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+
+  if (fd < 0) {
+    LOGE("TouchMonitor: Failed to open device %s (errno: %d)", path, errno);
+    return -1;
+  }
+
+  return fd;
+}
+
+extern "C" int cpp_touch_monitor_check(int fd) {
+  // Use a stack-allocated buffer to batch-read input events.
+  // High-frequency touch devices emit bursts of events (coordinates, pressure,
+  // sync). Reading in chunks minimizes system call overhead (context switches)
+  // and ensures the thread keeps pace with the hardware interrupt rate.
+  const size_t BATCH_SIZE = 64;
+  struct input_event ev_batch[BATCH_SIZE];
+
+  int touch_state = -1; // Default: No state change detected in this batch.
+  ssize_t bytes_read;
+
+  // Drain the kernel input buffer until empty.
+  // If the buffer contains more events than BATCH_SIZE, the loop continues.
+  while ((bytes_read = read(fd, ev_batch, sizeof(ev_batch))) > 0) {
+    // Calculate the number of complete events received in this chunk.
+    size_t count = bytes_read / sizeof(struct input_event);
+
+    // Process the batch in userspace to find the latest touch state.
+    for (size_t i = 0; i < count; ++i) {
+      if (ev_batch[i].type == EV_KEY) {
+        // Monitor both BTN_TOUCH and BTN_TOOL_FINGER.
+        // While BTN_TOUCH is the standard for contact, some drivers/protocols
+        // rely on BTN_TOOL_FINGER to indicate active finger presence.
+        // Checking both ensures compatibility across different kernel versions.
+        if (ev_batch[i].code == BTN_TOUCH ||
+            ev_batch[i].code == BTN_TOOL_FINGER) {
+          touch_state = ev_batch[i].value;
+        }
+      }
+    }
+  }
+
+  return touch_state;
+}
