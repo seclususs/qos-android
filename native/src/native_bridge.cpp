@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <fcntl.h>
+#include <linux/input.h>
 #include <string>
 #include <sys/system_properties.h>
 #include <sys/wait.h>
@@ -130,17 +131,21 @@ extern "C" int cpp_get_system_property(const char *key, char *value,
 }
 
 extern "C" int cpp_set_refresh_rate(int refresh_rate_mode) {
-  // Pre-allocate all required string data before vfork().
-  // This avoids heap allocation in the child process and ensures
-  // address space safety while the parent is suspended.
-  std::string val_str = std::to_string(refresh_rate_mode);
+  // Select the pre-defined argument string based on the mode.
+  // Using static literals avoids runtime allocations and ensures
+  // address space safety during the critical vfork window.
+  const char *val_str = (refresh_rate_mode != 0) ? "1" : "0";
 
   // Argument vector for:
   //   /system/bin/service call SurfaceFlinger 1035 i32 <value>
-  // The array must be NULL-terminated as required by execve().
-  const char *argv[] = {
-      "/system/bin/service", "call", "SurfaceFlinger", "1035", "i32",
-      val_str.c_str(),       nullptr};
+  // Explicit casting is used to satisfy execve signature requirements.
+  char *const argv[] = {(char *)"/system/bin/service",
+                        (char *)"call",
+                        (char *)"SurfaceFlinger",
+                        (char *)"1035",
+                        (char *)"i32",
+                        (char *)val_str,
+                        nullptr};
 
   // Use vfork() to avoid page table duplication.
   // The parent process is blocked until the child either calls execve()
@@ -161,13 +166,18 @@ extern "C" int cpp_set_refresh_rate(int refresh_rate_mode) {
     if (dev_null >= 0) {
       dup2(dev_null, STDOUT_FILENO);
       dup2(dev_null, STDERR_FILENO);
-      close(dev_null);
+      if (dev_null > STDERR_FILENO) {
+        close(dev_null);
+      }
+    } else {
+      close(STDOUT_FILENO);
+      close(STDERR_FILENO);
     }
 
     // Execute the service binary directly without shell involvement
     // to minimize overhead and ensure deterministic behavior.
     extern char **environ;
-    execve(argv[0], (char *const *)argv, environ);
+    execve(argv[0], argv, environ);
 
     // execve() only returns on failure (e.g. binary not found).
     // Use _exit() instead of exit() to avoid flushing shared stdio buffers.
@@ -175,8 +185,14 @@ extern "C" int cpp_set_refresh_rate(int refresh_rate_mode) {
   }
 
   // Wait synchronously for the child process to complete the transaction.
+  // The loop handles EINTR to ensure the wait is not aborted by system signals.
   int status;
-  if (waitpid(pid, &status, 0) == -1) {
+  int ret;
+  do {
+    ret = waitpid(pid, &status, 0);
+  } while (ret == -1 && errno == EINTR);
+
+  if (ret == -1) {
     LOGE("SurfaceFlinger: waitpid failed (errno: %d)", errno);
     return -1;
   }
