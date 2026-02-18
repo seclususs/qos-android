@@ -102,7 +102,7 @@ target_include_directories(qos_native
 # Release-only optimizations
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(qos_native PRIVATE
-        -O3
+        -O2
         -ffunction-sections
         -fdata-sections
         $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
