@@ -51,10 +51,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                 }
             }
             Err(e) => {
-                log::error!(
-                    "Rust: MAIN_THREAD mutex poison detected: {}. Resetting...",
-                    e
-                );
+                log::error!("Rust: MAIN_THREAD mutex poison detected: {e}. Resetting...");
                 return -1;
             }
         }
@@ -62,10 +59,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
     logging::init();
     let (tx, rx) = sync::mpsc::channel::<()>();
     let result = std::panic::catch_unwind(move || {
-        log::info!(
-            "Rust: Service entry point reached. Signal FD: {}",
-            signal_fd
-        );
+        log::info!("Rust: Service entry point reached. Signal FD: {signal_fd}");
         thread::Builder::new()
             .name("Tweaks".into())
             .stack_size(64 * 1024)
@@ -88,7 +82,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
             .stack_size(128 * 1024)
             .spawn(move || {
                 if let Err(e) = tx.send(()) {
-                    log::error!("Rust: Failed to send handshake: {}.", e);
+                    log::error!("Rust: Failed to send handshake: {e}.");
                 }
                 runtime::wait_for_boot_completion("MainLoop");
                 if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
@@ -126,7 +120,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                     services.len()
                 );
                 if let Err(e) = runtime::run_event_loop(services) {
-                    log::error!("Fatal error in event loop: {}", e);
+                    log::error!("Fatal error in event loop: {e}");
                 }
             })
             .expect("Failed to spawn MainLoop thread");
@@ -136,14 +130,14 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
         }
     });
     if let Err(cause) = result {
-        log::error!("Rust: Critical Panic during startup: {:?}", cause);
+        log::error!("Rust: Critical Panic during startup: {cause:?}");
         bridge::notify_service_death("Startup Panic");
         return -1;
     }
     match rx.recv_timeout(time::Duration::from_secs(5)) {
-        Ok(_) => 0,
+        Ok(()) => 0,
         Err(e) => {
-            log::error!("Rust: Handshake failed: {}", e);
+            log::error!("Rust: Handshake failed: {e}");
             -1
         }
     }
@@ -164,6 +158,6 @@ pub unsafe extern "C" fn rust_join_threads() {
     if let Some(handle) = handle_opt
         && let Err(e) = handle.join()
     {
-        log::error!("Main thread panicked during join: {:?}", e);
+        log::error!("Main thread panicked during join: {e:?}");
     }
 }
