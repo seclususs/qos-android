@@ -52,6 +52,7 @@ impl PsiMonitor {
             filter_some: filter_math::KalmanFilter::new(config),
         })
     }
+    #[inline]
     fn parse_f32_bytes(buffer: &[u8], start: usize) -> (f32, usize) {
         let mut idx = start;
         let mut val = 0.0;
@@ -61,11 +62,11 @@ impl PsiMonitor {
         while idx < buffer.len() {
             let b = buffer[idx];
             if b.is_ascii_digit() {
-                if !in_fraction {
-                    val = val * 10.0 + (b - b'0') as f32;
-                } else {
-                    fraction = fraction * 10.0 + (b - b'0') as f32;
+                if in_fraction {
+                    fraction = fraction * 10.0 + f32::from(b - b'0');
                     divisor *= 10.0;
+                } else {
+                    val = val * 10.0 + f32::from(b - b'0');
                 }
             } else if b == b'.' {
                 in_fraction = true;
@@ -76,13 +77,14 @@ impl PsiMonitor {
         }
         (val + (fraction / divisor), idx)
     }
+    #[inline]
     fn parse_u64_bytes(buffer: &[u8], start: usize) -> (u64, usize) {
         let mut idx = start;
         let mut val = 0;
         while idx < buffer.len() {
             let b = buffer[idx];
             if b.is_ascii_digit() {
-                val = val * 10 + (b - b'0') as u64;
+                val = val * 10 + u64::from(b - b'0');
                 idx += 1;
             } else {
                 break;
@@ -138,27 +140,26 @@ impl PsiMonitor {
                     }
                 }
                 break;
-            } else {
-                while cursor < len && buffer[cursor] != b'\n' {
-                    cursor += 1;
-                }
-                if cursor < len {
-                    cursor += 1;
-                }
+            }
+            while cursor < len && buffer[cursor] != b'\n' {
+                cursor += 1;
+            }
+            if cursor < len {
+                cursor += 1;
             }
         }
-        if !self.first_run {
-            let delta_some = current_total.saturating_sub(self.last_some_total) as f32;
-            let raw_some = delta_some / dt_calc * 100.0;
-            some_trend.current = self.filter_some.update(raw_some, dt_sec);
-            some_trend.velocity = self.filter_some.get_velocity();
-            some_trend.nis = self.filter_some.get_last_nis();
-        } else {
+        if self.first_run {
             some_trend.current = some_trend.avg10;
             some_trend.velocity = 0.0;
             self.filter_some.reset();
             self.filter_some.update(some_trend.avg10, 1.0);
             self.first_run = false;
+        } else {
+            let delta_some = current_total.saturating_sub(self.last_some_total) as f32;
+            let raw_some = delta_some / dt_calc * 100.0;
+            some_trend.current = self.filter_some.update(raw_some, dt_sec);
+            some_trend.velocity = self.filter_some.get_velocity();
+            some_trend.nis = self.filter_some.get_last_nis();
         }
         self.last_read_time = now;
         self.last_some_total = current_total;

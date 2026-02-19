@@ -13,7 +13,7 @@ pub fn property_exists(key: &str) -> bool {
     };
     let mut buffer = [0u8; 1];
     let len = unsafe {
-        sys::cpp_get_system_property(c_key.as_ptr(), buffer.as_mut_ptr() as *mut c_char, 1)
+        sys::cpp_get_system_property(c_key.as_ptr(), buffer.as_mut_ptr().cast::<c_char>(), 1)
     };
     len > 0
 }
@@ -24,14 +24,12 @@ pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError
         .all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '-')
     {
         return Err(types::QosError::InvalidInput(format!(
-            "Invalid characters in key: '{}'",
-            key
+            "Invalid characters in key: '{key}'"
         )));
     }
     if !strings::validate_value(value) {
         return Err(types::QosError::InvalidInput(format!(
-            "Invalid characters in value: '{}'",
-            value
+            "Invalid characters in value: '{value}'"
         )));
     }
     let c_key = strings::to_cstring(key)?;
@@ -44,20 +42,21 @@ pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError
     }
 }
 
+const PROP_VALUE_MAX: usize = 92;
+
 pub fn get_system_property(key: &str) -> Result<String, types::QosError> {
     let c_key = strings::to_cstring(key)?;
-    const PROP_VALUE_MAX: usize = 92;
     let mut buffer = vec![0u8; PROP_VALUE_MAX];
     let len = unsafe {
         sys::cpp_get_system_property(
             c_key.as_ptr(),
-            buffer.as_mut_ptr() as *mut c_char,
+            buffer.as_mut_ptr().cast::<c_char>(),
             PROP_VALUE_MAX,
         )
     };
     if len < 0 {
         return Ok(String::new());
     }
-    let result = unsafe { ffi::CStr::from_ptr(buffer.as_ptr() as *const c_char) };
+    let result = unsafe { ffi::CStr::from_ptr(buffer.as_ptr().cast::<c_char>()) };
     Ok(result.to_string_lossy().into_owned())
 }

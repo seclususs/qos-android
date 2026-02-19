@@ -44,7 +44,7 @@ impl DiskMonitor {
             let mut val: u64 = 0;
             let start = cursor;
             while cursor < buffer.len() && buffer[cursor].is_ascii_digit() {
-                val = val * 10 + (buffer[cursor] - b'0') as u64;
+                val = val * 10 + u64::from(buffer[cursor] - b'0');
                 cursor += 1;
             }
             if cursor > start {
