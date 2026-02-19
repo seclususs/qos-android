@@ -10,7 +10,7 @@ const ALLOWED_PREFIXES: [&str; 3] = ["/proc/", "/sys/", "/dev/"];
 fn validate_path_secure(path_str: &str) -> Result<(), types::QosError> {
     let path = path::Path::new(path_str);
     let canonical_path = fs::canonicalize(path).map_err(|e| {
-        types::QosError::InvalidPath(format!("Path resolution failed for {}: {}", path_str, e))
+        types::QosError::InvalidPath(format!("Path resolution failed for {path_str}: {e}"))
     })?;
     let canonical_str = canonical_path
         .to_str()
@@ -22,8 +22,7 @@ fn validate_path_secure(path_str: &str) -> Result<(), types::QosError> {
         Ok(())
     } else {
         Err(types::QosError::PermissionDenied(format!(
-            "Access denied: {}",
-            canonical_str
+            "Access denied: {canonical_str}"
         )))
     }
 }
@@ -47,12 +46,11 @@ pub fn open_file_for_read(path: &str) -> Result<fs::File, types::QosError> {
 pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::QosError> {
     let mut buffer = [0u8; 24];
     let mut cursor = io::Cursor::new(&mut buffer[..]);
-    io::Write::write_fmt(&mut cursor, format_args!("{}", value))
-        .map_err(types::QosError::IoError)?;
+    io::Write::write_fmt(&mut cursor, format_args!("{value}")).map_err(types::QosError::IoError)?;
     let len = cursor.position() as usize;
     let fd = os::fd::AsFd::as_fd(file);
     rustix::io::pwrite(fd, &buffer[..len], 0).map_err(|e| {
-        log::warn!("Write via rustix::pwrite failed: {}", e);
+        log::warn!("Write via rustix::pwrite failed: {e}");
         types::QosError::IoError(e.into())
     })?;
     Ok(())
@@ -62,8 +60,7 @@ pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
     validate_path_secure(path)?;
     if !strings::validate_value(value) {
         return Err(types::QosError::SystemCheckFailed(format!(
-            "Invalid characters in value for {}: '{}'",
-            path, value
+            "Invalid characters in value for {path}: '{value}'"
         )));
     }
     let mut buffer = [0u8; 64];
@@ -75,7 +72,7 @@ pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
     }
     buffer[..val_bytes.len()].copy_from_slice(val_bytes);
     buffer[val_bytes.len()] = b'\n';
-    let final_slice = &buffer[..val_bytes.len() + 1];
+    let final_slice = &buffer[..=val_bytes.len()];
     let fd = rustix::fs::openat(
         rustix::fs::CWD,
         path,
@@ -83,11 +80,11 @@ pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
         rustix::fs::Mode::empty(),
     )
     .map_err(|e| {
-        log::debug!("Openat failed for {}: {}", path, e);
+        log::debug!("Openat failed for {path}: {e}");
         types::QosError::IoError(e.into())
     })?;
     rustix::io::write(&fd, final_slice).map_err(|e| {
-        log::debug!("Write raw failed '{}' -> {}: {}", value, path, e);
+        log::debug!("Write raw failed '{value}' -> {path}: {e}");
         types::QosError::IoError(e.into())
     })?;
     Ok(())

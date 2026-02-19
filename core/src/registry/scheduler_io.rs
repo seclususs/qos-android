@@ -11,7 +11,7 @@ const ROTATIONAL_PRIORITY: &[&str] = &["bfq", "mq-deadline", "deadline"];
 const IGNORED_DEVICES: &[&str] = &["loop", "ram", "zram", "dm-", "md"];
 
 fn is_device_rotational(dev_name: &str) -> bool {
-    let path = format!("/sys/block/{}/queue/rotational", dev_name);
+    let path = format!("/sys/block/{dev_name}/queue/rotational");
     fs::read_to_string(path)
         .map(|s| s.trim() == "1")
         .unwrap_or(false)
@@ -40,18 +40,18 @@ pub fn generate_scheduler_tweaks() -> Vec<FileTweak> {
             continue;
         }
         tweaks.push(FileTweak::new_dynamic(
-            format!("/sys/block/{}/queue/add_random", name),
+            format!("/sys/block/{name}/queue/add_random"),
             "0",
         ));
         tweaks.push(FileTweak::new_dynamic(
-            format!("/sys/block/{}/queue/iostats", name),
+            format!("/sys/block/{name}/queue/iostats"),
             "1",
         ));
         tweaks.push(FileTweak::new_dynamic(
-            format!("/sys/block/{}/queue/rq_affinity", name),
+            format!("/sys/block/{name}/queue/rq_affinity"),
             "1",
         ));
-        let sched_path = format!("/sys/block/{}/queue/scheduler", name);
+        let sched_path = format!("/sys/block/{name}/queue/scheduler");
         if let Ok(content) = fs::read_to_string(&sched_path) {
             let rotational = is_device_rotational(&name);
             let is_nvme = name.starts_with("nvme");
@@ -70,21 +70,21 @@ pub fn generate_scheduler_tweaks() -> Vec<FileTweak> {
                 match selected {
                     "mq-deadline" | "deadline" => {
                         tweaks.push(FileTweak::new_dynamic(
-                            format!("/sys/block/{}/queue/iosched/fifo_batch", name),
+                            format!("/sys/block/{name}/queue/iosched/fifo_batch"),
                             "16",
                         ));
                         tweaks.push(FileTweak::new_dynamic(
-                            format!("/sys/block/{}/queue/iosched/writes_starved", name),
+                            format!("/sys/block/{name}/queue/iosched/writes_starved"),
                             "2",
                         ));
                         tweaks.push(FileTweak::new_dynamic(
-                            format!("/sys/block/{}/queue/iosched/front_merges", name),
+                            format!("/sys/block/{name}/queue/iosched/front_merges"),
                             "1",
                         ));
                     }
                     "bfq" => {
                         tweaks.push(FileTweak::new_dynamic(
-                            format!("/sys/block/{}/queue/iosched/slice_idle", name),
+                            format!("/sys/block/{name}/queue/iosched/slice_idle"),
                             "0",
                         ));
                     }
