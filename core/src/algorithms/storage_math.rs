@@ -22,6 +22,7 @@ pub struct StorageMathConfig {
     pub queue_pressure_low: f32,
     pub queue_pressure_high: f32,
     pub smoothing_factor: f32,
+    pub idle_poll_interval: f32,
 }
 
 impl Default for StorageMathConfig {
@@ -38,6 +39,7 @@ impl Default for StorageMathConfig {
                 queue_pressure_low: 0.15,
                 queue_pressure_high: 6.0,
                 smoothing_factor: 0.55,
+                idle_poll_interval: 5000.0,
             },
             DeviceTier::MidRange => Self {
                 min_req_size_kb: 7.0,
@@ -49,6 +51,7 @@ impl Default for StorageMathConfig {
                 queue_pressure_low: 0.2,
                 queue_pressure_high: 5.5,
                 smoothing_factor: 0.52,
+                idle_poll_interval: 5000.0,
             },
             DeviceTier::LowEnd => Self {
                 min_req_size_kb: 8.0,
@@ -60,6 +63,7 @@ impl Default for StorageMathConfig {
                 queue_pressure_low: 0.25,
                 queue_pressure_high: 5.0,
                 smoothing_factor: 0.5,
+                idle_poll_interval: 5000.0,
             },
         }
     }
@@ -87,6 +91,7 @@ impl Default for WorkloadState {
     }
 }
 
+#[inline]
 pub fn is_congestion_critical(
     psi_pressure: f32,
     in_flight: f32,
@@ -95,6 +100,7 @@ pub fn is_congestion_critical(
     psi_pressure > math_config.critical_threshold_psi || in_flight > math_config.queue_pressure_high
 }
 
+#[inline]
 pub fn should_update_nr_requests(
     calculated: f32,
     current: f32,
@@ -114,7 +120,7 @@ pub fn calculate_io_deltas(
     prev: &disk_monitor::IoStats,
     dt_real: f32,
 ) -> IoDelta {
-    if dt_real <= 0.000001 {
+    if dt_real <= 0.000_001 {
         return IoDelta::default();
     }
     let delta_read_ios = current.read_ios.saturating_sub(prev.read_ios) as f32;
@@ -140,6 +146,7 @@ pub fn calculate_io_deltas(
     }
 }
 
+#[inline]
 pub fn calculate_request_size_ratio(delta: &IoDelta, math_config: &StorageMathConfig) -> f32 {
     if delta.delta_read_ios <= 0.0 {
         return 0.0;
@@ -153,6 +160,7 @@ pub fn calculate_request_size_ratio(delta: &IoDelta, math_config: &StorageMathCo
     ratio.clamp(0.0, 1.0)
 }
 
+#[inline]
 pub fn calculate_merge_ratio(delta: &IoDelta) -> f32 {
     let total_submissions = delta.delta_read_merges + delta.delta_read_ios;
     if total_submissions <= 0.0 {
@@ -161,6 +169,7 @@ pub fn calculate_merge_ratio(delta: &IoDelta) -> f32 {
     delta.delta_read_merges / total_submissions
 }
 
+#[inline]
 pub fn calculate_pressure_ratio(in_flight: f32, math_config: &StorageMathConfig) -> f32 {
     let range = math_config.queue_pressure_high - math_config.queue_pressure_low;
     if range <= 0.0 {
@@ -170,6 +179,7 @@ pub fn calculate_pressure_ratio(in_flight: f32, math_config: &StorageMathConfig)
     ratio.clamp(0.0, 1.0)
 }
 
+#[inline]
 pub fn resolve_sequentiality_factor(
     state: &mut WorkloadState,
     req_size_ratio: f32,
@@ -185,10 +195,12 @@ pub fn resolve_sequentiality_factor(
     smoothed
 }
 
+#[inline]
 pub fn calculate_weighted_throughput(delta: &IoDelta, math_config: &StorageMathConfig) -> f32 {
     delta.throughput_read + (math_config.write_cost_factor * delta.throughput_write)
 }
 
+#[inline]
 pub fn calculate_effective_latency(delta: &IoDelta, lambda_eff: f32, in_flight: f32) -> f32 {
     if delta.service_time_ms > 0.0 {
         delta.service_time_ms
@@ -199,17 +211,20 @@ pub fn calculate_effective_latency(delta: &IoDelta, lambda_eff: f32, in_flight: 
     }
 }
 
+#[inline]
 pub fn calculate_target_latency(psi_some_avg10: f32, math_config: &StorageMathConfig) -> f32 {
     let psi_ratio = (psi_some_avg10 / 100.0).clamp(0.0, 1.0);
     let target = math_config.target_latency_base_ms * (1.0 - psi_ratio);
     target.max(1.0)
 }
 
+#[inline]
 pub fn calculate_target_read_ahead(sequentiality: f32, kernel_limits: &StorageKernelLimits) -> f32 {
     let range = kernel_limits.max_read_ahead - kernel_limits.min_read_ahead;
     kernel_limits.min_read_ahead + (range * sequentiality)
 }
 
+#[inline]
 pub fn calculate_next_queue_depth(
     lambda_eff: f32,
     current_latency_ms: f32,

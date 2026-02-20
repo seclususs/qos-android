@@ -55,13 +55,14 @@ impl AdaptivePoller {
             tunables,
         }
     }
+    #[inline]
     fn next_random(&mut self, range: u64) -> u64 {
         if range == 0 {
             return 0;
         }
         self.rng_state = self
             .rng_state
-            .wrapping_mul(6364136223846793005)
+            .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(1);
         let limit = range * 2;
         self.rng_state % (limit + 1)
@@ -75,7 +76,7 @@ impl AdaptivePoller {
         let now = time::Instant::now();
         let elapsed_ms = now.duration_since(self.last_tick).as_millis() as u64;
         if elapsed_ms > (self.current_interval + self.tunables.sleep_tolerance_ms) {
-            log::debug!("Time Discontinuity (Sleep?): {}ms.", elapsed_ms);
+            log::debug!("Time Discontinuity (Sleep?): {elapsed_ms}ms.");
             self.last_tick = now;
             self.current_interval = loop_settings::MIN_POLLING_MS;
             return loop_settings::MIN_POLLING_MS;
@@ -103,9 +104,9 @@ impl AdaptivePoller {
             (alpha * raw_interval) + ((1.0 - alpha) * target_f32)
         };
         self.target_interval = next_target as u64;
-        let diff = (self.target_interval as i64 - self.current_interval as i64).abs();
+        let diff = self.target_interval.abs_diff(self.current_interval);
         self.last_tick = now;
-        if diff < self.tunables.hysteresis_threshold_ms as i64 {
+        if diff < self.tunables.hysteresis_threshold_ms {
             return self.apply_discrete_math_mut(self.current_interval, dynamic_min, dynamic_max);
         }
         self.current_interval = self.target_interval;
