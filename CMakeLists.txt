@@ -12,6 +12,7 @@ project(QoS
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Default build type
 if(NOT CMAKE_BUILD_TYPE)
@@ -154,3 +155,56 @@ target_link_libraries(qos_daemon
 )
 
 install(TARGETS qos_daemon DESTINATION bin)
+
+# ==============================================================================
+# DEVELOPMENT TOOLS
+# ==============================================================================
+
+file(TO_CMAKE_PATH "${CMAKE_SOURCE_DIR}/native" NATIVE_DIR_CLEAN)
+
+# SYNTAX CHECK
+add_library(syntax_check OBJECT EXCLUDE_FROM_ALL
+    ${NATIVE_SOURCES}
+    "${NATIVE_ROOT_DIR}/src/main.cpp"
+)
+
+target_link_libraries(syntax_check PRIVATE qos_native)
+target_compile_options(syntax_check PRIVATE -fsyntax-only)
+
+add_custom_target(syntax
+    DEPENDS syntax_check
+    COMMAND ${CMAKE_COMMAND} -E echo "Syntax Check Verified."
+)
+
+# LINTING
+find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
+
+if(CLANG_TIDY_EXE)
+    set(TIDY_CHECKS
+        "-*"
+        "android-*"
+        "bugprone-*"
+        "performance-*"
+        "clang-analyzer-*"
+        "readability-redundant-*"
+        "-readability-magic-numbers"
+        "-readability-identifier-length"
+    )
+    
+    string(REPLACE ";" "," TIDY_CHECKS_STR "${TIDY_CHECKS}")
+
+    add_custom_target(lint
+        COMMAND "${CLANG_TIDY_EXE}"
+                -p "${CMAKE_BINARY_DIR}"
+                --quiet
+                "--header-filter=.*native/.*"
+                ${NATIVE_SOURCES} "${NATIVE_ROOT_DIR}/src/main.cpp"
+                "-checks=${TIDY_CHECKS_STR}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E echo "Linter Analysis Finished."
+        VERBATIM
+    )
+
+else()
+    message(STATUS "Note: clang-tidy not found, 'lint' target disabled.")
+endif()
