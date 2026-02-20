@@ -148,13 +148,13 @@ pub struct DemandInput {
     pub is_structural_break: bool,
 }
 
-#[inline(always)]
+#[inline]
 fn sigmoid_param(val: f32, k: f32, mid: f32) -> f32 {
     let x = k * (val - mid);
     0.5 * (x / (1.0 + x.abs()) + 1.0)
 }
 
-#[inline(always)]
+#[inline]
 fn decay(val: f32, coeff: f32) -> f32 {
     let x = coeff * val;
     if x < 0.0 {
@@ -163,15 +163,17 @@ fn decay(val: f32, coeff: f32) -> f32 {
     1.0 / (1.0 + x + 0.5 * x * x)
 }
 
-#[inline(always)]
+#[inline]
 fn tanh(x: f32) -> f32 {
     x / (1.0 + x * x).sqrt()
 }
 
+#[inline]
 pub fn sanitize_dt(secs: f32) -> f32 {
-    secs.clamp(0.000001, 0.1)
+    secs.clamp(0.000_001, 0.1)
 }
 
+#[inline]
 pub fn is_transient(state: &LoadState, target_psi: f32, math_config: &CpuMathConfig) -> bool {
     state.rate.abs() > math_config.transient_rate_threshold
         || (state.psi_value - target_psi).abs() > math_config.transient_diff_threshold
@@ -247,6 +249,7 @@ pub fn calculate_load_demand(
     state.psi_value
 }
 
+#[inline]
 pub fn calculate_trend_gain(velocity: f32) -> f32 {
     if velocity > 0.0 { tanh(velocity) } else { 0.0 }
 }
@@ -263,6 +266,7 @@ pub fn calculate_effective_pressure(
     p_response * throughput_ratio
 }
 
+#[inline]
 pub fn calculate_thermal_latency_limit(thermal_scale: f32, kernel_limits: &CpuKernelLimits) -> f32 {
     let limit_ratio = (1.0 - thermal_scale).clamp(0.0, 1.0);
     kernel_limits.min_latency_ns
@@ -297,6 +301,7 @@ pub fn calculate_latency_and_granularity(
     (adjusted_latency, final_gran)
 }
 
+#[inline]
 pub fn calculate_wakeup_granularity(
     p_eff: f32,
     math_config: &CpuMathConfig,
@@ -308,6 +313,7 @@ pub fn calculate_wakeup_granularity(
     raw_wake.clamp(kernel_limits.min_wakeup_ns, kernel_limits.max_wakeup_ns)
 }
 
+#[inline]
 pub fn calculate_migration_cost(velocity: f32, p_eff: f32, kernel_limits: &CpuKernelLimits) -> f32 {
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
     let factor = 1.0 - x;
@@ -322,6 +328,7 @@ pub fn calculate_migration_cost(velocity: f32, p_eff: f32, kernel_limits: &CpuKe
     )
 }
 
+#[inline]
 pub fn calculate_walt_init(pressure: f32, kernel_limits: &CpuKernelLimits) -> f32 {
     let ratio = pressure / 100.0;
     let load_curve = ratio * ratio;
@@ -333,6 +340,7 @@ pub fn calculate_walt_init(pressure: f32, kernel_limits: &CpuKernelLimits) -> f3
     )
 }
 
+#[inline]
 pub fn calculate_uclamp_min(
     pressure: f32,
     thermal_scale: f32,

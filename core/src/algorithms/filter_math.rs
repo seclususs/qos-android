@@ -107,9 +107,11 @@ impl KalmanFilter {
         self.last_nis = y * y * inv_s;
         self.x_pos.max(0.0)
     }
+    #[inline]
     pub fn get_velocity(&self) -> f32 {
         self.x_vel
     }
+    #[inline]
     pub fn get_last_nis(&self) -> f32 {
         self.last_nis
     }
