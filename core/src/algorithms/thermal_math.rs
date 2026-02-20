@@ -110,21 +110,23 @@ impl LeadLagFilter {
             first_run: true,
         }
     }
-    fn update(&mut self, u: f32, dt: f32, k: f32, t_lead: f32, t_lag: f32) -> f32 {
+    #[inline]
+    fn update(&mut self, input: f32, dt: f32, gain: f32, t_lead: f32, t_lag: f32) -> f32 {
         if self.first_run {
-            self.prev_u = u;
-            self.prev_y = u * k;
+            self.prev_u = input;
+            self.prev_y = input * gain;
             self.first_run = false;
             return self.prev_y;
         }
-        let a = 2.0 * t_lag + dt;
-        let b = 2.0 * t_lag - dt;
-        let c = k * (2.0 * t_lead + dt);
-        let d = k * (2.0 * t_lead - dt);
-        let y = (c * u + d * self.prev_u - b * self.prev_y) / a;
-        self.prev_u = u;
-        self.prev_y = y;
-        y
+        let denom = 2.0 * t_lag + dt;
+        let coeff_prev_y = 2.0 * t_lag - dt;
+        let coeff_input = gain * (2.0 * t_lead + dt);
+        let coeff_prev_u = gain * (2.0 * t_lead - dt);
+        let output =
+            (coeff_input * input + coeff_prev_u * self.prev_u - coeff_prev_y * self.prev_y) / denom;
+        self.prev_u = input;
+        self.prev_y = output;
+        output
     }
 }
 

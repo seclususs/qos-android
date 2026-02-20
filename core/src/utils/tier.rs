@@ -18,6 +18,7 @@ pub enum DeviceTier {
 }
 
 impl DeviceTier {
+    #[inline]
     pub fn get() -> Self {
         *CURRENT_TIER.get_or_init(detect_hardware_capabilities)
     }
@@ -47,8 +48,8 @@ fn get_cpu_stats() -> CpuStats {
     let mut max_freq = 0;
     let mut big_cores = 0;
     for i in 0..16 {
-        let path_info = format!("/sys/devices/system/cpu/cpu{}/cpufreq/cpuinfo_max_freq", i);
-        let path_scaling = format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_max_freq", i);
+        let path_info = format!("/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq");
+        let path_scaling = format!("/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq");
         let content = fs::read_to_string(&path_info).or_else(|_| fs::read_to_string(&path_scaling));
         if let Ok(val_str) = content {
             if let Ok(freq) = val_str.trim().parse::<u64>() {

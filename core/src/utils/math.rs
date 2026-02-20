@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-#[inline(always)]
+#[inline]
 pub fn sanitize_to_u64(val: f32, fallback: u64) -> u64 {
     if !val.is_finite() {
         return fallback;
@@ -8,7 +8,7 @@ pub fn sanitize_to_u64(val: f32, fallback: u64) -> u64 {
     val.round() as u64
 }
 
-#[inline(always)]
+#[inline]
 pub fn sanitize_to_clean_u64(val: f32, fallback: u64, step: u64) -> u64 {
     let val_u64 = sanitize_to_u64(val, fallback);
     if step == 0 || step == 1 {
