@@ -4,7 +4,7 @@ use crate::hal::filesystem;
 
 use std::fs;
 
-#[inline(always)]
+#[inline]
 fn check_absolute(current: u64, target: u64, threshold: u64) -> bool {
     if current == target {
         return false;
@@ -12,7 +12,7 @@ fn check_absolute(current: u64, target: u64, threshold: u64) -> bool {
     current.abs_diff(target) >= threshold
 }
 
-#[inline(always)]
+#[inline]
 fn check_relative(current: u64, target: u64, tolerance_pct: f32) -> bool {
     if current == target {
         return false;
@@ -52,17 +52,17 @@ impl CachedFile {
     pub fn is_active(&self) -> bool {
         self.file.is_some()
     }
-    pub fn update(&mut self, new_value: u64, force: bool, strategy: CheckStrategy) {
+    pub fn update(&mut self, new_value: u64, force: bool, strategy: &CheckStrategy) {
         if let Some(ref mut file) = self.file {
             let needs_update = if force {
                 true
             } else {
                 match strategy {
                     CheckStrategy::Absolute(threshold) => {
-                        check_absolute(self.last_value, new_value, threshold)
+                        check_absolute(self.last_value, new_value, *threshold)
                     }
                     CheckStrategy::Relative(tolerance) => {
-                        check_relative(self.last_value, new_value, tolerance)
+                        check_relative(self.last_value, new_value, *tolerance)
                     }
                     CheckStrategy::Strict => self.last_value != new_value,
                 }

@@ -24,6 +24,9 @@ pub struct CpuController {
     cpu_sensor: thermal::ThermalSensor,
     battery_sensor: thermal::ThermalSensor,
     battery_capacity_sensor: battery::BatterySensor,
+    cached_bat_level: f32,
+    cached_bat_temp: f32,
+    last_bat_check: time::Instant,
     current_latency: f32,
     current_min_gran: f32,
     current_wakeup: f32,
@@ -57,8 +60,8 @@ impl CpuController {
             min_uclamp_min: config_limits.min_uclamp_min as f32,
             max_uclamp_min: config_limits.max_uclamp_min as f32,
         };
-        let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_CPU_PATH, 100000, 1000000)
-            .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {}", e)))?;
+        let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_CPU_PATH, 100_000, 1_000_000)
+            .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {e}")))?;
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
         let latency = cached_file::CachedFile::new_opt(
             filesystem::open_file_for_write(sys_paths::K_SCHED_LATENCY_NS).ok(),
@@ -107,6 +110,9 @@ impl CpuController {
             cpu_sensor,
             battery_sensor,
             battery_capacity_sensor,
+            cached_bat_level: 50.0,
+            cached_bat_temp: 35.0,
+            last_bat_check: time::Instant::now(),
             current_latency: config_limits.min_latency_ns as f32,
             current_min_gran: config_limits.min_granularity_ns as f32,
             current_wakeup: config_limits.min_wakeup_ns as f32,
@@ -120,6 +126,8 @@ impl CpuController {
             poller,
             next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
         };
+        controller.cached_bat_level = controller.battery_capacity_sensor.read();
+        controller.cached_bat_temp = controller.battery_sensor.read();
         controller.apply_values(true);
         Ok(controller)
     }
@@ -133,16 +141,21 @@ impl CpuController {
         let target_psi = some_cpu.current;
         let is_break = some_cpu.nis > self.cpu_math_config.nis_threshold;
         let cpu_temp = self.cpu_sensor.read();
-        let bat_temp = self.battery_sensor.read();
-        let bat_level = self.battery_capacity_sensor.read();
+        let now = time::Instant::now();
+        if now.duration_since(self.last_bat_check).as_secs() >= 5 {
+            self.cached_bat_level = self.battery_capacity_sensor.read();
+            self.cached_bat_temp = self.battery_sensor.read();
+            self.last_bat_check = now;
+        }
+        let bat_level = self.cached_bat_level;
+        let bat_temp = self.cached_bat_temp;
         let thermal_scale =
             self.thermal_manager
                 .update(cpu_temp, bat_temp, target_psi, &self.thermal_config);
         let trend_factor = cpu_math::calculate_trend_gain(some_cpu.velocity);
-        let now = time::Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
-        let dt_real = dt_duration.as_secs_f32().max(0.000001);
+        let dt_real = dt_duration.as_secs_f32().max(0.000_001);
         let dt_safe = cpu_math::sanitize_dt(dt_real);
         let (integral_total, integral_dot) = cpu_math::update_integral_params(
             &mut self.load_state,
@@ -244,17 +257,17 @@ impl CpuController {
             self.cpu_kernel_limits.min_uclamp_min as u64,
         );
         self.latency
-            .update(lat_u64, force, cached_file::CheckStrategy::Relative(0.10));
+            .update(lat_u64, force, &cached_file::CheckStrategy::Relative(0.10));
         self.min_gran
-            .update(gran_u64, force, cached_file::CheckStrategy::Relative(0.10));
+            .update(gran_u64, force, &cached_file::CheckStrategy::Relative(0.10));
         self.wakeup
-            .update(wake_u64, force, cached_file::CheckStrategy::Relative(0.15));
+            .update(wake_u64, force, &cached_file::CheckStrategy::Relative(0.15));
         self.migration
-            .update(mig_u64, force, cached_file::CheckStrategy::Absolute(50000));
+            .update(mig_u64, force, &cached_file::CheckStrategy::Absolute(50000));
         self.walt_init
-            .update(walt_u64, force, cached_file::CheckStrategy::Absolute(5));
+            .update(walt_u64, force, &cached_file::CheckStrategy::Absolute(5));
         self.uclamp_min
-            .update(uclamp_u64, force, cached_file::CheckStrategy::Absolute(32));
+            .update(uclamp_u64, force, &cached_file::CheckStrategy::Absolute(32));
     }
 }
 
@@ -269,7 +282,7 @@ impl traits::EventHandler for CpuController {
         let mut buf = [0u8; 8];
         let _ = io::Read::read(&mut self.fd, &mut buf);
         if let Err(e) = self.update_dynamics(context) {
-            log::warn!("Cpu Logic Error: {}", e);
+            log::warn!("Cpu Logic Error: {e}");
         }
         Ok(traits::LoopAction::Continue)
     }
@@ -278,7 +291,7 @@ impl traits::EventHandler for CpuController {
         context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
         if let Err(e) = self.update_dynamics(context) {
-            log::warn!("Cpu Timeout Error: {}", e);
+            log::warn!("Cpu Timeout Error: {e}");
         }
         Ok(traits::LoopAction::Continue)
     }

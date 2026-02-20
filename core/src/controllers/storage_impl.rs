@@ -38,8 +38,8 @@ impl StorageController {
             min_nr_requests: config_limits.min_nr_requests as f32,
             max_nr_requests: config_limits.max_nr_requests as f32,
         };
-        let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_IO_PATH, 250000, 1000000)
-            .map_err(|e| types::QosError::FfiError(format!("Storage PSI Error: {}", e)))?;
+        let raw_fd = kernel::register_psi_trigger(sys_paths::K_PSI_IO_PATH, 250_000, 1_000_000)
+            .map_err(|e| types::QosError::FfiError(format!("Storage PSI Error: {e}")))?;
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
         let ra_path = sys_paths::get_read_ahead_path();
         let nr_path = sys_paths::get_nr_requests_path();
@@ -92,12 +92,16 @@ impl StorageController {
         let now = time::Instant::now();
         let dt_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
-        let dt_real = dt_duration.as_secs_f32().max(0.000001);
+        let dt_real = dt_duration.as_secs_f32().max(0.000_001);
         let delta =
             storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_real);
         self.prev_io_stats = current_io_stats;
         context.pressure.io_psi = psi_data.some.current;
         context.pressure.io_saturation = current_io_stats.in_flight as f32;
+        if current_io_stats.in_flight == 0 && psi_data.some.current < 0.10 {
+            self.next_wake_ms = self.storage_math_config.idle_poll_interval.max(500.0) as i32;
+            return Ok(());
+        }
         let req_size_ratio =
             storage_math::calculate_request_size_ratio(&delta, &self.storage_math_config);
         let merge_ratio = storage_math::calculate_merge_ratio(&delta);
@@ -171,9 +175,9 @@ impl StorageController {
             16,
         );
         self.read_ahead
-            .update(ra_u64, force, cached_file::CheckStrategy::Absolute(32));
+            .update(ra_u64, force, &cached_file::CheckStrategy::Absolute(32));
         self.nr_requests
-            .update(nr_u64, force, cached_file::CheckStrategy::Absolute(16));
+            .update(nr_u64, force, &cached_file::CheckStrategy::Absolute(16));
     }
 }
 
@@ -188,7 +192,7 @@ impl traits::EventHandler for StorageController {
         let mut buf = [0u8; 8];
         let _ = io::Read::read(&mut self.fd, &mut buf);
         if let Err(e) = self.update_io_logic(context) {
-            log::warn!("Storage Error: {}", e);
+            log::warn!("Storage Error: {e}");
         }
         Ok(traits::LoopAction::Continue)
     }
@@ -197,7 +201,7 @@ impl traits::EventHandler for StorageController {
         context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
         if let Err(e) = self.update_io_logic(context) {
-            log::warn!("Storage Timeout Error: {}", e);
+            log::warn!("Storage Timeout Error: {e}");
         }
         Ok(traits::LoopAction::Continue)
     }
