@@ -16,25 +16,37 @@ impl ThermalSensor {
         }
     }
     pub fn read(&mut self) -> f32 {
-        let monitor = match self.monitor.as_mut() {
-            Some(m) => m,
-            None => return self.default_val,
+        let Some(monitor) = self.monitor.as_mut() else {
+            return self.default_val;
         };
-        match monitor.read_value() {
-            Ok(content) => {
-                let s = content.trim();
-                match s.parse::<f32>() {
-                    Ok(val) => {
-                        let abs = val.abs();
-                        if abs >= 10_000.0 {
-                            val / 1000.0
-                        } else if abs >= 100.0 {
-                            val / 10.0
-                        } else {
-                            val
+        match monitor.read_bytes_raw() {
+            Ok(bytes) => {
+                let mut val: i32 = 0;
+                let mut sign = 1;
+                let mut started = false;
+                for &b in bytes {
+                    if b.is_ascii_digit() {
+                        val = val.wrapping_mul(10).wrapping_add((b - b'0') as i32);
+                        started = true;
+                    } else if b == b'-' {
+                        if !started {
+                            sign = -1;
                         }
+                    } else if started {
+                        break;
                     }
-                    Err(_) => self.default_val,
+                }
+                if !started {
+                    return self.default_val;
+                }
+                let final_val = (val * sign) as f32;
+                let abs = final_val.abs();
+                if abs >= 10_000.0 {
+                    final_val / 1000.0
+                } else if abs >= 100.0 {
+                    final_val / 10.0
+                } else {
+                    final_val
                 }
             }
             _ => self.default_val,
