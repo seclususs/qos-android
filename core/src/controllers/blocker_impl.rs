@@ -28,7 +28,7 @@ const TARGET_COMPONENTS: &[&str] = &[
 static CMD_CACHE: sync::OnceLock<String> = sync::OnceLock::new();
 
 pub struct BlockerController {
-    dummy_fd: os::fd::RawFd,
+    dummy_fd: rustix::fd::OwnedFd,
     interval_ms: i32,
     last_run: time::Instant,
 }
@@ -40,11 +40,13 @@ impl BlockerController {
             0,
             rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK,
         )
-        .map_err(|e| types::QosError::SystemCheckFailed(format!("Eventfd fail: {}", e)))?;
+        .map_err(|e| types::QosError::SystemCheckFailed(format!("Eventfd fail: {e}")))?;
         let mut controller = Self {
-            dummy_fd: os::fd::IntoRawFd::into_raw_fd(evt),
+            dummy_fd: evt,
             interval_ms: 86_400_000,
-            last_run: time::Instant::now() - time::Duration::from_secs(86401),
+            last_run: time::Instant::now()
+                .checked_sub(time::Duration::from_secs(86401))
+                .unwrap_or_else(time::Instant::now),
         };
         controller.trigger_block_cycle();
         Ok(controller)
@@ -60,7 +62,8 @@ impl BlockerController {
     }
     fn execute_batch_disable() {
         let cmd = CMD_CACHE.get_or_init(|| {
-            let mut chain = String::with_capacity(2048);
+            let capacity = TARGET_COMPONENTS.len() * 100;
+            let mut chain = String::with_capacity(capacity);
             for component in TARGET_COMPONENTS {
                 chain.push_str("cmd pm disable ");
                 chain.push_str(component);
@@ -75,7 +78,7 @@ impl BlockerController {
                 log::debug!("Blocker: Batch cycle done in {}ms", duration.as_millis());
             }
             Err(e) => {
-                log::error!("Blocker: Exec failed: {}", e);
+                log::error!("Blocker: Exec failed: {e}");
             }
         }
     }
@@ -83,14 +86,14 @@ impl BlockerController {
 
 impl traits::EventHandler for BlockerController {
     fn as_raw_fd(&self) -> os::fd::RawFd {
-        self.dummy_fd
+        std::os::fd::AsRawFd::as_raw_fd(&self.dummy_fd)
     }
     fn on_event(
         &mut self,
         _context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
         let mut buf = [0u8; 8];
-        let _ = unsafe { libc::read(self.dummy_fd, buf.as_mut_ptr() as *mut libc::c_void, 8) };
+        let _ = rustix::io::read(&self.dummy_fd, &mut buf);
         Ok(traits::LoopAction::Continue)
     }
     fn on_timeout(
@@ -98,8 +101,8 @@ impl traits::EventHandler for BlockerController {
         _context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
         let now = time::Instant::now();
-        let elapsed = now.duration_since(self.last_run).as_millis() as i128;
-        if elapsed >= self.interval_ms as i128 {
+        let elapsed = now.duration_since(self.last_run).as_millis();
+        if elapsed >= self.interval_ms as u128 {
             self.trigger_block_cycle();
         }
         Ok(traits::LoopAction::Continue)
@@ -109,11 +112,5 @@ impl traits::EventHandler for BlockerController {
         let elapsed = now.duration_since(self.last_run).as_millis() as i32;
         let remaining = self.interval_ms - elapsed;
         if remaining < 0 { 0 } else { remaining }
-    }
-}
-
-impl Drop for BlockerController {
-    fn drop(&mut self) {
-        unsafe { libc::close(self.dummy_fd) };
     }
 }
