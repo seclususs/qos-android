@@ -5,6 +5,7 @@ pub struct PropTweak {
     pub value: &'static str,
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn get_prop_tweaks() -> &'static [PropTweak] {
     &[
         PropTweak {
