@@ -49,7 +49,7 @@ struct sched_attr {
 
 static int sched_setattr(pid_t pid, struct sched_attr *attr,
                          unsigned int flags) {
-  return syscall(__NR_sched_setattr, pid, attr, flags);
+  return static_cast<int>(syscall(__NR_sched_setattr, pid, attr, flags));
 }
 
 namespace qos::runtime {
@@ -72,7 +72,7 @@ static int apply_little_core_affinity() {
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
 
-  int num_cores = sysconf(_SC_NPROCESSORS_CONF);
+  int num_cores = static_cast<int>(sysconf(_SC_NPROCESSORS_CONF));
   if (num_cores <= 0) {
     LOGE("Scheduler: Invalid core count detected.");
     return -1;
@@ -181,7 +181,7 @@ void Scheduler::enforce_efficiency_mode() {
     // rather than being left in an indeterminate state.
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    int num_cores = sysconf(_SC_NPROCESSORS_CONF);
+    int num_cores = static_cast<int>(sysconf(_SC_NPROCESSORS_CONF));
     for (int i = 0; i < num_cores; ++i) {
       CPU_SET(i, &cpuset);
     }
@@ -199,7 +199,7 @@ void Scheduler::enforce_efficiency_mode() {
 void Scheduler::maximize_timer_slack() {
   // Set slack to 50ms (in nanoseconds).
   // This allows the kernel to defer wakeups to coalesce them with other events.
-  const unsigned long slack_ns = 50 * 1000 * 1000;
+  const unsigned long slack_ns = 50UL * 1000UL * 1000UL;
 
   if (prctl(PR_SET_TIMERSLACK, slack_ns) == -1) {
     LOGE("Scheduler: Failed to set Timer Slack. Errno: %d", errno);

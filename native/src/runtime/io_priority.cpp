@@ -23,7 +23,7 @@
 namespace qos::runtime {
 
 static inline int ioprio_set(int which, int who, int ioprio) {
-  return syscall(__NR_ioprio_set, which, who, ioprio);
+  return static_cast<int>(syscall(__NR_ioprio_set, which, who, ioprio));
 }
 
 void IoPriority::set_high_priority() {

@@ -150,6 +150,8 @@ extern "C" int cpp_set_refresh_rate(int refresh_rate_mode) {
   // Use vfork() to avoid page table duplication.
   // The parent process is blocked until the child either calls execve()
   // or terminates via _exit().
+
+  // NOLINTNEXTLINE
   pid_t pid = vfork();
 
   if (pid < 0) {
@@ -176,7 +178,6 @@ extern "C" int cpp_set_refresh_rate(int refresh_rate_mode) {
 
     // Execute the service binary directly without shell involvement
     // to minimize overhead and ensure deterministic behavior.
-    extern char **environ;
     execve(argv[0], argv, environ);
 
     // execve() only returns on failure (e.g. binary not found).

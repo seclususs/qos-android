@@ -26,7 +26,7 @@ void Limits::expand_resources() {
   // 2. Expand Stack Size
   // We aim for a 512KB stack to provide ample headroom.
   if (getrlimit(RLIMIT_STACK, &rl) == 0) {
-    rlim_t target = 512 * 1024; // 512KB
+    rlim_t target = 512UL * 1024UL; // 512KB
 
     // Respect the hard limit if it's lower than our target.
     if (rl.rlim_max != RLIM_INFINITY && target > rl.rlim_max) {
