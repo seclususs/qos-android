@@ -124,7 +124,7 @@ fn epoll_mod(
         {
             return true;
         }
-        log::warn!("Epoll op {} failed for ID {}: {}", op, id, e);
+        log::warn!("Epoll op {op} failed for ID {id}: {e}");
         return false;
     }
     true
@@ -145,7 +145,7 @@ pub fn apply_prop_tweaks() {
     log::info!("Rust: Applying Prop tweaks...");
     let prop_tweaks_list = prop_tweaks::get_prop_tweaks();
     let mut success_count = 0;
-    for tweak in prop_tweaks_list.iter() {
+    for tweak in prop_tweaks_list {
         if properties::property_exists(tweak.key) {
             if let Err(e) = properties::set_system_property(tweak.key, tweak.value) {
                 log::warn!("Failed to set prop {}: {}", tweak.key, e);
@@ -167,9 +167,9 @@ pub fn apply_file_tweaks() {
     log::info!("Rust: Applying File tweaks...");
     let file_tweaks_list = file_tweaks::generate_file_tweaks();
     let mut success_count = 0;
-    for tweak in file_tweaks_list.iter() {
+    for tweak in &file_tweaks_list {
         match filesystem::write_to_file(&tweak.path, tweak.value) {
-            Ok(_) => success_count += 1,
+            Ok(()) => success_count += 1,
             Err(e) => log::debug!("Failed to apply tweak {}: {}", tweak.path, e),
         }
     }
@@ -181,7 +181,7 @@ pub fn apply_file_tweaks() {
 }
 
 pub fn wait_for_boot_completion(tag: &str) {
-    log::info!("Rust [{}]: Waiting for sys.boot_completed...", tag);
+    log::info!("Rust [{tag}]: Waiting for sys.boot_completed...");
     let mut retry_count = 0;
     loop {
         if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
@@ -194,7 +194,7 @@ pub fn wait_for_boot_completion(tag: &str) {
         }
         retry_count += 1;
         if retry_count > loop_settings::BOOT_WAIT_RETRY_LIMIT {
-            log::warn!("Rust [{}]: Boot property timeout.", tag);
+            log::warn!("Rust [{tag}]: Boot property timeout.");
             break;
         }
         thread::sleep(time::Duration::from_secs(
@@ -203,8 +203,7 @@ pub fn wait_for_boot_completion(tag: &str) {
     }
     if !state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
         log::info!(
-            "Rust [{}]: Stabilizing for {}s...",
-            tag,
+            "Rust [{tag}]: Stabilizing for {}s...",
             loop_settings::STABILIZATION_DELAY_SEC
         );
         thread::sleep(time::Duration::from_secs(
@@ -213,10 +212,10 @@ pub fn wait_for_boot_completion(tag: &str) {
     }
 }
 
+#[allow(clippy::too_many_lines, clippy::cast_possible_wrap)]
 pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), types::QosError> {
-    let epoll_fd = event::epoll::create(event::epoll::CreateFlags::CLOEXEC).map_err(|e| {
-        types::QosError::SystemCheckFailed(format!("Failed to create epoll: {}", e))
-    })?;
+    let epoll_fd = event::epoll::create(event::epoll::CreateFlags::CLOEXEC)
+        .map_err(|e| types::QosError::SystemCheckFailed(format!("Failed to create epoll: {e}")))?;
     let mut context = state::DaemonContext::new();
     let cooldown_dur = time::Duration::from_secs(loop_settings::COOLDOWN_DURATION_SEC);
     let mut events: [libc::epoll_event; loop_settings::MAX_EVENTS] =
@@ -237,21 +236,22 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), types
                             && let Some(ref h) = service.handler
                         {
                             let flags = h.get_poll_flags();
-                            if !epoll_mod(
+                            if epoll_mod(
                                 os::fd::AsRawFd::as_raw_fd(&epoll_fd),
                                 traits::EventHandler::as_raw_fd(h.as_ref()),
                                 i as u64,
                                 libc::EPOLL_CTL_ADD,
                                 flags,
                             ) {
+                                service.registered_in_epoll = true;
+                            } else {
                                 service.handler = None;
                                 service.cooldown_start = Some(now);
-                            } else {
-                                service.registered_in_epoll = true;
                             }
                         }
                     } else {
-                        let wakeup_time = now + (cooldown_dur - elapsed);
+                        let wakeup_time =
+                            now + cooldown_dur.checked_sub(elapsed).unwrap_or_default();
                         if wakeup_time < next_wakeup {
                             next_wakeup = wakeup_time;
                         }
