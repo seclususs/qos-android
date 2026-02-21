@@ -8,14 +8,14 @@ use crate::resources::sys_paths;
 
 use std::{collections, ffi, fs, io, os, path, sync, thread, time};
 
-const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-const FNV_PRIME: u64 = 0x10000001b3;
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0010_0000_01b3;
 
-#[inline(always)]
+#[inline]
 fn hash_bytes(bytes: &[u8]) -> u64 {
     let mut hash = FNV_OFFSET;
     for byte in bytes {
-        hash ^= *byte as u64;
+        hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     hash
@@ -51,25 +51,30 @@ impl Default for CleanerConfig {
 struct CleanerWorker {
     tunables: CleanerConfig,
     rx: sync::mpsc::Receiver<()>,
+    reusable_pkg_cache: collections::HashSet<u64>,
 }
 
 impl CleanerWorker {
     fn new(tunables: CleanerConfig, rx: sync::mpsc::Receiver<()>) -> Self {
-        Self { tunables, rx }
+        Self {
+            tunables,
+            rx,
+            reusable_pkg_cache: collections::HashSet::with_capacity(512),
+        }
     }
-    fn run(&self) {
+    fn run(&mut self) {
         while self.rx.recv().is_ok() {
             let items = self.perform_cycle();
             if items > 0 {
-                log::info!("Cleaner: Cycle complete. Removed {} items.", items);
+                log::info!("Cleaner: Cycle complete. Removed {items} items.");
             }
             unsafe {
                 sys::mallopt(-101, 0);
             }
         }
     }
-    fn get_active_packages_hash(&self) -> collections::HashSet<u64> {
-        let mut active_hashes = collections::HashSet::with_capacity(512);
+    fn refresh_active_packages_cache(&mut self) {
+        self.reusable_pkg_cache.clear();
         let mut buf = [0u8; 256];
         if let Ok(entries) = fs::read_dir("/proc") {
             for entry in entries.flatten() {
@@ -82,7 +87,7 @@ impl CleanerWorker {
                 }
                 let file_name = entry.file_name();
                 let name_bytes = os::unix::ffi::OsStrExt::as_bytes(file_name.as_os_str());
-                if !name_bytes.first().is_some_and(|b| b.is_ascii_digit()) {
+                if !name_bytes.first().is_some_and(u8::is_ascii_digit) {
                     continue;
                 }
                 let path = entry.path().join("cmdline");
@@ -93,12 +98,11 @@ impl CleanerWorker {
                     let slice = &buf[..n];
                     let pkg_name = slice.split(|&b| b == 0).next().unwrap_or(slice);
                     if pkg_name.contains(&b'.') {
-                        active_hashes.insert(hash_bytes(pkg_name));
+                        self.reusable_pkg_cache.insert(hash_bytes(pkg_name));
                     }
                 }
             }
         }
-        active_hashes
     }
     fn is_storage_critical(&self) -> bool {
         if let Ok(stats) = rustix::fs::statvfs("/data") {
@@ -111,50 +115,48 @@ impl CleanerWorker {
         }
         false
     }
-    #[inline(always)]
+    #[inline]
     fn is_safe_name(name: &ffi::OsStr) -> bool {
         let bytes = os::unix::ffi::OsStrExt::as_bytes(name);
-        let len = bytes.len();
-        if len > 3 && bytes[len - 3..] == *b".db" {
+        if bytes.ends_with(b".db")
+            || bytes.ends_with(b".xml")
+            || bytes.ends_with(b".obb")
+            || bytes.ends_with(b".pak")
+            || bytes.ends_with(b".dat")
+            || bytes.ends_with(b".json")
+            || bytes.ends_with(b".lock")
+            || bytes.ends_with(b".pref")
+            || bytes.ends_with(b".conf")
+        {
             return true;
-        }
-        if len > 4 {
-            let tail = &bytes[len - 4..];
-            if tail == b".xml" || tail == b".obb" || tail == b".pak" || tail == b".dat" {
-                return true;
-            }
-        }
-        if len > 5 {
-            let tail = &bytes[len - 5..];
-            if tail == b".json" || tail == b".lock" || tail == b".pref" || tail == b".conf" {
-                return true;
-            }
         }
         if bytes.ends_with(b"-journal") || bytes.ends_with(b"-wal") || bytes.ends_with(b"-shm") {
             return true;
         }
         false
     }
-    #[inline(always)]
+    #[inline]
     fn is_trash_ext(name: &ffi::OsStr) -> bool {
         let bytes = os::unix::ffi::OsStrExt::as_bytes(name);
-        if bytes.ends_with(b".tmp")
+        bytes.ends_with(b".tmp")
             || bytes.ends_with(b".temp")
             || bytes.ends_with(b".log")
             || bytes.ends_with(b".bak")
             || bytes.ends_with(b".old")
             || bytes.ends_with(b".thumb")
             || bytes.ends_with(b".exo")
-        {
-            return true;
-        }
-        false
     }
-    fn perform_cycle(&self) -> usize {
-        let active_pkgs_hash = self.get_active_packages_hash();
+    fn perform_cycle(&mut self) -> usize {
+        self.refresh_active_packages_cache();
         let is_critical = self.is_storage_critical();
         let now = time::SystemTime::now();
         let mut total_cleaned = 0;
+        total_cleaned += self.clean_system_paths(now);
+        total_cleaned += self.clean_app_caches(is_critical, now);
+        total_cleaned
+    }
+    fn clean_system_paths(&self, now: time::SystemTime) -> usize {
+        let mut cleaned = 0;
         let tunables = self.tunables;
         for sys in ["/data/anr", "/data/tombstones"] {
             let p = path::Path::new(sys);
@@ -178,9 +180,14 @@ impl CleanerWorker {
                     }
                     traversal::TraversalAction::Keep
                 };
-                total_cleaned += traversal::walk_and_act(p, &policy, 0);
+                cleaned += traversal::walk_and_act(p, &policy, 0);
             }
         }
+        cleaned
+    }
+    fn clean_app_caches(&self, is_critical: bool, now: time::SystemTime) -> usize {
+        let mut cleaned = 0;
+        let tunables = self.tunables;
         for root in ["/data/data", "/sdcard/Android/data"] {
             let root_path = path::Path::new(root);
             if !root_path.exists() {
@@ -198,16 +205,20 @@ impl CleanerWorker {
                     let pkg_os_str = entry.file_name();
                     let pkg_bytes = os::unix::ffi::OsStrExt::as_bytes(pkg_os_str.as_os_str());
                     let pkg_hash = hash_bytes(pkg_bytes);
-                    if active_pkgs_hash.contains(&pkg_hash) && !is_critical {
+                    if self.reusable_pkg_cache.contains(&pkg_hash) && !is_critical {
                         continue;
                     }
                     let app_dir = entry.path();
                     let cache_dir = app_dir.join("cache");
                     if cache_dir.exists() {
-                        let size = traversal::get_tree_size_capped(
-                            &cache_dir,
-                            tunables.bloat_limit_bytes + 1024,
-                        );
+                        let size = if is_critical {
+                            0
+                        } else {
+                            traversal::get_tree_size_capped(
+                                &cache_dir,
+                                tunables.bloat_limit_bytes + 1024,
+                            )
+                        };
                         let age = if is_critical {
                             tunables.age_emergency
                         } else if size > tunables.bloat_limit_bytes {
@@ -235,7 +246,7 @@ impl CleanerWorker {
                                 }
                                 traversal::TraversalAction::Keep
                             };
-                        total_cleaned += traversal::walk_and_act(&cache_dir, &policy, 0);
+                        cleaned += traversal::walk_and_act(&cache_dir, &policy, 0);
                     }
                     let code_dir = app_dir.join("code_cache");
                     if code_dir.exists() {
@@ -264,12 +275,12 @@ impl CleanerWorker {
                                 }
                                 traversal::TraversalAction::Keep
                             };
-                        total_cleaned += traversal::walk_and_act(&code_dir, &policy, 0);
+                        cleaned += traversal::walk_and_act(&code_dir, &policy, 0);
                     }
                 }
             }
         }
-        total_cleaned
+        cleaned
     }
 }
 
@@ -291,7 +302,7 @@ impl CleanerController {
             rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK,
         )
         .map_err(|e| {
-            types::QosError::SystemCheckFailed(format!("Failed to create eventfd: {}", e))
+            types::QosError::SystemCheckFailed(format!("Failed to create eventfd: {e}"))
         })?;
         let dummy = unsafe { os::fd::FromRawFd::from_raw_fd(os::fd::IntoRawFd::into_raw_fd(evt)) };
         let tunables = CleanerConfig::default();
@@ -301,18 +312,20 @@ impl CleanerController {
             .name("CleanerWorker".into())
             .stack_size(64 * 1024)
             .spawn(move || {
-                let worker = CleanerWorker::new(worker_tunables, rx);
+                let mut worker = CleanerWorker::new(worker_tunables, rx);
                 worker.run();
             })
             .map_err(|e| {
-                types::QosError::SystemCheckFailed(format!("Failed to spawn cleaner thread: {}", e))
+                types::QosError::SystemCheckFailed(format!("Failed to spawn cleaner thread: {e}"))
             })?;
         Ok(Self {
             io_monitor: psi_monitor::PsiMonitor::new(sys_paths::K_PSI_IO_PATH)?,
             cpu_monitor: psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?,
             thermal: thermal::ThermalSensor::new(sys_paths::K_BATTERY_TEMP_PATH, 35.0),
             tunables,
-            last_sweep: time::Instant::now() - time::Duration::from_secs(86000),
+            last_sweep: time::Instant::now()
+                .checked_sub(time::Duration::from_secs(86000))
+                .unwrap_or_else(time::Instant::now),
             dummy_fd: dummy,
             tx,
         })
@@ -351,34 +364,36 @@ impl traits::EventHandler for CleanerController {
         {
             return Ok(traits::LoopAction::Continue);
         }
+        let is_emergency = self.is_storage_critical();
+        let temp = self.thermal.read();
+        if is_emergency {
+            if temp > 46.0 {
+                return Ok(traits::LoopAction::Continue);
+            }
+        } else if temp > 40.0 {
+            return Ok(traits::LoopAction::Continue);
+        }
         let io_busy = self
             .io_monitor
             .read_state()
             .map(|d| d.some.avg10 > 5.0)
             .unwrap_or(false);
-        let cpu_busy = self
-            .cpu_monitor
-            .read_state()
-            .map(|d| d.some.avg10 > 5.0)
-            .unwrap_or(false);
-        let temp = self.thermal.read();
-        let is_emergency = self.is_storage_critical();
-        if !is_emergency {
-            if io_busy || cpu_busy || temp > 40.0 {
+        if !is_emergency && io_busy {
+            return Ok(traits::LoopAction::Continue);
+        }
+        let cpu_stats_opt = self.cpu_monitor.read_state().ok();
+        let cpu_avg10 = cpu_stats_opt.as_ref().map_or(0.0, |d| d.some.avg10);
+        let cpu_busy = cpu_avg10 > 5.0;
+        if is_emergency {
+            if cpu_busy && cpu_avg10 > 80.0 {
                 return Ok(traits::LoopAction::Continue);
             }
-        } else if temp > 46.0
-            || (cpu_busy && self.cpu_monitor.read_state().unwrap().some.avg10 > 80.0)
-        {
+        } else if cpu_busy {
             return Ok(traits::LoopAction::Continue);
         }
         match self.tx.send(()) {
-            Ok(_) => {
-                self.last_sweep = now;
-            }
-            Err(e) => {
-                log::error!("CleanerController: Failed to signal worker: {}", e);
-            }
+            Ok(()) => self.last_sweep = now,
+            Err(e) => log::error!("CleanerController: Failed to signal: {e}"),
         }
         Ok(traits::LoopAction::Continue)
     }
