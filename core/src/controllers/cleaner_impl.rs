@@ -6,7 +6,7 @@ use crate::hal::{thermal, traversal};
 use crate::monitors::psi_monitor;
 use crate::resources::sys_paths;
 
-use std::{collections, ffi, fs, io, os, path, sync, thread, time};
+use std::{ffi, fs, io, os, path, sync, thread, time};
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0010_0000_01b3;
@@ -51,7 +51,7 @@ impl Default for CleanerConfig {
 struct CleanerWorker {
     tunables: CleanerConfig,
     rx: sync::mpsc::Receiver<()>,
-    reusable_pkg_cache: collections::HashSet<u64>,
+    reusable_pkg_cache: Vec<u64>,
 }
 
 impl CleanerWorker {
@@ -59,7 +59,7 @@ impl CleanerWorker {
         Self {
             tunables,
             rx,
-            reusable_pkg_cache: collections::HashSet::with_capacity(512),
+            reusable_pkg_cache: Vec::with_capacity(512),
         }
     }
     fn run(&mut self) {
@@ -96,13 +96,16 @@ impl CleanerWorker {
                     && n > 0
                 {
                     let slice = &buf[..n];
-                    let pkg_name = slice.split(|&b| b == 0).next().unwrap_or(slice);
-                    if pkg_name.contains(&b'.') {
-                        self.reusable_pkg_cache.insert(hash_bytes(pkg_name));
+                    let cmd_raw = slice.split(|&b| b == 0).next().unwrap_or(slice);
+                    let base_pkg = cmd_raw.split(|&b| b == b':').next().unwrap_or(cmd_raw);
+                    if base_pkg.contains(&b'.') {
+                        self.reusable_pkg_cache.push(hash_bytes(base_pkg));
                     }
                 }
             }
         }
+        self.reusable_pkg_cache.sort_unstable();
+        self.reusable_pkg_cache.dedup();
     }
     fn is_storage_critical(&self) -> bool {
         if let Ok(stats) = rustix::fs::statvfs("/data") {
@@ -205,7 +208,7 @@ impl CleanerWorker {
                     let pkg_os_str = entry.file_name();
                     let pkg_bytes = os::unix::ffi::OsStrExt::as_bytes(pkg_os_str.as_os_str());
                     let pkg_hash = hash_bytes(pkg_bytes);
-                    if self.reusable_pkg_cache.contains(&pkg_hash) && !is_critical {
+                    if self.reusable_pkg_cache.binary_search(&pkg_hash).is_ok() && !is_critical {
                         continue;
                     }
                     let app_dir = entry.path();

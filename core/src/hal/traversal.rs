@@ -47,7 +47,6 @@ where
                 }
                 if ft.is_dir() {
                     count += walk_and_act(&entry.path(), callback, depth + 1);
-                    let _ = fs::remove_dir(entry.path());
                 } else {
                     match callback(&entry, depth) {
                         TraversalAction::DeleteFile => {
