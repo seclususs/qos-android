@@ -109,8 +109,12 @@ impl traits::EventHandler for BlockerController {
     }
     fn get_timeout_ms(&self) -> i32 {
         let now = time::Instant::now();
-        let elapsed = now.duration_since(self.last_run).as_millis() as i32;
-        let remaining = self.interval_ms - elapsed;
-        if remaining < 0 { 0 } else { remaining }
+        let elapsed = now.duration_since(self.last_run).as_millis();
+        let remaining = (self.interval_ms as u128).saturating_sub(elapsed);
+        if remaining > i32::MAX as u128 {
+            i32::MAX
+        } else {
+            remaining as i32
+        }
     }
 }

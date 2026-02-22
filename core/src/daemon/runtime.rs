@@ -317,9 +317,8 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), types
             if let Some(ref mut handler) = service.handler {
                 let interval_ms = handler.get_timeout_ms();
                 if interval_ms > 0 {
-                    let elapsed =
-                        now_after_wait.duration_since(service.last_tick).as_millis() as i32;
-                    if elapsed >= interval_ms {
+                    let elapsed = now_after_wait.duration_since(service.last_tick).as_millis();
+                    if elapsed >= (interval_ms as u128) {
                         service.last_tick = now_after_wait;
                         match handler.on_timeout(&mut context) {
                             Ok(traits::LoopAction::Continue) => {}
