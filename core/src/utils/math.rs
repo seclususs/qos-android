@@ -2,10 +2,10 @@
 
 #[inline]
 pub fn sanitize_to_u64(val: f32, fallback: u64) -> u64 {
-    if !val.is_finite() {
+    if !val.is_finite() || val < 0.0 {
         return fallback;
     }
-    val.round() as u64
+    (val + 0.5) as u64
 }
 
 #[inline]

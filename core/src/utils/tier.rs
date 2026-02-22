@@ -47,10 +47,27 @@ fn detect_hardware_capabilities() -> DeviceTier {
 fn get_cpu_stats() -> CpuStats {
     let mut max_freq = 0;
     let mut big_cores = 0;
+    let mut buf = [0u8; 128];
+    let prefix = b"/sys/devices/system/cpu/cpu";
+    let suffix1 = b"/cpufreq/cpuinfo_max_freq";
+    let suffix2 = b"/cpufreq/scaling_max_freq";
     for i in 0..16 {
-        let path_info = format!("/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq");
-        let path_scaling = format!("/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq");
-        let content = fs::read_to_string(&path_info).or_else(|_| fs::read_to_string(&path_scaling));
+        let mut len = prefix.len();
+        buf[..len].copy_from_slice(prefix);
+        let mut itoa_buf = itoa::Buffer::new();
+        let num_bytes = itoa_buf.format(i).as_bytes();
+        buf[len..len + num_bytes.len()].copy_from_slice(num_bytes);
+        len += num_bytes.len();
+        let path_info_len = len + suffix1.len();
+        buf[len..path_info_len].copy_from_slice(suffix1);
+        let path_info = unsafe { std::str::from_utf8_unchecked(&buf[..path_info_len]) };
+        let mut content = fs::read_to_string(path_info);
+        if content.is_err() {
+            let path_scaling_len = len + suffix2.len();
+            buf[len..path_scaling_len].copy_from_slice(suffix2);
+            let path_scaling = unsafe { std::str::from_utf8_unchecked(&buf[..path_scaling_len]) };
+            content = fs::read_to_string(path_scaling);
+        }
         if let Ok(val_str) = content {
             if let Ok(freq) = val_str.trim().parse::<u64>() {
                 if freq > max_freq {

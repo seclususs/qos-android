@@ -21,8 +21,8 @@ fn check_relative(current: u64, target: u64, tolerance_pct: f32) -> bool {
         return target != 0;
     }
     let diff = current.abs_diff(target) as f32;
-    let change_ratio = diff / current as f32;
-    change_ratio >= tolerance_pct
+    let threshold = (current as f32) * tolerance_pct;
+    diff >= threshold
 }
 
 pub enum CheckStrategy {

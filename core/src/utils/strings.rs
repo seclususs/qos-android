@@ -11,7 +11,7 @@ pub fn to_cstring(s: &str) -> Result<ffi::CString, types::QosError> {
 
 #[inline]
 pub fn validate_value(value: &str) -> bool {
-    value
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '=' || c == ' ')
+    value.bytes().all(|c| {
+        c.is_ascii_alphanumeric() || c == b'.' || c == b'-' || c == b'_' || c == b'=' || c == b' '
+    })
 }
