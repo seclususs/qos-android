@@ -3,9 +3,9 @@
 use crate::daemon::types;
 use crate::utils::strings;
 
-use std::{fs, io, os, path};
+use std::{fs, os, path};
 
-const ALLOWED_PREFIXES: [&str; 3] = ["/proc/", "/sys/", "/dev/"];
+const ALLOWED_PREFIXES: [&str; 2] = ["/proc/", "/sys/"];
 
 fn validate_path_secure(path_str: &str) -> Result<(), types::QosError> {
     let path = path::Path::new(path_str);
@@ -44,15 +44,26 @@ pub fn open_file_for_read(path: &str) -> Result<fs::File, types::QosError> {
 }
 
 pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::QosError> {
-    let mut buffer = [0u8; 24];
-    let mut cursor = io::Cursor::new(&mut buffer[..]);
-    io::Write::write_fmt(&mut cursor, format_args!("{value}")).map_err(types::QosError::IoError)?;
-    let len = cursor.position() as usize;
-    let fd = os::fd::AsFd::as_fd(file);
-    rustix::io::pwrite(fd, &buffer[..len], 0).map_err(|e| {
-        log::warn!("Write via rustix::pwrite failed: {e}");
-        types::QosError::IoError(e.into())
-    })?;
+    let mut buffer = itoa::Buffer::new();
+    let formatted_str = buffer.format(value);
+    let mut write_buf = [0u8; 32];
+    let bytes = formatted_str.as_bytes();
+    let len = bytes.len();
+    if len < write_buf.len() {
+        write_buf[..len].copy_from_slice(bytes);
+        write_buf[len] = b'\n';
+        let fd = os::fd::AsFd::as_fd(file);
+        rustix::io::pwrite(fd, &write_buf[..=len], 0).map_err(|e| {
+            log::warn!("Write via rustix::pwrite failed: {e}");
+            types::QosError::IoError(e.into())
+        })?;
+    } else {
+        let fd = os::fd::AsFd::as_fd(file);
+        rustix::io::pwrite(fd, bytes, 0).map_err(|e| {
+            log::warn!("Write via rustix::pwrite failed: {e}");
+            types::QosError::IoError(e.into())
+        })?;
+    }
     Ok(())
 }
 

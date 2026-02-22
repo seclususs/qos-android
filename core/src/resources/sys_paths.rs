@@ -16,5 +16,3 @@ pub const K_SCHED_UCLAMP_UTIL_MIN: &str = "/proc/sys/kernel/sched_uclamp_util_mi
 
 pub const K_BATTERY_TEMP_PATH: &str = "/sys/class/power_supply/battery/temp";
 pub const K_BATTERY_CAPACITY_PATH: &str = "/sys/class/power_supply/battery/capacity";
-
-pub const K_TOUCH_DEVICE_PATH: &str = "/dev/input/event3";
