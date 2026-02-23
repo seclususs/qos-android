@@ -1,75 +1,75 @@
 #!/usr/bin/env python3
-import os
-import sys
-import subprocess
-import platform
 import argparse
+import os
+import platform
 import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 
 DEFAULT_ANDROID_API = "33"
 DEFAULT_BUILD_TYPE = "Release"
 PROJECT_NAME = "QoS"
-
 ARCH_ABI = "arm64-v8a"
 RUST_TARGET = "aarch64-linux-android"
 
+
 class Style:
-    HEADER = '\033[95m'
-    SUCCESS = '\033[92m'
-    INPUT = '\033[96m'
-    WARNING = '\033[93m'
-    ERROR = '\033[91m'
-    DIM = '\033[90m'
-    BOLD = '\033[1m'
-    RESET = '\033[0m'
+    GREEN = "\033[92m"
+    CYAN = "\033[96m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
 
-def log_header(msg):
-    print(f"\n{Style.BOLD}{Style.HEADER}=== {msg} ==={Style.RESET}")
-
-def log_section(msg):
-    print(f"\n{Style.BOLD}{Style.DIM}=== {msg} ==={Style.RESET}")
-
-def log_step(msg):
-    print(f"{Style.WARNING}>>{Style.RESET} {msg}...")
-
-def log_kv(key, value):
-    print(f"   {Style.DIM}{key:<15}{Style.RESET} : {Style.INPUT}{value}{Style.RESET}")
 
 def log_info(msg):
-    print(f"   {Style.DIM}{msg}{Style.RESET}")
+    print(f"{Style.BOLD}[+]{Style.RESET} {msg}")
 
-def log_success(msg):
-    print(f"   {Style.SUCCESS}[OK]{Style.RESET} {msg}")
 
-def log_error(msg):
-    print(f"\n{Style.ERROR}[ERROR] {msg}{Style.RESET}")
+def log_sub(msg):
+    print(f" {Style.CYAN}->{Style.RESET} {msg}")
+
+
+def log_ok(msg):
+    print(f" {Style.GREEN}[OK]{Style.RESET} {msg}")
+
+
+def log_warn(msg):
+    print(f"{Style.YELLOW}[WARN]{Style.RESET} {msg}")
+
+
+def log_err(msg):
+    print(f"\n{Style.RED}[ERROR]{Style.RESET} {msg}")
     sys.exit(1)
-
-def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
 
 
 def find_ndk():
     ndk_env = os.environ.get("ANDROID_NDK_HOME")
+
     if ndk_env and os.path.exists(ndk_env):
         return Path(ndk_env)
+    
     home = Path.home()
-    search_paths = []
-    system = platform.system()
-    if system == "Windows":
+
+    if platform.system() == "Windows":
         search_paths = [
             Path(os.environ.get("LOCALAPPDATA", "")) / "Android/Sdk/ndk",
-            home / "AppData/Local/Android/Sdk/ndk"
+            home / "AppData/Local/Android/Sdk/ndk",
         ]
-    elif system == "Darwin":
+
+    elif platform.system() == "Darwin":
         search_paths = [home / "Library/Android/sdk/ndk"]
+
     else:
         search_paths = [home / "Android/Sdk/ndk"]
+
     for path in search_paths:
         if path.exists():
+
             versions = sorted([d for d in path.iterdir() if d.is_dir()], reverse=True)
+
             if versions:
                 return versions[0]
     return None
@@ -77,159 +77,220 @@ def find_ndk():
 
 def check_tool(tool_name):
     if not shutil.which(tool_name):
-        log_error(f"Tool '{tool_name}' missing. Please install it.")
+        log_err(f"Missing tool: '{tool_name}'. Please install it.")
 
 
-def run_command(cmd, cwd=None, shell=False):
+def run_cmd(cmd, cwd=None, silent=False):
     try:
-        subprocess.run(cmd, check=True, cwd=cwd, shell=shell)
-    except subprocess.CalledProcessError:
-        log_error(f"Command failed: {' '.join(cmd)}")
+        if silent:
+
+            process = subprocess.run(
+                cmd,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            if process.returncode != 0:
+                print(process.stdout)
+                raise subprocess.CalledProcessError(process.returncode, cmd)
+            
+        else:
+            subprocess.run(cmd, check=True, cwd=cwd)
+
+    except subprocess.CalledProcessError as exc:
+        log_err(f"Command failed: {' '.join(cmd)}")
+        raise exc
 
 
-def clean_current_build(build_type):
-    build_dir = Path("build") / build_type / ARCH_ABI
-    if build_dir.exists():
-        try:
-            shutil.rmtree(build_dir)
-        except Exception as e:
-            log_error(f"Failed to clean directory {build_dir}: {e}")
+def clean_build(build_type=None):
+    if build_type:
+        targets = [Path("build") / build_type / ARCH_ABI]
 
-
-def clean_all_builds():
-    log_header("Cleaning Workspace")
-    build_path = Path("build")
-    if build_path.exists():
-        try:
-            shutil.rmtree(build_path)
-            log_success("Folder 'build/' removed.")
-        except Exception as e:
-            log_error(f"Failed to remove build folder: {e}")      
-    target_path = Path("target")
-    if target_path.exists():
-        try:
-            shutil.rmtree(target_path)
-            log_success("Folder 'target/' (Rust) removed.")
-        except Exception as e:
-            log_error(f"Failed to remove target folder: {e}")
-    if not build_path.exists() and not target_path.exists():
-        log_info("Workspace cleaned.")
-
-
-def get_api_selection():
-    log_section("Select Android API Level")
-    print(f"   {Style.SUCCESS}[Enter]{Style.RESET} Default ({DEFAULT_ANDROID_API})")
-    choice = input(f"\n   {Style.DIM}>{Style.RESET} Enter API level: ").strip()
-    if not choice:
-        return DEFAULT_ANDROID_API
-    if choice.isdigit() and int(choice) >= 21:
-        return choice
     else:
-        print(f"{Style.WARNING}   Invalid API. Using default: {DEFAULT_ANDROID_API}{Style.RESET}")
-        return DEFAULT_ANDROID_API
+        targets = [Path("build"), Path("target")]
+
+    for path in targets:
+        if path.exists():
+
+            try:
+                shutil.rmtree(path)
+                log_sub(f"Removed: {path}")
+
+            except OSError as exc:
+                log_warn(f"Failed to clean {path}: {exc}")
+
+
+def run_quality_checks(ndk_path, api_level, do_check, do_lint):
+    if not do_check and not do_lint:
+        return
     
+    log_info("Running code analysis...")
 
-def get_build_type_selection():
-    log_section("Select Build Type")
-    print(f"   {Style.SUCCESS}[1]{Style.RESET} Release (Default)")
-    print(f"   {Style.SUCCESS}[2]{Style.RESET} Debug")
-    print(f"   {Style.SUCCESS}[3]{Style.RESET} All (Release & Debug)")
-    choice = input(f"\n   {Style.DIM}>{Style.RESET} Enter choice: ").strip()
-    if choice == '2':
-        return "Debug"
-    elif choice == '3':
-        return "All"
-    else:
-        return "Release"
+    rust_path = Path("core")
+
+    if rust_path.exists():
+
+        if do_check:
+            run_cmd(
+                ["cargo", "check", "--target", RUST_TARGET, "--release"],
+                cwd=rust_path,
+                silent=True,
+            )
+            log_ok("Rust syntax")
+
+        if do_lint:
+            run_cmd(
+                ["cargo", "clippy", "--target", RUST_TARGET, "--release"],
+                cwd=rust_path,
+                silent=True,
+            )
+            log_ok("Rust lint")
+
+    build_dir = Path("build") / "Release" / ARCH_ABI
+    build_dir.mkdir(parents=True, exist_ok=True)
+
+    toolchain = ndk_path / "build/cmake/android.toolchain.cmake"
+
+    cmake_cmd = [
+        "cmake",
+        "-Wno-dev",
+        f"-DANDROID_ABI={ARCH_ABI}",
+        f"-DANDROID_PLATFORM=android-{api_level}",
+        f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-G",
+        "Ninja",
+        "../../..",
+    ]
+
+    try:
+        run_cmd(cmake_cmd, cwd=build_dir, silent=True)
+
+    except subprocess.CalledProcessError:
+        log_err("Failed to configure CMake for analysis.")
+
+    if do_check:
+        run_cmd(["ninja", "syntax"], cwd=build_dir, silent=True)
+        log_ok("C++ syntax")
+
+    if do_lint:
+        run_cmd(["ninja", "lint"], cwd=build_dir, silent=True)
+        log_ok("C++ lint")
 
 
 def build_project(ndk_path, api_level, build_type):
-    toolchain_file = ndk_path / "build/cmake/android.toolchain.cmake"
+    log_info(f"Building [{build_type}] for {ARCH_ABI} (API {api_level})")
+
     build_dir = Path("build") / build_type / ARCH_ABI
-    log_header(f"Building: {ARCH_ABI} [{build_type}]")
-    log_kv("Rust Target", RUST_TARGET)
-    log_step(f"Cleaning previous {build_type} artifacts")
-    clean_current_build(build_type)
-    log_step("Checking Rust environment")
-    try:
-        subprocess.run(
-            ["rustup", "target", "add", RUST_TARGET], 
-            check=True, 
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL
-        )
-    except subprocess.CalledProcessError:
-        log_error(f"Failed to add rust target: {RUST_TARGET}")
+
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+
     build_dir.mkdir(parents=True, exist_ok=True)
-    log_step("Configuring CMake")
+
+    try:
+        run_cmd(["rustup", "target", "add", RUST_TARGET], silent=True)
+
+    except subprocess.CalledProcessError:
+        log_err(f"Failed to add Rust target: {RUST_TARGET}")
+
+    log_sub("Configuring project...")
+
+    toolchain = ndk_path / "build/cmake/android.toolchain.cmake"
+
     cmake_cmd = [
         "cmake",
         "-Wno-dev",
         "-Wno-deprecated",
         f"-DANDROID_ABI={ARCH_ABI}",
         f"-DANDROID_PLATFORM=android-{api_level}",
-        f"-DCMAKE_TOOLCHAIN_FILE={toolchain_file}",
+        f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
         f"-DCMAKE_BUILD_TYPE={build_type}",
-        "-G", "Ninja",
-        "../../.." 
+        "-G",
+        "Ninja",
+        "../../..",
     ]
-    run_command(cmake_cmd, cwd=build_dir)
-    log_step("Compiling Native Code")
-    run_command(["ninja"], cwd=build_dir)
-    binary_path = build_dir / "qos_daemon"
-    if binary_path.exists():
-        log_success(f"Artifact created: {Style.BOLD}{binary_path.name}{Style.RESET}")
-        log_info(f"Location: {binary_path.absolute()}")
+
+    run_cmd(cmake_cmd, cwd=build_dir, silent=True)
+
+    log_sub("Compiling...")
+
+    run_cmd(["ninja"], cwd=build_dir)
+    binary = build_dir / "qos_daemon"
+
+    if binary.exists():
+        log_ok(f"Artifact: {Style.BOLD}{binary}{Style.RESET}")
+
     else:
-        log_error(f"Binary not found at: {binary_path}")
+        log_err("Build failed: binary not found.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=f"Builder for {PROJECT_NAME}")
-    parser.add_argument("--api")
-    parser.add_argument("--type", choices=["Release", "Debug", "All"])
-    parser.add_argument("--clean", action="store_true")
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument("--api", default=DEFAULT_ANDROID_API, help="Android API level")
+    parser.add_argument(
+        "--type",
+        choices=["Release", "Debug", "All"],
+        default=DEFAULT_BUILD_TYPE,
+        help="Build type",
+    )
+    parser.add_argument("--clean", action="store_true", help="Clean workspace")
+    parser.add_argument("--check", action="store_true", help="Run syntax checks")
+    parser.add_argument("--lint", action="store_true", help="Run linter")
+
     args = parser.parse_args()
-    if args.clean:
-        clean_all_builds()
-        if not any([args.api, args.type]):
-            return
-    clear_screen()
-    print(f"{Style.BOLD}{Style.HEADER}Builder{Style.RESET}")
-    check_tool("cmake")
-    check_tool("ninja")
-    check_tool("rustup")
-    check_tool("cargo")
+
+    for tool in ["cmake", "ninja", "rustup", "cargo"]:
+        check_tool(tool)
+
     ndk_path = find_ndk()
+
     if not ndk_path:
-        log_error("Android NDK not found! Set ANDROID_NDK_HOME.")
-    log_kv("NDK", ndk_path.name)
-    toolchain = ndk_path / "build/cmake/android.toolchain.cmake"
-    if not toolchain.exists():
-        log_error(f"Invalid toolchain: {toolchain}")
-    selected_api = args.api
-    selected_type = args.type
-    if not selected_api:
-        selected_api = get_api_selection()
-    if not selected_type:
-        selected_type = get_build_type_selection()
-    clear_screen()
-    start_time = time.time()
-    types_to_build = []
-    if selected_type == "All":
-        types_to_build = ["Release", "Debug"]
-    else:
-        types_to_build = [selected_type]
+        log_err("Android NDK not found. Set ANDROID_NDK_HOME.")
+
+    if args.clean:
+        log_info("Cleaning workspace...")
+        clean_build()
+
+        if not (args.check or args.lint):
+            return
+        
+    do_check = args.check or not (args.check or args.lint)
+    do_lint = args.lint or not (args.check or args.lint)
+
+    run_quality_checks(ndk_path, args.api, do_check, do_lint)
+
+    explicit_analysis = args.check or args.lint
+
+    explicit_build_args = any(x in sys.argv for x in ["--type", "--api"])
+
+    if explicit_analysis and not explicit_build_args:
+        return
+    
+    types = ["Release", "Debug"] if args.type == "All" else [args.type]
+
+    start = time.time()
+
     try:
-        for b_type in types_to_build:
-            build_project(ndk_path, selected_api, b_type)
+        for b_type in types:
+            build_project(ndk_path, args.api, b_type)
+
+        elapsed = time.time() - start
+        print(f"\n{Style.GREEN}Done in {elapsed:.2f}s{Style.RESET}")
+
     except KeyboardInterrupt:
-        print(f"\n{Style.ERROR}Build cancelled.{Style.RESET}")
+        print("\nCancelled.")
         sys.exit(0)
-    except Exception as e:
-        log_error(f"Unexpected error: {e}")
-    elapsed = time.time() - start_time
-    print(f"\n{Style.SUCCESS}{Style.BOLD}Build Completed in {elapsed:.2f}s{Style.RESET}\n")
+
+    except Exception as exc:
+        log_err(f"Error: {exc}")
 
 
 if __name__ == "__main__":
