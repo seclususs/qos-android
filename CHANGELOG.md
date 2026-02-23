@@ -1,6 +1,19 @@
 # Changelog
 
-## v2.4 (Latest)
+## v2.5 (Latest)
+- **Architecture:** Modernized the codebase by enforcing strict `clippy::pedantic` lints globally, replacing unsafe raw type casting with safe conversions, and utilizing modern inline string interpolation.
+- **Performance:** Delegated inline decisions to the LLVM compiler, eliminated UTF-8 decoding overhead in string validation via raw ASCII processing, and replaced expensive floating-point rounding with highly optimized integer arithmetic.
+- **CPU:** Introduced a 5-second caching layer to reduce `sysfs` I/O overhead during high-frequency polling, and achieved zero-allocation hardware capability detection utilizing stack buffers and the `itoa` crate.
+- **Cleaner:** Optimized memory and cache efficiency during sweep cycles by replacing `HashSet` with a sorted `Vec` and binary search for active package tracking, while halting unnecessary empty directory removals to minimize I/O syscalls.
+- **Sensors:** Rewrote thermal sensor data extraction to parse raw byte streams directly, bypassing expensive UTF-8 string allocations and parsing operations.
+- **Blocker:** Migrated file descriptor management from unsafe `libc` routines to safe `rustix::fd::OwnedFd`, ensuring memory safety and automated resource cleanup.
+- **Storage:** Refined controller dynamics by passing cache validation strategies by reference to avoid struct copying, and introduced a configurable idle polling bypass.
+- **I/O:** Integrated the `itoa` crate for lightning-fast, zero-allocation integer-to-string conversions during stream writes, and hardened security path validation by strictly limiting access to `/sys/` and `/proc/`.
+- **Reliability:** Hardened the daemon's core event loops against integer overflow panics during extreme uptimes by implementing safe bounds checking and saturating subtractions for `epoll` timeouts.
+
+---
+
+### v2.4
 - **Blocker:** Introduced a new Component Blocker service to selectively disable targeted GMS background tasks, reducing resource drain and unnecessary wakeups.
 - **Build:** Switched global optimization profile from Size (`-Oz`) to Speed (`-O3`) for both Native and Rust targets, prioritizing raw execution throughput over binary size.
 - **Logging:** Enforced static compile-time log filtering (`release_max_level_warn`), completely stripping Debug and Info symbols from the release binary to minimize runtime overhead.
