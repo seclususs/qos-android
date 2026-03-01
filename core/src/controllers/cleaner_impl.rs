@@ -8,19 +8,6 @@ use crate::resources::sys_paths;
 
 use std::{ffi, fs, io, os, path, sync, thread, time};
 
-const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-const FNV_PRIME: u64 = 0x0010_0000_01b3;
-
-#[inline]
-fn hash_bytes(bytes: &[u8]) -> u64 {
-    let mut hash = FNV_OFFSET;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
-}
-
 #[derive(Debug, Clone, Copy)]
 struct CleanerConfig {
     sweep_interval_ms: i32,
@@ -39,7 +26,7 @@ impl Default for CleanerConfig {
             sweep_interval_ms: 600_000,
             bloat_limit_bytes: 512 * 1024 * 1024,
             storage_critical_threshold: 10.0,
-            age_stale_media: time::Duration::from_secs(7 * 86400),
+            age_stale_media: time::Duration::from_secs(3 * 86400),
             age_stale_code: time::Duration::from_secs(30 * 86400),
             age_bloat: time::Duration::from_secs(24 * 3600),
             age_emergency: time::Duration::from_secs(3600),
@@ -51,16 +38,11 @@ impl Default for CleanerConfig {
 struct CleanerWorker {
     tunables: CleanerConfig,
     rx: sync::mpsc::Receiver<()>,
-    reusable_pkg_cache: Vec<u64>,
 }
 
 impl CleanerWorker {
     fn new(tunables: CleanerConfig, rx: sync::mpsc::Receiver<()>) -> Self {
-        Self {
-            tunables,
-            rx,
-            reusable_pkg_cache: Vec::with_capacity(512),
-        }
+        Self { tunables, rx }
     }
     fn run(&mut self) {
         while self.rx.recv().is_ok() {
@@ -72,40 +54,6 @@ impl CleanerWorker {
                 sys::mallopt(-101, 0);
             }
         }
-    }
-    fn refresh_active_packages_cache(&mut self) {
-        self.reusable_pkg_cache.clear();
-        let mut buf = [0u8; 256];
-        if let Ok(entries) = fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                if let Ok(ft) = entry.file_type() {
-                    if !ft.is_dir() {
-                        continue;
-                    }
-                } else {
-                    continue;
-                }
-                let file_name = entry.file_name();
-                let name_bytes = os::unix::ffi::OsStrExt::as_bytes(file_name.as_os_str());
-                if !name_bytes.first().is_some_and(u8::is_ascii_digit) {
-                    continue;
-                }
-                let path = entry.path().join("cmdline");
-                if let Ok(mut f) = fs::File::open(path)
-                    && let Ok(n) = io::Read::read(&mut f, &mut buf)
-                    && n > 0
-                {
-                    let slice = &buf[..n];
-                    let cmd_raw = slice.split(|&b| b == 0).next().unwrap_or(slice);
-                    let base_pkg = cmd_raw.split(|&b| b == b':').next().unwrap_or(cmd_raw);
-                    if base_pkg.contains(&b'.') {
-                        self.reusable_pkg_cache.push(hash_bytes(base_pkg));
-                    }
-                }
-            }
-        }
-        self.reusable_pkg_cache.sort_unstable();
-        self.reusable_pkg_cache.dedup();
     }
     fn is_storage_critical(&self) -> bool {
         if let Ok(stats) = rustix::fs::statvfs("/data") {
@@ -150,7 +98,6 @@ impl CleanerWorker {
             || bytes.ends_with(b".exo")
     }
     fn perform_cycle(&mut self) -> usize {
-        self.refresh_active_packages_cache();
         let is_critical = self.is_storage_critical();
         let now = time::SystemTime::now();
         let mut total_cleaned = 0;
@@ -203,12 +150,6 @@ impl CleanerWorker {
                             continue;
                         }
                     } else {
-                        continue;
-                    }
-                    let pkg_os_str = entry.file_name();
-                    let pkg_bytes = os::unix::ffi::OsStrExt::as_bytes(pkg_os_str.as_os_str());
-                    let pkg_hash = hash_bytes(pkg_bytes);
-                    if self.reusable_pkg_cache.binary_search(&pkg_hash).is_ok() && !is_critical {
                         continue;
                     }
                     let app_dir = entry.path();
@@ -379,14 +320,14 @@ impl traits::EventHandler for CleanerController {
         let io_busy = self
             .io_monitor
             .read_state()
-            .map(|d| d.some.avg10 > 5.0)
+            .map(|d| d.some.avg10 > 3.0)
             .unwrap_or(false);
         if !is_emergency && io_busy {
             return Ok(traits::LoopAction::Continue);
         }
         let cpu_stats_opt = self.cpu_monitor.read_state().ok();
         let cpu_avg10 = cpu_stats_opt.as_ref().map_or(0.0, |d| d.some.avg10);
-        let cpu_busy = cpu_avg10 > 5.0;
+        let cpu_busy = cpu_avg10 > 3.0;
         if is_emergency {
             if cpu_busy && cpu_avg10 > 80.0 {
                 return Ok(traits::LoopAction::Continue);
