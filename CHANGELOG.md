@@ -1,6 +1,11 @@
 # Changelog
 
-## v2.5 (Latest)
+## v2.6 (Latest)
+- **Refactor(cleaner):** Removed the active package cache logic (`reusable_pkg_cache` and `refresh_active_packages_cache`) in `CleanerWorker` to simplify the cleaning evaluation process, and lowered the `age_stale_media` threshold from 7 days to 3 days.
+
+---
+
+### v2.5
 - **Architecture:** Modernized the codebase by enforcing strict `clippy::pedantic` lints globally, replacing unsafe raw type casting with safe conversions, and utilizing modern inline string interpolation.
 - **Performance:** Delegated inline decisions to the LLVM compiler, eliminated UTF-8 decoding overhead in string validation via raw ASCII processing, and replaced expensive floating-point rounding with highly optimized integer arithmetic.
 - **CPU:** Introduced a 5-second caching layer to reduce `sysfs` I/O overhead during high-frequency polling, and achieved zero-allocation hardware capability detection utilizing stack buffers and the `itoa` crate.
