@@ -8,6 +8,9 @@ use crate::resources::sys_paths;
 
 use std::{ffi, fs, io, os, path, sync, thread, time};
 
+const MALLOPT_TRIM: i32 = -101;
+const SECONDS_PER_DAY: u64 = 86400;
+
 #[derive(Debug, Clone, Copy)]
 struct CleanerConfig {
     sweep_interval_ms: i32,
@@ -44,6 +47,7 @@ impl CleanerWorker {
     fn new(tunables: CleanerConfig, rx: sync::mpsc::Receiver<()>) -> Self {
         Self { tunables, rx }
     }
+
     fn run(&mut self) {
         while self.rx.recv().is_ok() {
             let items = self.perform_cycle();
@@ -51,21 +55,26 @@ impl CleanerWorker {
                 log::info!("Cleaner: Cycle complete. Removed {items} items.");
             }
             unsafe {
-                sys::mallopt(-101, 0);
+                sys::mallopt(MALLOPT_TRIM, 0);
             }
         }
     }
+
     fn is_storage_critical(&self) -> bool {
-        if let Ok(stats) = rustix::fs::statvfs("/data") {
-            let total = stats.f_blocks * stats.f_frsize;
-            let free = stats.f_bavail * stats.f_frsize;
-            if total > 0 {
-                let pct = (free as f32 / total as f32) * 100.0;
-                return pct < self.tunables.storage_critical_threshold;
-            }
+        let Ok(stats) = rustix::fs::statvfs("/data") else {
+            return false;
+        };
+
+        let total = stats.f_blocks * stats.f_frsize;
+        let free = stats.f_bavail * stats.f_frsize;
+
+        if total > 0 {
+            let pct = (free as f32 / total as f32) * 100.0;
+            return pct < self.tunables.storage_critical_threshold;
         }
         false
     }
+
     #[inline]
     fn is_safe_name(name: &ffi::OsStr) -> bool {
         let bytes = os::unix::ffi::OsStrExt::as_bytes(name);
@@ -81,11 +90,13 @@ impl CleanerWorker {
         {
             return true;
         }
+
         if bytes.ends_with(b"-journal") || bytes.ends_with(b"-wal") || bytes.ends_with(b"-shm") {
             return true;
         }
         false
     }
+
     #[inline]
     fn is_trash_ext(name: &ffi::OsStr) -> bool {
         let bytes = os::unix::ffi::OsStrExt::as_bytes(name);
@@ -97,130 +108,166 @@ impl CleanerWorker {
             || bytes.ends_with(b".thumb")
             || bytes.ends_with(b".exo")
     }
+
     fn perform_cycle(&mut self) -> usize {
         let is_critical = self.is_storage_critical();
         let now = time::SystemTime::now();
         let mut total_cleaned = 0;
+
         total_cleaned += self.clean_system_paths(now);
         total_cleaned += self.clean_app_caches(is_critical, now);
+
         total_cleaned
     }
+
     fn clean_system_paths(&self, now: time::SystemTime) -> usize {
         let mut cleaned = 0;
         let tunables = self.tunables;
+
         for sys in ["/data/anr", "/data/tombstones"] {
             let p = path::Path::new(sys);
-            if p.exists() {
-                let policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-                    if Self::is_safe_name(&entry.file_name()) {
-                        return traversal::TraversalAction::Keep;
-                    }
-                    if let Ok(meta) = entry.metadata() {
-                        let threshold = if Self::is_trash_ext(&entry.file_name()) {
-                            tunables.age_trash
-                        } else {
-                            tunables.age_stale_media
-                        };
-                        if let Ok(modified) = meta.modified()
-                            && let Ok(diff) = now.duration_since(modified)
-                            && diff > threshold
-                        {
-                            return traversal::TraversalAction::DeleteFile;
-                        }
-                    }
-                    traversal::TraversalAction::Keep
-                };
-                cleaned += traversal::walk_and_act(p, &policy, 0);
+            if !p.exists() {
+                continue;
             }
+
+            let policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
+                if Self::is_safe_name(&entry.file_name()) {
+                    return traversal::TraversalAction::Keep;
+                }
+
+                let Ok(meta) = entry.metadata() else {
+                    return traversal::TraversalAction::Keep;
+                };
+
+                let threshold = if Self::is_trash_ext(&entry.file_name()) {
+                    tunables.age_trash
+                } else {
+                    tunables.age_stale_media
+                };
+
+                if let Ok(modified) = meta.modified()
+                    && let Ok(diff) = now.duration_since(modified)
+                    && diff > threshold
+                {
+                    return traversal::TraversalAction::DeleteFile;
+                }
+
+                traversal::TraversalAction::Keep
+            };
+
+            cleaned += traversal::walk_and_act(p, &policy, 0);
         }
         cleaned
     }
+
     fn clean_app_caches(&self, is_critical: bool, now: time::SystemTime) -> usize {
         let mut cleaned = 0;
         let tunables = self.tunables;
+
         for root in ["/data/data", "/sdcard/Android/data"] {
             let root_path = path::Path::new(root);
             if !root_path.exists() {
                 continue;
             }
-            if let Ok(entries) = fs::read_dir(root_path) {
-                for entry in entries.flatten() {
-                    if let Ok(ft) = entry.file_type() {
-                        if !ft.is_dir() {
-                            continue;
-                        }
+
+            let Ok(entries) = fs::read_dir(root_path) else {
+                continue;
+            };
+
+            for entry in entries.flatten() {
+                let Ok(ft) = entry.file_type() else {
+                    continue;
+                };
+                
+                if !ft.is_dir() {
+                    continue;
+                }
+
+                let app_dir = entry.path();
+                let cache_dir = app_dir.join("cache");
+
+                if cache_dir.exists() {
+                    let size = if is_critical {
+                        0
                     } else {
-                        continue;
-                    }
-                    let app_dir = entry.path();
-                    let cache_dir = app_dir.join("cache");
-                    if cache_dir.exists() {
-                        let size = if is_critical {
-                            0
-                        } else {
-                            traversal::get_tree_size_capped(
-                                &cache_dir,
-                                tunables.bloat_limit_bytes + 1024,
-                            )
-                        };
-                        let age = if is_critical {
-                            tunables.age_emergency
-                        } else if size > tunables.bloat_limit_bytes {
-                            tunables.age_bloat
-                        } else {
-                            tunables.age_stale_media
-                        };
-                        let policy =
-                            |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-                                if !is_critical && Self::is_safe_name(&entry.file_name()) {
-                                    return traversal::TraversalAction::Keep;
-                                }
-                                if let Ok(meta) = entry.metadata() {
-                                    let threshold = if Self::is_trash_ext(&entry.file_name()) {
-                                        tunables.age_trash
-                                    } else {
-                                        age
-                                    };
-                                    if let Ok(modified) = meta.modified()
-                                        && let Ok(diff) = now.duration_since(modified)
-                                        && diff > threshold
-                                    {
-                                        return traversal::TraversalAction::DeleteFile;
-                                    }
-                                }
-                                traversal::TraversalAction::Keep
+                        traversal::get_tree_size_capped(
+                            &cache_dir,
+                            tunables.bloat_limit_bytes + 1024,
+                        )
+                    };
+
+                    let age = if is_critical {
+                        tunables.age_emergency
+                    } else if size > tunables.bloat_limit_bytes {
+                        tunables.age_bloat
+                    } else {
+                        tunables.age_stale_media
+                    };
+
+                    let policy =
+                        |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
+                            if !is_critical && Self::is_safe_name(&entry.file_name()) {
+                                return traversal::TraversalAction::Keep;
+                            }
+
+                            let Ok(meta) = entry.metadata() else {
+                                return traversal::TraversalAction::Keep;
                             };
-                        cleaned += traversal::walk_and_act(&cache_dir, &policy, 0);
-                    }
-                    let code_dir = app_dir.join("code_cache");
-                    if code_dir.exists() {
-                        let age = if is_critical {
-                            tunables.age_emergency
-                        } else {
-                            tunables.age_stale_code
-                        };
-                        let policy =
-                            |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-                                if !is_critical && Self::is_safe_name(&entry.file_name()) {
-                                    return traversal::TraversalAction::Keep;
-                                }
-                                if let Ok(meta) = entry.metadata() {
-                                    let threshold = if Self::is_trash_ext(&entry.file_name()) {
-                                        tunables.age_trash
-                                    } else {
-                                        age
-                                    };
-                                    if let Ok(modified) = meta.modified()
-                                        && let Ok(diff) = now.duration_since(modified)
-                                        && diff > threshold
-                                    {
-                                        return traversal::TraversalAction::DeleteFile;
-                                    }
-                                }
-                                traversal::TraversalAction::Keep
+
+                            let threshold = if Self::is_trash_ext(&entry.file_name()) {
+                                tunables.age_trash
+                            } else {
+                                age
                             };
-                        cleaned += traversal::walk_and_act(&code_dir, &policy, 0);
-                    }
+
+                            if let Ok(modified) = meta.modified()
+                                && let Ok(diff) = now.duration_since(modified)
+                                && diff > threshold
+                            {
+                                return traversal::TraversalAction::DeleteFile;
+                            }
+
+                            traversal::TraversalAction::Keep
+                        };
+
+                    cleaned += traversal::walk_and_act(&cache_dir, &policy, 0);
+                }
+
+                let code_dir = app_dir.join("code_cache");
+                if code_dir.exists() {
+                    let age = if is_critical {
+                        tunables.age_emergency
+                    } else {
+                        tunables.age_stale_code
+                    };
+
+                    let policy =
+                        |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
+                            if !is_critical && Self::is_safe_name(&entry.file_name()) {
+                                return traversal::TraversalAction::Keep;
+                            }
+
+                            let Ok(meta) = entry.metadata() else {
+                                return traversal::TraversalAction::Keep;
+                            };
+
+                            let threshold = if Self::is_trash_ext(&entry.file_name()) {
+                                tunables.age_trash
+                            } else {
+                                age
+                            };
+
+                            if let Ok(modified) = meta.modified()
+                                && let Ok(diff) = now.duration_since(modified)
+                                && diff > threshold
+                            {
+                                return traversal::TraversalAction::DeleteFile;
+                            }
+
+                            traversal::TraversalAction::Keep
+                        };
+
+                    cleaned += traversal::walk_and_act(&code_dir, &policy, 0);
                 }
             }
         }
@@ -239,7 +286,7 @@ pub struct CleanerController {
 }
 
 impl CleanerController {
-    pub fn new() -> Result<Self, types::QosError> {
+    pub fn new() -> types::Result<Self> {
         log::info!("CleanerController: Initializing...");
         let evt = rustix::event::eventfd(
             0,
@@ -249,9 +296,11 @@ impl CleanerController {
             types::QosError::SystemCheckFailed(format!("Failed to create eventfd: {e}"))
         })?;
         let dummy = unsafe { os::fd::FromRawFd::from_raw_fd(os::fd::IntoRawFd::into_raw_fd(evt)) };
+
         let tunables = CleanerConfig::default();
         let (tx, rx) = sync::mpsc::channel();
         let worker_tunables = tunables;
+
         thread::Builder::new()
             .name("CleanerWorker".into())
             .stack_size(64 * 1024)
@@ -262,26 +311,31 @@ impl CleanerController {
             .map_err(|e| {
                 types::QosError::SystemCheckFailed(format!("Failed to spawn cleaner thread: {e}"))
             })?;
+
         Ok(Self {
             io_monitor: psi_monitor::PsiMonitor::new(sys_paths::K_PSI_IO_PATH)?,
             cpu_monitor: psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?,
             thermal: thermal::ThermalSensor::new(sys_paths::K_BATTERY_TEMP_PATH, 35.0),
             tunables,
             last_sweep: time::Instant::now()
-                .checked_sub(time::Duration::from_secs(86000))
+                .checked_sub(time::Duration::from_secs(SECONDS_PER_DAY))
                 .unwrap_or_else(time::Instant::now),
             dummy_fd: dummy,
             tx,
         })
     }
+
     fn is_storage_critical(&self) -> bool {
-        if let Ok(stats) = rustix::fs::statvfs("/data") {
-            let total = stats.f_blocks * stats.f_frsize;
-            let free = stats.f_bavail * stats.f_frsize;
-            if total > 0 {
-                let pct = (free as f32 / total as f32) * 100.0;
-                return pct < self.tunables.storage_critical_threshold;
-            }
+        let Ok(stats) = rustix::fs::statvfs("/data") else {
+            return false;
+        };
+
+        let total = stats.f_blocks * stats.f_frsize;
+        let free = stats.f_bavail * stats.f_frsize;
+
+        if total > 0 {
+            let pct = (free as f32 / total as f32) * 100.0;
+            return pct < self.tunables.storage_critical_threshold;
         }
         false
     }
@@ -291,25 +345,29 @@ impl traits::EventHandler for CleanerController {
     fn as_raw_fd(&self) -> os::fd::RawFd {
         os::fd::AsRawFd::as_raw_fd(&self.dummy_fd)
     }
+
     fn on_event(
         &mut self,
         _context: &mut state::DaemonContext,
-    ) -> Result<traits::LoopAction, types::QosError> {
+    ) -> types::Result<traits::LoopAction> {
         let mut buf = [0u8; 8];
         let _ = io::Read::read(&mut self.dummy_fd, &mut buf);
         Ok(traits::LoopAction::Continue)
     }
+
     fn on_timeout(
         &mut self,
         _context: &mut state::DaemonContext,
-    ) -> Result<traits::LoopAction, types::QosError> {
+    ) -> types::Result<traits::LoopAction> {
         let now = time::Instant::now();
         if now.duration_since(self.last_sweep).as_millis() < self.tunables.sweep_interval_ms as u128
         {
             return Ok(traits::LoopAction::Continue);
         }
+
         let is_emergency = self.is_storage_critical();
         let temp = self.thermal.read();
+
         if is_emergency {
             if temp > 46.0 {
                 return Ok(traits::LoopAction::Continue);
@@ -317,16 +375,20 @@ impl traits::EventHandler for CleanerController {
         } else if temp > 40.0 {
             return Ok(traits::LoopAction::Continue);
         }
+
         let io_busy = self
             .io_monitor
             .read_state()
             .is_ok_and(|d| d.some.avg10 > 3.0);
+
         if !is_emergency && io_busy {
             return Ok(traits::LoopAction::Continue);
         }
+
         let cpu_stats_opt = self.cpu_monitor.read_state().ok();
         let cpu_avg10 = cpu_stats_opt.as_ref().map_or(0.0, |d| d.some.avg10);
         let cpu_busy = cpu_avg10 > 3.0;
+
         if is_emergency {
             if cpu_busy && cpu_avg10 > 80.0 {
                 return Ok(traits::LoopAction::Continue);
@@ -334,15 +396,18 @@ impl traits::EventHandler for CleanerController {
         } else if cpu_busy {
             return Ok(traits::LoopAction::Continue);
         }
+
         match self.tx.send(()) {
             Ok(()) => self.last_sweep = now,
             Err(e) => log::error!("CleanerController: Failed to signal: {e}"),
         }
         Ok(traits::LoopAction::Continue)
     }
+
     fn get_timeout_ms(&self) -> i32 {
         self.tunables.sweep_interval_ms
     }
+
     fn get_poll_flags(&self) -> rustix::event::epoll::EventFlags {
         rustix::event::epoll::EventFlags::empty()
     }

@@ -4,6 +4,9 @@ use crate::daemon::{state, traits, types};
 
 use std::{os, process, sync, thread, time};
 
+const INTERVAL_MS: i32 = 86_400_000;
+const INITIAL_SUB_SECS: u64 = 86401;
+
 const TARGET_COMPONENTS: &[&str] = &[
     "com.google.android.gms/com.google.android.gms.ads.AdRequestBrokerService",
     "com.google.android.gms/com.google.android.gms.ads.identifier.service.AdvertisingIdService",
@@ -34,23 +37,28 @@ pub struct BlockerController {
 }
 
 impl BlockerController {
-    pub fn new() -> Result<Self, types::QosError> {
+    pub fn new() -> types::Result<Self> {
         log::info!("BlockerController: Initializing...");
+
         let evt = rustix::event::eventfd(
             0,
             rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK,
         )
         .map_err(|e| types::QosError::SystemCheckFailed(format!("Eventfd fail: {e}")))?;
+
         let mut controller = Self {
             dummy_fd: evt,
-            interval_ms: 86_400_000,
+            interval_ms: INTERVAL_MS,
             last_run: time::Instant::now()
-                .checked_sub(time::Duration::from_secs(86401))
+                .checked_sub(time::Duration::from_secs(INITIAL_SUB_SECS))
                 .unwrap_or_else(time::Instant::now),
         };
+
         controller.trigger_block_cycle();
+
         Ok(controller)
     }
+
     fn trigger_block_cycle(&mut self) {
         thread::Builder::new()
             .name("BlockerExec".into())
@@ -60,6 +68,7 @@ impl BlockerController {
             .ok();
         self.last_run = time::Instant::now();
     }
+
     fn execute_batch_disable() {
         let cmd = CMD_CACHE.get_or_init(|| {
             let capacity = TARGET_COMPONENTS.len() * 100;
@@ -71,6 +80,7 @@ impl BlockerController {
             }
             chain
         });
+
         let start = time::Instant::now();
         match process::Command::new("sh").arg("-c").arg(cmd).status() {
             Ok(_) => {
@@ -88,29 +98,35 @@ impl traits::EventHandler for BlockerController {
     fn as_raw_fd(&self) -> os::fd::RawFd {
         std::os::fd::AsRawFd::as_raw_fd(&self.dummy_fd)
     }
+
     fn on_event(
         &mut self,
         _context: &mut state::DaemonContext,
-    ) -> Result<traits::LoopAction, types::QosError> {
+    ) -> types::Result<traits::LoopAction> {
         let mut buf = [0u8; 8];
         let _ = rustix::io::read(&self.dummy_fd, &mut buf);
         Ok(traits::LoopAction::Continue)
     }
+
     fn on_timeout(
         &mut self,
         _context: &mut state::DaemonContext,
-    ) -> Result<traits::LoopAction, types::QosError> {
+    ) -> types::Result<traits::LoopAction> {
         let now = time::Instant::now();
         let elapsed = now.duration_since(self.last_run).as_millis();
+
         if elapsed >= self.interval_ms as u128 {
             self.trigger_block_cycle();
         }
+
         Ok(traits::LoopAction::Continue)
     }
+
     fn get_timeout_ms(&self) -> i32 {
         let now = time::Instant::now();
         let elapsed = now.duration_since(self.last_run).as_millis();
         let remaining = (self.interval_ms as u128).saturating_sub(elapsed);
+
         if remaining > i32::MAX as u128 {
             i32::MAX
         } else {
