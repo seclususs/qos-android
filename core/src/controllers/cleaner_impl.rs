@@ -26,11 +26,11 @@ impl Default for CleanerConfig {
             sweep_interval_ms: 600_000,
             bloat_limit_bytes: 512 * 1024 * 1024,
             storage_critical_threshold: 10.0,
-            age_stale_media: time::Duration::from_secs(3 * 86400),
-            age_stale_code: time::Duration::from_secs(30 * 86400),
-            age_bloat: time::Duration::from_secs(24 * 3600),
-            age_emergency: time::Duration::from_secs(3600),
-            age_trash: time::Duration::from_secs(3600),
+            age_stale_media: time::Duration::from_hours(72),
+            age_stale_code: time::Duration::from_hours(720),
+            age_bloat: time::Duration::from_hours(24),
+            age_emergency: time::Duration::from_hours(1),
+            age_trash: time::Duration::from_hours(1),
         }
     }
 }
@@ -320,8 +320,7 @@ impl traits::EventHandler for CleanerController {
         let io_busy = self
             .io_monitor
             .read_state()
-            .map(|d| d.some.avg10 > 3.0)
-            .unwrap_or(false);
+            .is_ok_and(|d| d.some.avg10 > 3.0);
         if !is_emergency && io_busy {
             return Ok(traits::LoopAction::Continue);
         }

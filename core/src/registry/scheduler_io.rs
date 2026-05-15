@@ -12,9 +12,7 @@ const IGNORED_DEVICES: &[&str] = &["loop", "ram", "zram", "dm-", "md"];
 
 fn is_device_rotational(dev_name: &str) -> bool {
     let path = format!("/sys/block/{dev_name}/queue/rotational");
-    fs::read_to_string(path)
-        .map(|s| s.trim() == "1")
-        .unwrap_or(false)
+    fs::read_to_string(path).is_ok_and(|s| s.trim() == "1")
 }
 
 fn select_scheduler_from_str(content: &str, priorities: &[&'static str]) -> Option<&'static str> {
