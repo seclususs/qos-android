@@ -10,6 +10,10 @@ const FREQ_DUAL_CLUSTER_MID: u64 = 2_450_000;
 const RAM_FLAGSHIP_MIN: u64 = 5_500;
 const RAM_MID_REQ: u64 = 3_800;
 
+const DEFAULT_MAX_FREQ: u64 = 2_000_000;
+const MAX_CPUS: u64 = 16;
+const FALLBACK_BREAK: u64 = 8;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceTier {
     LowEnd,
@@ -51,39 +55,49 @@ fn get_cpu_stats() -> CpuStats {
     let prefix = b"/sys/devices/system/cpu/cpu";
     let suffix1 = b"/cpufreq/cpuinfo_max_freq";
     let suffix2 = b"/cpufreq/scaling_max_freq";
-    for i in 0..16 {
+
+    for i in 0..MAX_CPUS {
         let mut len = prefix.len();
         buf[..len].copy_from_slice(prefix);
         let mut itoa_buf = itoa::Buffer::new();
         let num_bytes = itoa_buf.format(i).as_bytes();
         buf[len..len + num_bytes.len()].copy_from_slice(num_bytes);
         len += num_bytes.len();
+
         let path_info_len = len + suffix1.len();
         buf[len..path_info_len].copy_from_slice(suffix1);
         let path_info = unsafe { std::str::from_utf8_unchecked(&buf[..path_info_len]) };
-        let mut content = fs::read_to_string(path_info);
-        if content.is_err() {
+
+        let content = fs::read_to_string(path_info).or_else(|_| {
             let path_scaling_len = len + suffix2.len();
             buf[len..path_scaling_len].copy_from_slice(suffix2);
             let path_scaling = unsafe { std::str::from_utf8_unchecked(&buf[..path_scaling_len]) };
-            content = fs::read_to_string(path_scaling);
-        }
-        if let Ok(val_str) = content {
-            if let Ok(freq) = val_str.trim().parse::<u64>() {
-                if freq > max_freq {
-                    max_freq = freq;
-                }
-                if freq >= FREQ_BIG_CORE_MIN {
-                    big_cores += 1;
-                }
+            fs::read_to_string(path_scaling)
+        });
+
+        let Ok(val_str) = content else {
+            if i >= FALLBACK_BREAK {
+                break;
             }
-        } else if i >= 8 {
-            break;
+            continue;
+        };
+
+        let Ok(freq) = val_str.trim().parse::<u64>() else {
+            continue;
+        };
+
+        if freq > max_freq {
+            max_freq = freq;
+        }
+        if freq >= FREQ_BIG_CORE_MIN {
+            big_cores += 1;
         }
     }
+
     if max_freq == 0 {
-        max_freq = 2_000_000;
+        max_freq = DEFAULT_MAX_FREQ;
     }
+
     CpuStats {
         max_freq_khz: max_freq,
         big_cores_count: big_cores,

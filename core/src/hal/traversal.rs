@@ -10,22 +10,28 @@ pub enum TraversalAction {
 
 pub fn get_tree_size_capped(path: &path::Path, limit: u64) -> u64 {
     let mut size = 0;
-    if let Ok(entries) = fs::read_dir(path) {
-        for entry in entries.flatten() {
-            if let Ok(ft) = entry.file_type() {
-                if ft.is_dir() {
-                    if size < limit {
-                        size += get_tree_size_capped(&entry.path(), limit - size);
-                    }
-                } else if ft.is_file()
-                    && let Ok(meta) = entry.metadata()
-                {
-                    size += meta.len();
-                }
+    let Ok(entries) = fs::read_dir(path) else {
+        return size;
+    };
+
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+
+        if ft.is_dir() {
+            if size < limit {
+                size += get_tree_size_capped(&entry.path(), limit - size);
             }
-            if size > limit {
-                return size;
-            }
+        } else if ft.is_file() {
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            size += meta.len();
+        }
+
+        if size > limit {
+            return size;
         }
     }
     size
@@ -39,25 +45,30 @@ where
         return 0;
     }
     let mut count = 0;
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if let Ok(ft) = entry.file_type() {
-                if ft.is_symlink() {
-                    continue;
-                }
-                if ft.is_dir() {
-                    count += walk_and_act(&entry.path(), callback, depth + 1);
-                } else {
-                    match callback(&entry, depth) {
-                        TraversalAction::DeleteFile => {
-                            if fs::remove_file(entry.path()).is_ok() {
-                                count += 1;
-                            }
-                        }
-                        TraversalAction::Stop => return count,
-                        TraversalAction::Keep => {}
+    let Ok(entries) = fs::read_dir(dir) else {
+        return count;
+    };
+
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+
+        if ft.is_symlink() {
+            continue;
+        }
+
+        if ft.is_dir() {
+            count += walk_and_act(&entry.path(), callback, depth + 1);
+        } else {
+            match callback(&entry, depth) {
+                TraversalAction::DeleteFile => {
+                    if fs::remove_file(entry.path()).is_ok() {
+                        count += 1;
                     }
                 }
+                TraversalAction::Stop => return count,
+                TraversalAction::Keep => {}
             }
         }
     }

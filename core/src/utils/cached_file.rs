@@ -53,23 +53,26 @@ impl CachedFile {
         self.file.is_some()
     }
     pub fn update(&mut self, new_value: u64, force: bool, strategy: &CheckStrategy) {
-        if let Some(ref mut file) = self.file {
-            let needs_update = if force {
-                true
-            } else {
-                match strategy {
-                    CheckStrategy::Absolute(threshold) => {
-                        check_absolute(self.last_value, new_value, *threshold)
-                    }
-                    CheckStrategy::Relative(tolerance) => {
-                        check_relative(self.last_value, new_value, *tolerance)
-                    }
-                    CheckStrategy::Strict => self.last_value != new_value,
+        let Some(ref mut file) = self.file else {
+            return;
+        };
+
+        let needs_update = if force {
+            true
+        } else {
+            match strategy {
+                CheckStrategy::Absolute(threshold) => {
+                    check_absolute(self.last_value, new_value, *threshold)
                 }
-            };
-            if needs_update && filesystem::write_to_stream(file, new_value).is_ok() {
-                self.last_value = new_value;
+                CheckStrategy::Relative(tolerance) => {
+                    check_relative(self.last_value, new_value, *tolerance)
+                }
+                CheckStrategy::Strict => self.last_value != new_value,
             }
+        };
+
+        if needs_update && filesystem::write_to_stream(file, new_value).is_ok() {
+            self.last_value = new_value;
         }
     }
 }

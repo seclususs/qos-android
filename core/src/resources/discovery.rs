@@ -109,18 +109,25 @@ fn detect_storage_device() -> String {
 fn detect_cpu_thermal_path() -> path::PathBuf {
     let base_dir = path::Path::new("/sys/class/thermal");
     let mut zones_map: collections::HashMap<String, String> = collections::HashMap::new();
+
     if let Ok(entries) = fs::read_dir(base_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-            if file_name.starts_with("thermal_zone")
-                && let Ok(content) = fs::read_to_string(path.join("type"))
-            {
-                let type_name = content.trim().to_string();
-                zones_map.insert(type_name, file_name.to_string());
+
+            if !file_name.starts_with("thermal_zone") {
+                continue;
             }
+
+            let Ok(content) = fs::read_to_string(path.join("type")) else {
+                continue;
+            };
+
+            let type_name = content.trim().to_string();
+            zones_map.insert(type_name, file_name.to_string());
         }
     }
+
     for &target in THERMAL_PRIORITY_LIST {
         if let Some(filename) = zones_map.get(target) {
             return base_dir.join(filename).join("temp");
@@ -132,6 +139,7 @@ fn detect_cpu_thermal_path() -> path::PathBuf {
             return base_dir.join(filename).join("temp");
         }
     }
+
     for (type_name, filename) in &zones_map {
         let name_lower = type_name.to_lowercase();
         let looks_like_cpu = name_lower.contains("cpu")
@@ -143,5 +151,6 @@ fn detect_cpu_thermal_path() -> path::PathBuf {
             return base_dir.join(filename).join("temp");
         }
     }
+
     base_dir.join("thermal_zone3").join("temp")
 }
