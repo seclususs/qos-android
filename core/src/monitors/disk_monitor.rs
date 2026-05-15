@@ -19,55 +19,62 @@ pub struct DiskMonitor {
 }
 
 impl DiskMonitor {
-    pub fn new(path: &str) -> Result<Self, types::QosError> {
+    pub fn new(path: &str) -> types::Result<Self> {
         Ok(Self {
             monitor: monitored_file::MonitoredFile::new(path)?,
         })
     }
-    pub fn read_stats(&mut self) -> Result<IoStats, types::QosError> {
+
+    pub fn read_stats(&mut self) -> types::Result<IoStats> {
         let buffer = self.monitor.read_bytes_raw()?;
         if buffer.is_empty() {
             return Err(types::QosError::SystemCheckFailed("Empty diskstats".into()));
         }
+
         let mut stats = IoStats::default();
         let mut field_idx = 0;
-        let mut cursor = 0;
-        while cursor < buffer.len() {
-            while cursor < buffer.len()
-                && (buffer[cursor] == b' ' || buffer[cursor] == b'\t' || buffer[cursor] == b'\n')
-            {
-                cursor += 1;
+        let mut pos = 0;
+        let len = buffer.len();
+
+        while pos < len {
+            let byte = buffer[pos];
+            if byte == b' ' || byte == b'\t' || byte == b'\n' {
+                pos += 1;
+                continue;
             }
-            if cursor >= buffer.len() {
+
+            let token_start = pos;
+            let mut parsed_val: u64 = 0;
+
+            while pos < len && buffer[pos].is_ascii_digit() {
+                parsed_val = parsed_val * 10 + u64::from(buffer[pos] - b'0');
+                pos += 1;
+            }
+
+            if pos == token_start {
+                while pos < len && !buffer[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+                continue;
+            }
+
+            match field_idx {
+                0 => stats.read_ios = parsed_val,
+                1 => stats.read_merges = parsed_val,
+                2 => stats.read_sectors = parsed_val,
+                3 => stats.read_ticks = parsed_val,
+                4 => stats.write_ios = parsed_val,
+                7 => stats.write_ticks = parsed_val,
+                8 => stats.in_flight = parsed_val,
+                _ => {}
+            }
+
+            field_idx += 1;
+            if field_idx > 8 {
                 break;
             }
-            let mut val: u64 = 0;
-            let start = cursor;
-            while cursor < buffer.len() && buffer[cursor].is_ascii_digit() {
-                val = val * 10 + u64::from(buffer[cursor] - b'0');
-                cursor += 1;
-            }
-            if cursor > start {
-                match field_idx {
-                    0 => stats.read_ios = val,
-                    1 => stats.read_merges = val,
-                    2 => stats.read_sectors = val,
-                    3 => stats.read_ticks = val,
-                    4 => stats.write_ios = val,
-                    7 => stats.write_ticks = val,
-                    8 => stats.in_flight = val,
-                    _ => {}
-                }
-                field_idx += 1;
-                if field_idx > 8 {
-                    break;
-                }
-            } else {
-                while cursor < buffer.len() && !buffer[cursor].is_ascii_whitespace() {
-                    cursor += 1;
-                }
-            }
         }
+
         if field_idx > 8 {
             Ok(stats)
         } else {

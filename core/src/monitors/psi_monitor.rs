@@ -41,9 +41,10 @@ pub struct PsiMonitor {
 }
 
 impl PsiMonitor {
-    pub fn new(path: &str) -> Result<Self, types::QosError> {
+    pub fn new(path: &str) -> types::Result<Self> {
         let monitor = monitored_file::MonitoredFile::new(path)?;
         let config = filter_math::KalmanConfig::default();
+
         Ok(Self {
             monitor,
             last_read_time: time::Instant::now(),
@@ -52,102 +53,135 @@ impl PsiMonitor {
             filter_some: filter_math::KalmanFilter::new(config),
         })
     }
+
     #[inline]
-    fn parse_f32_bytes(buffer: &[u8], start: usize) -> (f32, usize) {
-        let mut idx = start;
-        let mut val = 0.0;
-        let mut fraction = 0.0;
-        let mut divisor = 1.0;
+    fn parse_f32_bytes(buffer: &[u8], start_pos: usize) -> (f32, usize) {
+        let mut pos = start_pos;
+        let mut parsed_val = 0.0;
+        let mut fraction_val = 0.0;
+        let mut fraction_divisor = 1.0;
         let mut in_fraction = false;
-        while idx < buffer.len() {
-            let b = buffer[idx];
-            if b.is_ascii_digit() {
+        let len = buffer.len();
+
+        while pos < len {
+            let byte = buffer[pos];
+
+            if byte.is_ascii_digit() {
+                let digit = f32::from(byte - b'0');
                 if in_fraction {
-                    fraction = fraction * 10.0 + f32::from(b - b'0');
-                    divisor *= 10.0;
+                    fraction_val = fraction_val * 10.0 + digit;
+                    fraction_divisor *= 10.0;
                 } else {
-                    val = val * 10.0 + f32::from(b - b'0');
+                    parsed_val = parsed_val * 10.0 + digit;
                 }
-            } else if b == b'.' {
+                pos += 1;
+                continue;
+            }
+
+            if byte == b'.' {
                 in_fraction = true;
-            } else {
-                break;
+                pos += 1;
+                continue;
             }
-            idx += 1;
+
+            break;
         }
-        (val + (fraction / divisor), idx)
+
+        (parsed_val + (fraction_val / fraction_divisor), pos)
     }
+
     #[inline]
-    fn parse_u64_bytes(buffer: &[u8], start: usize) -> (u64, usize) {
-        let mut idx = start;
-        let mut val = 0;
-        while idx < buffer.len() {
-            let b = buffer[idx];
-            if b.is_ascii_digit() {
-                val = val * 10 + u64::from(b - b'0');
-                idx += 1;
-            } else {
-                break;
+    fn parse_u64_bytes(buffer: &[u8], start_pos: usize) -> (u64, usize) {
+        let mut pos = start_pos;
+        let mut parsed_val = 0;
+        let len = buffer.len();
+
+        while pos < len {
+            let byte = buffer[pos];
+            if byte.is_ascii_digit() {
+                parsed_val = parsed_val * 10 + u64::from(byte - b'0');
+                pos += 1;
+                continue;
             }
+            break;
         }
-        (val, idx)
+
+        (parsed_val, pos)
     }
-    pub fn read_state(&mut self) -> Result<PsiData, types::QosError> {
+
+    pub fn read_state(&mut self) -> types::Result<PsiData> {
         let buffer = self.monitor.read_bytes_raw()?;
         if buffer.is_empty() {
             return Err(types::QosError::PsiParseError("Empty PSI file".to_string()));
         }
+
         let now = time::Instant::now();
         let elapsed_duration = now.duration_since(self.last_read_time);
+
         let dt_sec = if self.first_run {
             1.0
         } else {
             elapsed_duration.as_secs_f32().max(0.001)
         };
+
         let elapsed_micros = if self.first_run {
             1_000_000.0
         } else {
             elapsed_duration.as_micros() as f32
         };
+
         let dt_calc = elapsed_micros.max(1000.0);
         let mut some_trend = PsiTrend::default();
         let mut current_total = 0u64;
-        let mut cursor = 0;
+
+        let mut pos = 0;
         let len = buffer.len();
-        while cursor < len {
-            if cursor + 5 < len && &buffer[cursor..cursor + 5] == b"some " {
-                cursor += 5;
-                while cursor < len && buffer[cursor] != b'\n' {
-                    while cursor < len && buffer[cursor] == b' ' {
-                        cursor += 1;
-                    }
-                    if cursor + 6 < len && &buffer[cursor..cursor + 6] == b"avg10=" {
-                        let (val, next) = Self::parse_f32_bytes(buffer, cursor + 6);
-                        some_trend.avg10 = val;
-                        cursor = next;
-                    } else if cursor + 7 < len && &buffer[cursor..cursor + 7] == b"avg300=" {
-                        let (val, next) = Self::parse_f32_bytes(buffer, cursor + 7);
-                        some_trend.avg300 = val;
-                        cursor = next;
-                    } else if cursor + 6 < len && &buffer[cursor..cursor + 6] == b"total=" {
-                        let (val, next) = Self::parse_u64_bytes(buffer, cursor + 6);
-                        current_total = val;
-                        cursor = next;
-                    } else {
-                        while cursor < len && buffer[cursor] != b' ' && buffer[cursor] != b'\n' {
-                            cursor += 1;
-                        }
-                    }
+
+        while pos < len {
+            if pos + 5 > len || &buffer[pos..pos + 5] != b"some " {
+                while pos < len && buffer[pos] != b'\n' {
+                    pos += 1;
                 }
-                break;
+                pos += 1;
+                continue;
             }
-            while cursor < len && buffer[cursor] != b'\n' {
-                cursor += 1;
+
+            pos += 5;
+
+            while pos < len && buffer[pos] != b'\n' {
+                if buffer[pos] == b' ' {
+                    pos += 1;
+                    continue;
+                }
+
+                if pos + 6 <= len && &buffer[pos..pos + 6] == b"avg10=" {
+                    let (parsed_val, next_pos) = Self::parse_f32_bytes(buffer, pos + 6);
+                    some_trend.avg10 = parsed_val;
+                    pos = next_pos;
+                    continue;
+                }
+
+                if pos + 7 <= len && &buffer[pos..pos + 7] == b"avg300=" {
+                    let (parsed_val, next_pos) = Self::parse_f32_bytes(buffer, pos + 7);
+                    some_trend.avg300 = parsed_val;
+                    pos = next_pos;
+                    continue;
+                }
+
+                if pos + 6 <= len && &buffer[pos..pos + 6] == b"total=" {
+                    let (parsed_val, next_pos) = Self::parse_u64_bytes(buffer, pos + 6);
+                    current_total = parsed_val;
+                    pos = next_pos;
+                    continue;
+                }
+
+                while pos < len && buffer[pos] != b' ' && buffer[pos] != b'\n' {
+                    pos += 1;
+                }
             }
-            if cursor < len {
-                cursor += 1;
-            }
+            break;
         }
+
         if self.first_run {
             some_trend.current = some_trend.avg10;
             some_trend.velocity = 0.0;
@@ -161,8 +195,10 @@ impl PsiMonitor {
             some_trend.velocity = self.filter_some.get_velocity();
             some_trend.nis = self.filter_some.get_last_nis();
         }
+
         self.last_read_time = now;
         self.last_some_total = current_total;
+
         Ok(PsiData { some: some_trend })
     }
 }
