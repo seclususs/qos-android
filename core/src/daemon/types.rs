@@ -2,6 +2,8 @@
 
 use std::{ffi, fmt};
 
+pub type Result<T> = std::result::Result<T, QosError>;
+
 #[derive(Debug)]
 pub enum QosError {
     IoError(std::io::Error),

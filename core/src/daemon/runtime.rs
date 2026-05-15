@@ -8,11 +8,12 @@ use crate::registry::{file_tweaks, prop_tweaks};
 use rustix::event;
 use std::{io, os, sync, thread, time};
 
+const EPOLL_ERROR_SLEEP_MS: u64 = 500;
+
 pub struct RecoverableService {
     pub name: &'static str,
     pub handler: Option<Box<dyn traits::EventHandler>>,
-    pub factory:
-        Box<dyn Fn() -> Result<Box<dyn traits::EventHandler>, types::QosError> + Send + Sync>,
+    pub factory: Box<dyn Fn() -> types::Result<Box<dyn traits::EventHandler>> + Send + Sync>,
     pub cooldown_start: Option<time::Instant>,
     pub last_tick: time::Instant,
     pub registered_in_epoll: bool,
@@ -22,13 +23,14 @@ pub struct RecoverableService {
 impl RecoverableService {
     pub fn new<F>(name: &'static str, factory: F) -> Self
     where
-        F: Fn() -> Result<Box<dyn traits::EventHandler>, types::QosError> + Send + Sync + 'static,
+        F: Fn() -> types::Result<Box<dyn traits::EventHandler>> + Send + Sync + 'static,
     {
         let initial_cooldown = time::Instant::now()
             .checked_sub(time::Duration::from_secs(
                 loop_settings::COOLDOWN_DURATION_SEC,
             ))
             .unwrap_or(time::Instant::now());
+
         Self {
             name,
             handler: None,
@@ -39,6 +41,7 @@ impl RecoverableService {
             is_permanently_disabled: false,
         }
     }
+
     fn try_initialize(&mut self) -> bool {
         if self.is_permanently_disabled {
             return false;
@@ -85,6 +88,7 @@ impl RecoverableService {
             }
         }
     }
+
     fn unregister_if_active(&mut self, epoll_fd: os::fd::RawFd, id: u64) {
         if self.registered_in_epoll {
             if let Some(ref h) = self.handler {
@@ -111,12 +115,14 @@ fn epoll_mod(
     let epoll_fd = unsafe { os::fd::BorrowedFd::borrow_raw(epoll_fd) };
     let target_fd = unsafe { os::fd::BorrowedFd::borrow_raw(fd) };
     let event_data = event::epoll::EventData::new_u64(id);
+
     let res = match op {
         libc::EPOLL_CTL_ADD => event::epoll::add(epoll_fd, target_fd, event_data, events),
         libc::EPOLL_CTL_DEL => event::epoll::delete(epoll_fd, target_fd),
         libc::EPOLL_CTL_MOD => event::epoll::modify(epoll_fd, target_fd, event_data, events),
         _ => return false,
     };
+
     if let Err(e) = res {
         let errno = e.raw_os_error();
         if (op == libc::EPOLL_CTL_DEL && errno == libc::ENOENT)
@@ -145,6 +151,7 @@ pub fn apply_prop_tweaks() {
     log::info!("Rust: Applying Prop tweaks...");
     let prop_tweaks_list = prop_tweaks::get_prop_tweaks();
     let mut success_count = 0;
+
     for tweak in prop_tweaks_list {
         if properties::property_exists(tweak.key) {
             if let Err(e) = properties::set_system_property(tweak.key, tweak.value) {
@@ -156,6 +163,7 @@ pub fn apply_prop_tweaks() {
             log::debug!("Skipping missing prop: {}", tweak.key);
         }
     }
+
     log::info!(
         "Rust: Applied {}/{} prop tweaks.",
         success_count,
@@ -167,12 +175,14 @@ pub fn apply_file_tweaks() {
     log::info!("Rust: Applying File tweaks...");
     let file_tweaks_list = file_tweaks::generate_file_tweaks();
     let mut success_count = 0;
+
     for tweak in &file_tweaks_list {
         match filesystem::write_to_file(&tweak.path, tweak.value) {
             Ok(()) => success_count += 1,
             Err(e) => log::debug!("Failed to apply tweak {}: {}", tweak.path, e),
         }
     }
+
     log::info!(
         "Rust: Applied {}/{} file tweaks.",
         success_count,
@@ -183,6 +193,7 @@ pub fn apply_file_tweaks() {
 pub fn wait_for_boot_completion(tag: &str) {
     log::info!("Rust [{tag}]: Waiting for sys.boot_completed...");
     let mut retry_count = 0;
+
     loop {
         if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
             return;
@@ -201,6 +212,7 @@ pub fn wait_for_boot_completion(tag: &str) {
             loop_settings::BOOT_POLL_INTERVAL_SEC,
         ));
     }
+
     if !state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
         log::info!(
             "Rust [{tag}]: Stabilizing for {}s...",
@@ -213,62 +225,80 @@ pub fn wait_for_boot_completion(tag: &str) {
 }
 
 #[allow(clippy::too_many_lines, clippy::cast_possible_wrap)]
-pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), types::QosError> {
+pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()> {
     let epoll_fd = event::epoll::create(event::epoll::CreateFlags::CLOEXEC)
         .map_err(|e| types::QosError::SystemCheckFailed(format!("Failed to create epoll: {e}")))?;
+
     let mut context = state::DaemonContext::new();
     let cooldown_dur = time::Duration::from_secs(loop_settings::COOLDOWN_DURATION_SEC);
+
     let mut events: [libc::epoll_event; loop_settings::MAX_EVENTS] =
         [libc::epoll_event { events: 0, u64: 0 }; loop_settings::MAX_EVENTS];
+
     while !state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
         let now = time::Instant::now();
         let mut next_wakeup =
             now + time::Duration::from_millis(loop_settings::MAX_EPOLL_TIMEOUT_MS as u64);
+
         for (i, service) in services.iter_mut().enumerate() {
             if service.is_permanently_disabled {
                 continue;
             }
+
             if service.handler.is_none() {
-                if let Some(start) = service.cooldown_start {
-                    let elapsed = now.duration_since(start);
-                    if elapsed >= cooldown_dur {
-                        if service.try_initialize()
-                            && let Some(ref h) = service.handler
-                        {
-                            let flags = h.get_poll_flags();
-                            if epoll_mod(
-                                os::fd::AsRawFd::as_raw_fd(&epoll_fd),
-                                traits::EventHandler::as_raw_fd(h.as_ref()),
-                                i as u64,
-                                libc::EPOLL_CTL_ADD,
-                                flags,
-                            ) {
-                                service.registered_in_epoll = true;
-                            } else {
-                                service.handler = None;
-                                service.cooldown_start = Some(now);
-                            }
-                        }
-                    } else {
-                        let wakeup_time =
-                            now + cooldown_dur.checked_sub(elapsed).unwrap_or_default();
-                        if wakeup_time < next_wakeup {
-                            next_wakeup = wakeup_time;
-                        }
+                let Some(start) = service.cooldown_start else {
+                    continue;
+                };
+
+                let elapsed = now.duration_since(start);
+                if elapsed < cooldown_dur {
+                    let wakeup_time = now + cooldown_dur.checked_sub(elapsed).unwrap_or_default();
+                    if wakeup_time < next_wakeup {
+                        next_wakeup = wakeup_time;
                     }
+                    continue;
                 }
-            } else if let Some(ref handler) = service.handler {
-                let interval_ms = handler.get_timeout_ms();
-                if interval_ms > 0 {
-                    let deadline =
-                        service.last_tick + time::Duration::from_millis(interval_ms as u64);
-                    if deadline < next_wakeup {
-                        next_wakeup = deadline;
-                    }
+
+                if !service.try_initialize() {
+                    continue;
+                }
+
+                let Some(ref h) = service.handler else {
+                    continue;
+                };
+
+                let flags = h.get_poll_flags();
+                if epoll_mod(
+                    os::fd::AsRawFd::as_raw_fd(&epoll_fd),
+                    traits::EventHandler::as_raw_fd(h.as_ref()),
+                    i as u64,
+                    libc::EPOLL_CTL_ADD,
+                    flags,
+                ) {
+                    service.registered_in_epoll = true;
+                } else {
+                    service.handler = None;
+                    service.cooldown_start = Some(now);
+                }
+
+                continue;
+            }
+
+            let Some(ref handler) = service.handler else {
+                continue;
+            };
+
+            let interval_ms = handler.get_timeout_ms();
+            if interval_ms > 0 {
+                let deadline = service.last_tick + time::Duration::from_millis(interval_ms as u64);
+                if deadline < next_wakeup {
+                    next_wakeup = deadline;
                 }
             }
         }
+
         let min_wait_ms = next_wakeup.saturating_duration_since(now).as_millis() as i32;
+
         let nfds = unsafe {
             libc::epoll_wait(
                 os::fd::AsRawFd::as_raw_fd(&epoll_fd),
@@ -277,74 +307,90 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> Result<(), types
                 min_wait_ms,
             )
         };
+
         if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
             break;
         }
+
         if nfds < 0 {
             let err = std::io::Error::last_os_error();
             if err.kind() != io::ErrorKind::Interrupted {
-                thread::sleep(time::Duration::from_millis(500));
+                thread::sleep(time::Duration::from_millis(EPOLL_ERROR_SLEEP_MS));
             }
             continue;
         }
+
         for event in events.iter().take(nfds as usize) {
             let id = event.u64 as usize;
-            if let Some(service) = services.get_mut(id)
-                && let Some(ref mut handler) = service.handler
-            {
-                match handler.on_event(&mut context) {
-                    Ok(traits::LoopAction::Continue) => {}
-                    Err(e) => {
-                        log::error!("Service '{}' event error: {}", service.name, e);
-                        service
-                            .unregister_if_active(os::fd::AsRawFd::as_raw_fd(&epoll_fd), id as u64);
-                        service.handler = None;
-                        service.cooldown_start = if is_fatal_runtime_error(&e) {
-                            service.is_permanently_disabled = true;
-                            None
-                        } else {
-                            Some(time::Instant::now())
-                        };
-                    }
+
+            let Some(service) = services.get_mut(id) else {
+                continue;
+            };
+
+            let Some(ref mut handler) = service.handler else {
+                continue;
+            };
+
+            match handler.on_event(&mut context) {
+                Ok(traits::LoopAction::Continue) => {}
+                Err(e) => {
+                    log::error!("Service '{}' event error: {}", service.name, e);
+                    service.unregister_if_active(os::fd::AsRawFd::as_raw_fd(&epoll_fd), id as u64);
+                    service.handler = None;
+                    service.cooldown_start = if is_fatal_runtime_error(&e) {
+                        service.is_permanently_disabled = true;
+                        None
+                    } else {
+                        Some(time::Instant::now())
+                    };
                 }
             }
         }
+
         let now_after_wait = time::Instant::now();
+
         for (i, service) in services.iter_mut().enumerate() {
             if service.is_permanently_disabled {
                 continue;
             }
-            if let Some(ref mut handler) = service.handler {
-                let interval_ms = handler.get_timeout_ms();
-                if interval_ms > 0 {
-                    let elapsed = now_after_wait.duration_since(service.last_tick).as_millis();
-                    if elapsed >= (interval_ms as u128) {
-                        service.last_tick = now_after_wait;
-                        match handler.on_timeout(&mut context) {
-                            Ok(traits::LoopAction::Continue) => {}
-                            Err(e) => {
-                                log::error!("Service '{}' timeout error: {}", service.name, e);
-                                service.unregister_if_active(
-                                    os::fd::AsRawFd::as_raw_fd(&epoll_fd),
-                                    i as u64,
-                                );
-                                service.handler = None;
-                                service.cooldown_start = if is_fatal_runtime_error(&e) {
-                                    service.is_permanently_disabled = true;
-                                    None
-                                } else {
-                                    Some(time::Instant::now())
-                                };
-                            }
-                        }
-                    }
+
+            let Some(ref mut handler) = service.handler else {
+                continue;
+            };
+
+            let interval_ms = handler.get_timeout_ms();
+            if interval_ms <= 0 {
+                continue;
+            }
+
+            let elapsed = now_after_wait.duration_since(service.last_tick).as_millis();
+            if elapsed < (interval_ms as u128) {
+                continue;
+            }
+
+            service.last_tick = now_after_wait;
+
+            match handler.on_timeout(&mut context) {
+                Ok(traits::LoopAction::Continue) => {}
+                Err(e) => {
+                    log::error!("Service '{}' timeout error: {}", service.name, e);
+                    service.unregister_if_active(os::fd::AsRawFd::as_raw_fd(&epoll_fd), i as u64);
+                    service.handler = None;
+                    service.cooldown_start = if is_fatal_runtime_error(&e) {
+                        service.is_permanently_disabled = true;
+                        None
+                    } else {
+                        Some(time::Instant::now())
+                    };
                 }
             }
         }
     }
+
     for (i, service) in services.iter_mut().enumerate() {
         service.unregister_if_active(os::fd::AsRawFd::as_raw_fd(&epoll_fd), i as u64);
     }
+
     bridge::notify_service_death("Shutdown Clean");
     Ok(())
 }
