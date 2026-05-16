@@ -19,6 +19,5 @@ pub mod controllers;
 pub mod daemon;
 pub mod hal;
 pub mod tweaks;
-pub mod utils;
 
 pub use bindings::ffi::*;

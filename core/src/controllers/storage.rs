@@ -1,11 +1,10 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::{poller, storage};
+use crate::algorithms::{helpers, poller, storage};
 use crate::config::paths;
 use crate::config::{limits, runtime};
 use crate::daemon::{state, traits, types};
 use crate::hal::{kernel, monitors, sysfs};
-use crate::utils::math;
 
 use std::{fs, io, os, time};
 
@@ -196,13 +195,13 @@ impl StorageController {
     }
 
     fn apply_values(&mut self, force: bool) {
-        let ra_u64 = math::sanitize_to_clean_u64(
+        let ra_u64 = helpers::sanitize_to_clean_u64(
             self.current_read_ahead,
             self.storage_kernel_limits.max_read_ahead as u64,
             32,
         );
 
-        let nr_u64 = math::sanitize_to_clean_u64(
+        let nr_u64 = helpers::sanitize_to_clean_u64(
             self.current_nr_requests,
             self.storage_kernel_limits.min_nr_requests as u64,
             16,
