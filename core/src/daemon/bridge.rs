@@ -10,5 +10,5 @@ pub fn notify_service_death(context: &str) {
         Ok(ref c) => c.as_ptr(),
         Err(_) => c"Service Death".as_ptr(),
     };
-    unsafe { sys::cpp_notify_service_death(ptr) }
+    unsafe { sys::notify_service_death(ptr) }
 }

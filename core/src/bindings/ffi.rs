@@ -8,27 +8,27 @@ use std::{sync, thread, time};
 static MAIN_THREAD: sync::Mutex<Option<thread::JoinHandle<()>>> = sync::Mutex::new(None);
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_set_blocker_service_enabled(enabled: bool) {
+pub extern "C" fn set_blocker_service(enabled: bool) {
     state::BLOCKER_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_set_cleaner_service_enabled(enabled: bool) {
+pub extern "C" fn set_cleaner_service(enabled: bool) {
     state::CLEANER_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_set_cpu_service_enabled(enabled: bool) {
+pub extern "C" fn set_cpu_service(enabled: bool) {
     state::CPU_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_set_storage_service_enabled(enabled: bool) {
+pub extern "C" fn set_storage_service(enabled: bool) {
     state::STORAGE_SERVICE_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_set_tweaks_enabled(enabled: bool) {
+pub extern "C" fn set_tweaks(enabled: bool) {
     state::TWEAKS_ENABLED.store(enabled, sync::atomic::Ordering::Release);
 }
 
@@ -40,7 +40,7 @@ pub extern "C" fn rust_set_tweaks_enabled(enabled: bool) {
 ///   The C++ caller must NOT close or use this FD after calling this function,
 ///   as Rust will close it upon shutdown.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
+pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
     {
         match MAIN_THREAD.lock() {
             Ok(guard) => {
@@ -169,7 +169,7 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
 /// Rust background thread itself (e.g., via a callback), as attempting to
 /// join the current thread will result in a deadlock or panic.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_join_threads() {
+pub unsafe extern "C" fn join_threads() {
     log::info!("Rust: C++ requested join threads.");
     let handle_opt = match MAIN_THREAD.lock() {
         Ok(mut guard) => guard.take(),

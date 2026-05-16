@@ -31,7 +31,7 @@ extern "C"
      *
      * @param[in] enabled True to enable the service, false to disable.
      */
-    void rust_set_blocker_service_enabled(bool enabled);
+    void set_blocker_service(bool enabled);
 
     /**
      * @brief Configures the enabled state of the Cleaner Controller service.
@@ -45,7 +45,7 @@ extern "C"
      *
      * @param[in] enabled True to enable the service, false to disable.
      */
-    void rust_set_cleaner_service_enabled(bool enabled);
+    void set_cleaner_service(bool enabled);
 
     /**
      * @brief Configures the enabled state of the CPU Controller service.
@@ -56,7 +56,7 @@ extern "C"
      *
      * @param[in] enabled True to enable the service, false to disable.
      */
-    void rust_set_cpu_service_enabled(bool enabled);
+    void set_cpu_service(bool enabled);
 
     /**
      * @brief Configures the enabled state of the Storage Controller service.
@@ -67,7 +67,7 @@ extern "C"
      *
      * @param[in] enabled True to enable the service, false to disable.
      */
-    void rust_set_storage_service_enabled(bool enabled);
+    void set_storage_service(bool enabled);
 
     /**
      * @brief Configures the enabled state of the Display Controller service.
@@ -78,7 +78,7 @@ extern "C"
      *
      * @param[in] enabled True to enable the service, false to disable.
      */
-    void rust_set_display_service_enabled(bool enabled);
+    void set_display_service(bool enabled);
 
     /**
      * @brief Configures the enabled state of the System Tweaks module.
@@ -91,7 +91,7 @@ extern "C"
      *
      * @param[in] enabled True to apply tweaks, false to skip.
      */
-    void rust_set_tweaks_enabled(bool enabled);
+    void set_tweaks(bool enabled);
 
     /**
      * @brief Initializes and starts the core service reactor in a background
@@ -107,7 +107,7 @@ extern "C"
      *
      * @return 0 on successful initialization, non-zero on failure or timeout.
      */
-    int rust_start_services(int signal_fd);
+    int start_services(int signal_fd);
 
     /**
      * @brief Waits for the core service threads to terminate.
@@ -116,7 +116,7 @@ extern "C"
      * core library has joined. It ensures that the process does not exit
      * prematurely while services are cleaning up.
      */
-    void rust_join_threads(void);
+    void join_threads(void);
 
     /**
      * @brief Reports a critical service failure to the native runtime.
@@ -127,7 +127,7 @@ extern "C"
      * @param[in] context A null-terminated C string describing the error context.
      * If NULL, a default "Unknown Reason" message is used.
      */
-    void cpp_notify_service_death(const char* context);
+    void notify_service_death(const char* context);
 
     /**
      * @brief Registers a Pressure Stall Information (PSI) trigger with the kernel.
@@ -147,7 +147,7 @@ extern "C"
      * @note The returned file descriptor ownership is transferred to the caller
      * and must be managed (closed) by the caller.
      */
-    int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us);
+    int register_psi_trigger(const char* path, int threshold_us, int window_us);
 
     /**
      * @brief Sets an Android system property.
@@ -161,7 +161,7 @@ extern "C"
      * @return -1 on failure. If the underlying API fails without setting `errno`,
      * this wrapper sets `errno` to `EACCES` by default.
      */
-    int cpp_set_system_property(const char* key, const char* value);
+    int set_system_property(const char* key, const char* value);
 
     /**
      * @brief Retrieves an Android system property.
@@ -175,7 +175,7 @@ extern "C"
      * @return The length of the retrieved value on success.
      * @return -1 on failure (e.g., if inputs are invalid).
      */
-    int cpp_get_system_property(const char* key, char* value, size_t max_len);
+    int get_system_property(const char* key, char* value, size_t max_len);
 
 #ifdef __cplusplus
 }

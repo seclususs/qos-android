@@ -4,9 +4,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <fcntl.h>
-#include <linux/input.h>
 #include <sys/system_properties.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
 
@@ -45,13 +43,13 @@ namespace
     };
 } // namespace
 
-extern "C" void cpp_notify_service_death(const char* context)
+extern "C" void notify_service_death(const char* context)
 {
     LOGE("!!! CRITICAL: %s !!!", context ? context : "Unknown Reason");
     LOGE("Requesting graceful shutdown...");
 }
 
-extern "C" int cpp_register_psi_trigger(const char* path, int threshold_us, int window_us)
+extern "C" int register_psi_trigger(const char* path, int threshold_us, int window_us)
 {
     if (!path)
         return (errno = EINVAL, -1);
@@ -95,7 +93,7 @@ extern "C" int cpp_register_psi_trigger(const char* path, int threshold_us, int 
     return fd.release();
 }
 
-extern "C" int cpp_set_system_property(const char* key, const char* value)
+extern "C" int set_system_property(const char* key, const char* value)
 {
     if (!key || !value)
         return (errno = EINVAL, -1);
@@ -109,7 +107,7 @@ extern "C" int cpp_set_system_property(const char* key, const char* value)
     return -1;
 }
 
-extern "C" int cpp_get_system_property(const char* key, char* value, size_t max_len)
+extern "C" int get_system_property(const char* key, char* value, size_t max_len)
 {
     if (!key || !value || max_len == 0)
         return (errno = EINVAL, -1);

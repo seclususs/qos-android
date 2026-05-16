@@ -12,7 +12,7 @@ pub fn property_exists(key: &str) -> bool {
     };
     let mut buffer = [0u8; 1];
     let len = unsafe {
-        sys::cpp_get_system_property(c_key.as_ptr(), buffer.as_mut_ptr().cast::<c_char>(), 1)
+        sys::get_system_property(c_key.as_ptr(), buffer.as_mut_ptr().cast::<c_char>(), 1)
     };
     len > 0
 }
@@ -33,7 +33,7 @@ pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError
     }
     let c_key = cstr::to_cstring(key)?;
     let c_val = cstr::to_cstring(value)?;
-    let res = unsafe { sys::cpp_set_system_property(c_key.as_ptr(), c_val.as_ptr()) };
+    let res = unsafe { sys::set_system_property(c_key.as_ptr(), c_val.as_ptr()) };
     if res < 0 {
         Err(types::QosError::IoError(io::Error::last_os_error()))
     } else {
@@ -47,7 +47,7 @@ pub fn get_system_property(key: &str) -> Result<String, types::QosError> {
     let c_key = cstr::to_cstring(key)?;
     let mut buffer = vec![0u8; PROP_VALUE_MAX];
     let len = unsafe {
-        sys::cpp_get_system_property(
+        sys::get_system_property(
             c_key.as_ptr(),
             buffer.as_mut_ptr().cast::<c_char>(),
             PROP_VALUE_MAX,

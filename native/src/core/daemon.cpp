@@ -61,11 +61,11 @@ namespace qos::core
         }
 
         LOGI("Activating Services...");
-        ::rust_set_cpu_service_enabled(run_cpu);
-        ::rust_set_storage_service_enabled(run_io);
-        ::rust_set_cleaner_service_enabled(run_cleaner);
-        ::rust_set_tweaks_enabled(run_tweaks);
-        ::rust_set_blocker_service_enabled(run_blocker);
+        ::set_cpu_service(run_cpu);
+        ::set_storage_service(run_io);
+        ::set_cleaner_service(run_cleaner);
+        ::set_tweaks(run_tweaks);
+        ::set_blocker_service(run_blocker);
 
         ::mallopt(M_PURGE, 0);
         qos::system::Tuner::lock_memory();
@@ -80,7 +80,7 @@ namespace qos::core
         const int sfd = ::signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
 
         LOGI("Handover to Core Logic...");
-        const int rust_status = ::rust_start_services(sfd);
+        const int rust_status = ::start_services(sfd);
 
         if (rust_status != 0)
         {
@@ -89,7 +89,7 @@ namespace qos::core
         }
 
         LOGI("Core services running. Main thread waiting...");
-        ::rust_join_threads();
+        ::join_threads();
 
         LOGI("=== Shutdown Cleanly ===");
         return EXIT_SUCCESS;
