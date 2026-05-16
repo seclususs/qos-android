@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::{poll_math, storage_math};
+use crate::algorithms::{poller, storage};
 use crate::config::{kernel_limits, loop_settings};
 use crate::daemon::{state, traits, types};
 use crate::hal::{filesystem, kernel};
@@ -23,13 +23,13 @@ pub struct StorageController {
     psi_monitor: psi_monitor::PsiMonitor,
     disk_monitor: disk_monitor::DiskMonitor,
     prev_io_stats: disk_monitor::IoStats,
-    workload_state: storage_math::WorkloadState,
-    storage_math_config: storage_math::StorageMathConfig,
-    storage_kernel_limits: storage_math::StorageKernelLimits,
+    workload_state: storage::WorkloadState,
+    storage_math_config: storage::StorageMathConfig,
+    storage_kernel_limits: storage::StorageKernelLimits,
     last_tick: time::Instant,
     current_read_ahead: f32,
     current_nr_requests: f32,
-    poller: poll_math::AdaptivePoller,
+    poller: poller::AdaptivePoller,
     next_wake_ms: i32,
 }
 
@@ -38,8 +38,8 @@ impl StorageController {
         log::info!("StorageController: Initializing...");
 
         let config_limits = kernel_limits::GlobalConfig::default().storage_config;
-        let storage_math_config = storage_math::StorageMathConfig::default();
-        let storage_kernel_limits = storage_math::StorageKernelLimits {
+        let storage_math_config = storage::StorageMathConfig::default();
+        let storage_kernel_limits = storage::StorageKernelLimits {
             min_read_ahead: config_limits.min_read_ahead as f32,
             max_read_ahead: config_limits.max_read_ahead as f32,
             min_nr_requests: config_limits.min_nr_requests as f32,
@@ -58,6 +58,7 @@ impl StorageController {
             filesystem::open_file_for_write(ra_path.to_str().unwrap_or_default()).ok(),
             0,
         );
+
         let nr_requests = cached_file::CachedFile::new_opt(
             filesystem::open_file_for_write(nr_path.to_str().unwrap_or_default()).ok(),
             0,
@@ -79,10 +80,10 @@ impl StorageController {
             .read_stats()
             .unwrap_or(disk_monitor::IoStats::default());
 
-        let poller = poll_math::AdaptivePoller::new(
+        let poller = poller::AdaptivePoller::new(
             POLL_WEIGHT_PRESSURE,
             POLL_WEIGHT_DERIVATIVE,
-            poll_math::PollerConfig::default(),
+            poller::PollerConfig::default(),
         );
 
         let mut controller = Self {
@@ -92,7 +93,7 @@ impl StorageController {
             psi_monitor,
             disk_monitor,
             prev_io_stats: initial_stats,
-            workload_state: storage_math::WorkloadState::default(),
+            workload_state: storage::WorkloadState::default(),
             storage_math_config,
             storage_kernel_limits,
             last_tick: time::Instant::now(),
@@ -116,8 +117,7 @@ impl StorageController {
         self.last_tick = now;
         let dt_real = dt_duration.as_secs_f32().max(0.000_001);
 
-        let delta =
-            storage_math::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_real);
+        let delta = storage::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_real);
         self.prev_io_stats = current_io_stats;
 
         context.pressure.io_psi = psi_data.some.current;
@@ -129,14 +129,14 @@ impl StorageController {
         }
 
         let req_size_ratio =
-            storage_math::calculate_request_size_ratio(&delta, &self.storage_math_config);
-        let merge_ratio = storage_math::calculate_merge_ratio(&delta);
-        let pressure_ratio = storage_math::calculate_pressure_ratio(
+            storage::calculate_request_size_ratio(&delta, &self.storage_math_config);
+        let merge_ratio = storage::calculate_merge_ratio(&delta);
+        let pressure_ratio = storage::calculate_pressure_ratio(
             current_io_stats.in_flight as f32,
             &self.storage_math_config,
         );
 
-        let sequentiality = storage_math::resolve_sequentiality_factor(
+        let sequentiality = storage::resolve_sequentiality_factor(
             &mut self.workload_state,
             req_size_ratio,
             merge_ratio,
@@ -145,23 +145,20 @@ impl StorageController {
         );
 
         let calculated_ra =
-            storage_math::calculate_target_read_ahead(sequentiality, &self.storage_kernel_limits);
+            storage::calculate_target_read_ahead(sequentiality, &self.storage_kernel_limits);
 
-        let lambda_eff =
-            storage_math::calculate_weighted_throughput(&delta, &self.storage_math_config);
+        let lambda_eff = storage::calculate_weighted_throughput(&delta, &self.storage_math_config);
 
-        let target_latency = storage_math::calculate_target_latency(
-            psi_data.some.current,
-            &self.storage_math_config,
-        );
+        let target_latency =
+            storage::calculate_target_latency(psi_data.some.current, &self.storage_math_config);
 
-        let current_latency = storage_math::calculate_effective_latency(
+        let current_latency = storage::calculate_effective_latency(
             &delta,
             lambda_eff,
             current_io_stats.in_flight as f32,
         );
 
-        let calculated_nr = storage_math::calculate_next_queue_depth(
+        let calculated_nr = storage::calculate_next_queue_depth(
             lambda_eff,
             current_latency,
             target_latency,
@@ -171,7 +168,7 @@ impl StorageController {
             &self.storage_kernel_limits,
         );
 
-        if storage_math::should_update_nr_requests(
+        if storage::should_update_nr_requests(
             calculated_nr,
             self.current_nr_requests,
             &self.storage_math_config,
@@ -181,7 +178,7 @@ impl StorageController {
         }
         self.current_read_ahead = calculated_ra;
 
-        if storage_math::is_congestion_critical(
+        if storage::is_congestion_critical(
             psi_data.some.current,
             current_io_stats.in_flight as f32,
             &self.storage_math_config,
@@ -206,6 +203,7 @@ impl StorageController {
             self.storage_kernel_limits.max_read_ahead as u64,
             32,
         );
+
         let nr_u64 = math::sanitize_to_clean_u64(
             self.current_nr_requests,
             self.storage_kernel_limits.min_nr_requests as u64,
@@ -214,6 +212,7 @@ impl StorageController {
 
         self.read_ahead
             .update(ra_u64, force, &cached_file::CheckStrategy::Absolute(32));
+
         self.nr_requests
             .update(nr_u64, force, &cached_file::CheckStrategy::Absolute(16));
     }

@@ -178,7 +178,7 @@ impl CleanerWorker {
                 let Ok(ft) = entry.file_type() else {
                     continue;
                 };
-                
+
                 if !ft.is_dir() {
                     continue;
                 }

@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::controllers::{blocker_impl, cleaner_impl, cpu_impl, signal_impl, storage_impl};
+use crate::controllers::{blocker, cleaner, cpu, signal, storage};
 use crate::daemon::{logging, runtime, state};
 use crate::hal::bridge;
 
@@ -56,10 +56,13 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
             }
         }
     }
+
     logging::init();
+
     let (tx, rx) = sync::mpsc::channel::<()>();
     let result = std::panic::catch_unwind(move || {
         log::info!("Rust: Service entry point reached. Signal FD: {signal_fd}");
+
         thread::Builder::new()
             .name("Tweaks".into())
             .stack_size(64 * 1024)
@@ -68,15 +71,20 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                     log::info!("Rust: System Tweaks are DISABLED by config.");
                     return;
                 }
+
                 runtime::apply_prop_tweaks();
                 runtime::wait_for_boot_completion("Tweaker");
+
                 if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
                     return;
                 }
+
                 runtime::apply_file_tweaks();
             })
             .expect("Failed to spawn Tweaks thread");
+
         state::SHUTDOWN_REQUESTED.store(false, sync::atomic::Ordering::Release);
+
         let handle = thread::Builder::new()
             .name("MainLoop".into())
             .stack_size(128 * 1024)
@@ -84,56 +92,69 @@ pub unsafe extern "C" fn rust_start_services(signal_fd: i32) -> i32 {
                 if let Err(e) = tx.send(()) {
                     log::error!("Rust: Failed to send handshake: {e}.");
                 }
+
                 runtime::wait_for_boot_completion("MainLoop");
+
                 if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
                     return;
                 }
+
                 log::info!("Rust: Constructing Service Vector...");
                 let mut services = Vec::new();
+
                 services.push(runtime::RecoverableService::new("Signal", move || {
                     Ok(Box::new(unsafe {
-                        signal_impl::SignalController::new(signal_fd)
+                        signal::SignalController::new(signal_fd)
                     }))
                 }));
+
                 if state::STORAGE_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     services.push(runtime::RecoverableService::new("Storage", || {
-                        Ok(Box::new(storage_impl::StorageController::new()?))
+                        Ok(Box::new(storage::StorageController::new()?))
                     }));
                 }
+
                 if state::CPU_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     services.push(runtime::RecoverableService::new("CPU", || {
-                        Ok(Box::new(cpu_impl::CpuController::new()?))
+                        Ok(Box::new(cpu::CpuController::new()?))
                     }));
                 }
+
                 if state::CLEANER_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     services.push(runtime::RecoverableService::new("Cleaner", || {
-                        Ok(Box::new(cleaner_impl::CleanerController::new()?))
+                        Ok(Box::new(cleaner::CleanerController::new()?))
                     }));
                 }
+
                 if state::BLOCKER_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
                     services.push(runtime::RecoverableService::new("Blocker", || {
-                        Ok(Box::new(blocker_impl::BlockerController::new()?))
+                        Ok(Box::new(blocker::BlockerController::new()?))
                     }));
                 }
+
                 log::info!(
                     "Rust: Initializing Event Loop with {} services...",
                     services.len()
                 );
+
                 if let Err(e) = runtime::run_event_loop(services) {
                     log::error!("Fatal error in event loop: {e}");
                 }
             })
             .expect("Failed to spawn MainLoop thread");
+
         match MAIN_THREAD.lock() {
             Ok(mut guard) => *guard = Some(handle),
             Err(poisoned) => *poisoned.into_inner() = Some(handle),
         }
     });
+
     if let Err(cause) = result {
         log::error!("Rust: Critical Panic during startup: {cause:?}");
         bridge::notify_service_death("Startup Panic");
         return -1;
     }
+
     match rx.recv_timeout(time::Duration::from_secs(5)) {
         Ok(()) => 0,
         Err(e) => {
@@ -155,6 +176,7 @@ pub unsafe extern "C" fn rust_join_threads() {
         Ok(mut guard) => guard.take(),
         Err(poisoned) => poisoned.into_inner().take(),
     };
+
     if let Some(handle) = handle_opt
         && let Err(e) = handle.join()
     {

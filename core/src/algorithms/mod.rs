@@ -1,5 +1,5 @@
-pub mod cpu_math;
-pub mod filter_math;
-pub mod poll_math;
-pub mod storage_math;
-pub mod thermal_math;
+pub mod cpu;
+pub mod filter;
+pub mod poller;
+pub mod storage;
+pub mod thermal;

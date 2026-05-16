@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::algorithms::filter_math;
+use crate::algorithms::filter;
 use crate::daemon::types;
 use crate::utils::monitored_file;
 
@@ -37,20 +37,20 @@ pub struct PsiMonitor {
     last_read_time: time::Instant,
     last_some_total: u64,
     first_run: bool,
-    filter_some: filter_math::KalmanFilter,
+    filter_some: filter::KalmanFilter,
 }
 
 impl PsiMonitor {
     pub fn new(path: &str) -> types::Result<Self> {
         let monitor = monitored_file::MonitoredFile::new(path)?;
-        let config = filter_math::KalmanConfig::default();
+        let config = filter::KalmanConfig::default();
 
         Ok(Self {
             monitor,
             last_read_time: time::Instant::now(),
             last_some_total: 0,
             first_run: true,
-            filter_some: filter_math::KalmanFilter::new(config),
+            filter_some: filter::KalmanFilter::new(config),
         })
     }
 
