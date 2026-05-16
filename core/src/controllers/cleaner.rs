@@ -3,7 +3,7 @@
 use crate::bindings::sys;
 use crate::config::paths;
 use crate::daemon::{state, traits, types};
-use crate::hal::{thermal, traversal};
+use crate::hal::{sensors, traversal};
 use crate::monitors::psi_monitor;
 
 use std::{ffi, fs, io, os, path, sync, thread, time};
@@ -278,7 +278,7 @@ impl CleanerWorker {
 pub struct CleanerController {
     io_monitor: psi_monitor::PsiMonitor,
     cpu_monitor: psi_monitor::PsiMonitor,
-    thermal: thermal::ThermalSensor,
+    thermal: sensors::ThermalSensor,
     tunables: CleanerConfig,
     last_sweep: time::Instant,
     dummy_fd: fs::File,
@@ -315,7 +315,7 @@ impl CleanerController {
         Ok(Self {
             io_monitor: psi_monitor::PsiMonitor::new(paths::K_PSI_IO_PATH)?,
             cpu_monitor: psi_monitor::PsiMonitor::new(paths::K_PSI_CPU_PATH)?,
-            thermal: thermal::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0),
+            thermal: sensors::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0),
             tunables,
             last_sweep: time::Instant::now()
                 .checked_sub(time::Duration::from_secs(SECONDS_PER_DAY))

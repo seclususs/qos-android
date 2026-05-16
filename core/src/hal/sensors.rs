@@ -39,6 +39,7 @@ impl ThermalSensor {
                 parsed_val = parsed_val
                     .wrapping_mul(10)
                     .wrapping_add(i32::from(byte - b'0'));
+
                 has_digits = true;
                 continue;
             }
@@ -67,5 +68,23 @@ impl ThermalSensor {
         } else {
             final_temp
         }
+    }
+}
+
+pub struct BatterySensor {
+    monitor: Option<monitored_file::MonitoredFile<16>>,
+}
+
+impl BatterySensor {
+    pub fn new(path: &str) -> Self {
+        let monitor = monitored_file::MonitoredFile::new(path).ok();
+        Self { monitor }
+    }
+    pub fn read(&mut self) -> f32 {
+        self.monitor
+            .as_mut()
+            .and_then(|m| m.read_value().ok())
+            .and_then(|content| content.trim().parse::<f32>().ok())
+            .unwrap_or(100.0)
     }
 }

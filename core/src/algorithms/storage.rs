@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::hal::hardware::DeviceTier;
 use crate::monitors::disk_monitor;
-use crate::utils::tier::DeviceTier;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StorageKernelLimits {

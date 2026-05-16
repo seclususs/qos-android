@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::utils::tier::DeviceTier;
+use crate::hal::hardware::DeviceTier;
 
 #[derive(Debug, Clone, Copy)]
 pub struct LoadState {

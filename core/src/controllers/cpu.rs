@@ -4,7 +4,7 @@ use crate::algorithms::{cpu, poller, thermal};
 use crate::config::paths;
 use crate::config::{limits, runtime};
 use crate::daemon::{state, traits, types};
-use crate::hal;
+use crate::hal::{filesystem, kernel, sensors};
 use crate::monitors::psi_monitor;
 use crate::utils::{cached_file, math};
 
@@ -29,9 +29,9 @@ pub struct CpuController {
     psi_cpu: psi_monitor::PsiMonitor,
     thermal_manager: thermal::ThermalManager,
     thermal_config: thermal::ThermalConfig,
-    cpu_sensor: hal::thermal::ThermalSensor,
-    battery_sensor: hal::thermal::ThermalSensor,
-    battery_capacity_sensor: hal::battery::BatterySensor,
+    cpu_sensor: sensors::ThermalSensor,
+    battery_sensor: sensors::ThermalSensor,
+    battery_capacity_sensor: sensors::BatterySensor,
     cached_bat_level: f32,
     cached_bat_temp: f32,
     last_bat_check: time::Instant,
@@ -70,53 +70,48 @@ impl CpuController {
             max_uclamp_min: config_limits.max_uclamp_min as f32,
         };
 
-        let raw_fd = hal::kernel::register_psi_trigger(
-            paths::K_PSI_CPU_PATH,
-            PSI_THRESHOLD_US,
-            PSI_WINDOW_US,
-        )
-        .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {e}")))?;
+        let raw_fd =
+            kernel::register_psi_trigger(paths::K_PSI_CPU_PATH, PSI_THRESHOLD_US, PSI_WINDOW_US)
+                .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {e}")))?;
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
 
         let latency = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(paths::K_SCHED_LATENCY_NS).ok(),
+            filesystem::open_file_for_write(paths::K_SCHED_LATENCY_NS).ok(),
             0,
         );
 
         let min_gran = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
+            filesystem::open_file_for_write(paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
             0,
         );
 
         let wakeup = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(paths::K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
+            filesystem::open_file_for_write(paths::K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
             0,
         );
 
         let migration = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(paths::K_SCHED_MIGRATION_COST_NS).ok(),
+            filesystem::open_file_for_write(paths::K_SCHED_MIGRATION_COST_NS).ok(),
             0,
         );
 
         let walt_init = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
+            filesystem::open_file_for_write(paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
             config_limits.min_walt_init_pct,
         );
 
         let uclamp_min = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
+            filesystem::open_file_for_write(paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
             config_limits.min_uclamp_min,
         );
 
         let psi_cpu = psi_monitor::PsiMonitor::new(paths::K_PSI_CPU_PATH)?;
 
         let cpu_path = paths::get_cpu_temp_path();
-        let cpu_sensor =
-            hal::thermal::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
+        let cpu_sensor = sensors::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
 
-        let battery_sensor = hal::thermal::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0);
-        let battery_capacity_sensor =
-            hal::battery::BatterySensor::new(paths::K_BATTERY_CAPACITY_PATH);
+        let battery_sensor = sensors::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0);
+        let battery_capacity_sensor = sensors::BatterySensor::new(paths::K_BATTERY_CAPACITY_PATH);
 
         let thermal_config = thermal::ThermalConfig::default();
         let thermal_manager = thermal::ThermalManager::default();

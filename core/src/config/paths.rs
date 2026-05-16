@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-pub use crate::resources::discovery::{
+pub use crate::hal::hardware::{
     get_cpu_temp_path, get_diskstats_path, get_nr_requests_path, get_read_ahead_path,
 };
 
