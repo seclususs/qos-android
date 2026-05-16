@@ -2,9 +2,91 @@
 
 use crate::algorithms::filter;
 use crate::daemon::types;
-use crate::utils::monitored_file;
+use crate::hal::sysfs;
 
 use std::time;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoStats {
+    pub read_ios: u64,
+    pub read_merges: u64,
+    pub read_sectors: u64,
+    pub read_ticks: u64,
+    pub write_ios: u64,
+    pub write_ticks: u64,
+    pub in_flight: u64,
+}
+
+pub struct DiskMonitor {
+    monitor: sysfs::MonitoredFile<512>,
+}
+
+impl DiskMonitor {
+    pub fn new(path: &str) -> types::Result<Self> {
+        Ok(Self {
+            monitor: sysfs::MonitoredFile::new(path)?,
+        })
+    }
+
+    pub fn read_stats(&mut self) -> types::Result<IoStats> {
+        let buffer = self.monitor.read_bytes_raw()?;
+        if buffer.is_empty() {
+            return Err(types::QosError::SystemCheckFailed("Empty diskstats".into()));
+        }
+
+        let mut stats = IoStats::default();
+        let mut field_idx = 0;
+        let mut pos = 0;
+        let len = buffer.len();
+
+        while pos < len {
+            let byte = buffer[pos];
+            if byte == b' ' || byte == b'\t' || byte == b'\n' {
+                pos += 1;
+                continue;
+            }
+
+            let token_start = pos;
+            let mut parsed_val: u64 = 0;
+
+            while pos < len && buffer[pos].is_ascii_digit() {
+                parsed_val = parsed_val * 10 + u64::from(buffer[pos] - b'0');
+                pos += 1;
+            }
+
+            if pos == token_start {
+                while pos < len && !buffer[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+                continue;
+            }
+
+            match field_idx {
+                0 => stats.read_ios = parsed_val,
+                1 => stats.read_merges = parsed_val,
+                2 => stats.read_sectors = parsed_val,
+                3 => stats.read_ticks = parsed_val,
+                4 => stats.write_ios = parsed_val,
+                7 => stats.write_ticks = parsed_val,
+                8 => stats.in_flight = parsed_val,
+                _ => {}
+            }
+
+            field_idx += 1;
+            if field_idx > 8 {
+                break;
+            }
+        }
+
+        if field_idx > 8 {
+            Ok(stats)
+        } else {
+            Err(types::QosError::SystemCheckFailed(
+                "Incomplete diskstats".into(),
+            ))
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct PsiTrend {
@@ -33,7 +115,7 @@ pub struct PsiData {
 }
 
 pub struct PsiMonitor {
-    monitor: monitored_file::MonitoredFile<512>,
+    monitor: sysfs::MonitoredFile<512>,
     last_read_time: time::Instant,
     last_some_total: u64,
     first_run: bool,
@@ -42,7 +124,7 @@ pub struct PsiMonitor {
 
 impl PsiMonitor {
     pub fn new(path: &str) -> types::Result<Self> {
-        let monitor = monitored_file::MonitoredFile::new(path)?;
+        let monitor = sysfs::MonitoredFile::new(path)?;
         let config = filter::KalmanConfig::default();
 
         Ok(Self {
@@ -61,6 +143,7 @@ impl PsiMonitor {
         let mut fraction_val = 0.0;
         let mut fraction_divisor = 1.0;
         let mut in_fraction = false;
+
         let len = buffer.len();
 
         while pos < len {
@@ -68,12 +151,14 @@ impl PsiMonitor {
 
             if byte.is_ascii_digit() {
                 let digit = f32::from(byte - b'0');
+
                 if in_fraction {
                     fraction_val = fraction_val * 10.0 + digit;
                     fraction_divisor *= 10.0;
                 } else {
                     parsed_val = parsed_val * 10.0 + digit;
                 }
+
                 pos += 1;
                 continue;
             }
@@ -94,10 +179,12 @@ impl PsiMonitor {
     fn parse_u64_bytes(buffer: &[u8], start_pos: usize) -> (u64, usize) {
         let mut pos = start_pos;
         let mut parsed_val = 0;
+
         let len = buffer.len();
 
         while pos < len {
             let byte = buffer[pos];
+
             if byte.is_ascii_digit() {
                 parsed_val = parsed_val * 10 + u64::from(byte - b'0');
                 pos += 1;
@@ -142,6 +229,7 @@ impl PsiMonitor {
                 while pos < len && buffer[pos] != b'\n' {
                     pos += 1;
                 }
+
                 pos += 1;
                 continue;
             }
@@ -185,12 +273,15 @@ impl PsiMonitor {
         if self.first_run {
             some_trend.current = some_trend.avg10;
             some_trend.velocity = 0.0;
+
             self.filter_some.reset();
             self.filter_some.update(some_trend.avg10, 1.0);
+
             self.first_run = false;
         } else {
             let delta_some = current_total.saturating_sub(self.last_some_total) as f32;
             let raw_some = delta_some / dt_calc * 100.0;
+
             some_trend.current = self.filter_some.update(raw_some, dt_sec);
             some_trend.velocity = self.filter_some.get_velocity();
             some_trend.nis = self.filter_some.get_last_nis();

@@ -4,9 +4,8 @@ use crate::algorithms::{cpu, poller, thermal};
 use crate::config::paths;
 use crate::config::{limits, runtime};
 use crate::daemon::{state, traits, types};
-use crate::hal::{filesystem, kernel, sensors};
-use crate::monitors::psi_monitor;
-use crate::utils::{cached_file, math};
+use crate::hal::{kernel, monitors, sensors, sysfs};
+use crate::utils::math;
 
 use std::{fs, io, os, time};
 
@@ -20,13 +19,13 @@ const PSI_WINDOW_US: i32 = 1_000_000;
 
 pub struct CpuController {
     fd: fs::File,
-    latency: cached_file::CachedFile,
-    min_gran: cached_file::CachedFile,
-    wakeup: cached_file::CachedFile,
-    migration: cached_file::CachedFile,
-    walt_init: cached_file::CachedFile,
-    uclamp_min: cached_file::CachedFile,
-    psi_cpu: psi_monitor::PsiMonitor,
+    latency: sysfs::CachedFile,
+    min_gran: sysfs::CachedFile,
+    wakeup: sysfs::CachedFile,
+    migration: sysfs::CachedFile,
+    walt_init: sysfs::CachedFile,
+    uclamp_min: sysfs::CachedFile,
+    psi_cpu: monitors::PsiMonitor,
     thermal_manager: thermal::ThermalManager,
     thermal_config: thermal::ThermalConfig,
     cpu_sensor: sensors::ThermalSensor,
@@ -75,37 +74,37 @@ impl CpuController {
                 .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {e}")))?;
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
 
-        let latency = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(paths::K_SCHED_LATENCY_NS).ok(),
+        let latency = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(paths::K_SCHED_LATENCY_NS).ok(),
             0,
         );
 
-        let min_gran = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
+        let min_gran = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
             0,
         );
 
-        let wakeup = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(paths::K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
+        let wakeup = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(paths::K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
             0,
         );
 
-        let migration = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(paths::K_SCHED_MIGRATION_COST_NS).ok(),
+        let migration = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(paths::K_SCHED_MIGRATION_COST_NS).ok(),
             0,
         );
 
-        let walt_init = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
+        let walt_init = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
             config_limits.min_walt_init_pct,
         );
 
-        let uclamp_min = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
+        let uclamp_min = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
             config_limits.min_uclamp_min,
         );
 
-        let psi_cpu = psi_monitor::PsiMonitor::new(paths::K_PSI_CPU_PATH)?;
+        let psi_cpu = monitors::PsiMonitor::new(paths::K_PSI_CPU_PATH)?;
 
         let cpu_path = paths::get_cpu_temp_path();
         let cpu_sensor = sensors::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
@@ -307,22 +306,22 @@ impl CpuController {
         );
 
         self.latency
-            .update(lat_u64, force, &cached_file::CheckStrategy::Relative(0.10));
+            .update(lat_u64, force, &sysfs::CheckStrategy::Relative(0.10));
 
         self.min_gran
-            .update(gran_u64, force, &cached_file::CheckStrategy::Relative(0.10));
+            .update(gran_u64, force, &sysfs::CheckStrategy::Relative(0.10));
 
         self.wakeup
-            .update(wake_u64, force, &cached_file::CheckStrategy::Relative(0.15));
+            .update(wake_u64, force, &sysfs::CheckStrategy::Relative(0.15));
 
         self.migration
-            .update(mig_u64, force, &cached_file::CheckStrategy::Absolute(50000));
+            .update(mig_u64, force, &sysfs::CheckStrategy::Absolute(50000));
 
         self.walt_init
-            .update(walt_u64, force, &cached_file::CheckStrategy::Absolute(5));
+            .update(walt_u64, force, &sysfs::CheckStrategy::Absolute(5));
 
         self.uclamp_min
-            .update(uclamp_u64, force, &cached_file::CheckStrategy::Absolute(32));
+            .update(uclamp_u64, force, &sysfs::CheckStrategy::Absolute(32));
     }
 }
 

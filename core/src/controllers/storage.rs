@@ -4,9 +4,8 @@ use crate::algorithms::{poller, storage};
 use crate::config::paths;
 use crate::config::{limits, runtime};
 use crate::daemon::{state, traits, types};
-use crate::hal::{filesystem, kernel};
-use crate::monitors::{disk_monitor, psi_monitor};
-use crate::utils::{cached_file, math};
+use crate::hal::{kernel, monitors, sysfs};
+use crate::utils::math;
 
 use std::{fs, io, os, time};
 
@@ -18,11 +17,11 @@ const PSI_WINDOW_US: i32 = 1_000_000;
 
 pub struct StorageController {
     fd: fs::File,
-    read_ahead: cached_file::CachedFile,
-    nr_requests: cached_file::CachedFile,
-    psi_monitor: psi_monitor::PsiMonitor,
-    disk_monitor: disk_monitor::DiskMonitor,
-    prev_io_stats: disk_monitor::IoStats,
+    read_ahead: sysfs::CachedFile,
+    nr_requests: sysfs::CachedFile,
+    psi_monitor: monitors::PsiMonitor,
+    disk_monitor: monitors::DiskMonitor,
+    prev_io_stats: monitors::IoStats,
     workload_state: storage::WorkloadState,
     storage_math_config: storage::StorageMathConfig,
     storage_kernel_limits: storage::StorageKernelLimits,
@@ -54,13 +53,13 @@ impl StorageController {
         let ra_path = paths::get_read_ahead_path();
         let nr_path = paths::get_nr_requests_path();
 
-        let read_ahead = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(ra_path.to_str().unwrap_or_default()).ok(),
+        let read_ahead = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(ra_path.to_str().unwrap_or_default()).ok(),
             0,
         );
 
-        let nr_requests = cached_file::CachedFile::new_opt(
-            filesystem::open_file_for_write(nr_path.to_str().unwrap_or_default()).ok(),
+        let nr_requests = sysfs::CachedFile::new_opt(
+            sysfs::open_file_for_write(nr_path.to_str().unwrap_or_default()).ok(),
             0,
         );
 
@@ -70,15 +69,14 @@ impl StorageController {
             ));
         }
 
-        let psi_monitor = psi_monitor::PsiMonitor::new(paths::K_PSI_IO_PATH)?;
+        let psi_monitor = monitors::PsiMonitor::new(paths::K_PSI_IO_PATH)?;
 
         let stats_path = paths::get_diskstats_path();
-        let mut disk_monitor =
-            disk_monitor::DiskMonitor::new(stats_path.to_str().unwrap_or_default())?;
+        let mut disk_monitor = monitors::DiskMonitor::new(stats_path.to_str().unwrap_or_default())?;
 
         let initial_stats = disk_monitor
             .read_stats()
-            .unwrap_or(disk_monitor::IoStats::default());
+            .unwrap_or(monitors::IoStats::default());
 
         let poller = poller::AdaptivePoller::new(
             POLL_WEIGHT_PRESSURE,
@@ -211,10 +209,10 @@ impl StorageController {
         );
 
         self.read_ahead
-            .update(ra_u64, force, &cached_file::CheckStrategy::Absolute(32));
+            .update(ra_u64, force, &sysfs::CheckStrategy::Absolute(32));
 
         self.nr_requests
-            .update(nr_u64, force, &cached_file::CheckStrategy::Absolute(16));
+            .update(nr_u64, force, &sysfs::CheckStrategy::Absolute(16));
     }
 }
 

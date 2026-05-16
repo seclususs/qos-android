@@ -18,7 +18,6 @@ pub mod config;
 pub mod controllers;
 pub mod daemon;
 pub mod hal;
-pub mod monitors;
 pub mod tweaks;
 pub mod utils;
 

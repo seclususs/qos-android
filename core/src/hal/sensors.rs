@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::utils::monitored_file;
+use crate::hal::sysfs;
 
 const TEMP_SCALE_MILLI_THRESHOLD: f32 = 10_000.0;
 const TEMP_SCALE_DECI_THRESHOLD: f32 = 100.0;
@@ -8,13 +8,13 @@ const SCALE_DIVISOR_MILLI: f32 = 1000.0;
 const SCALE_DIVISOR_DECI: f32 = 10.0;
 
 pub struct ThermalSensor {
-    monitor: Option<monitored_file::MonitoredFile<16>>,
+    monitor: Option<sysfs::MonitoredFile<16>>,
     default_val: f32,
 }
 
 impl ThermalSensor {
     pub fn new(path: &str, default_val: f32) -> Self {
-        let monitor = monitored_file::MonitoredFile::new(path).ok();
+        let monitor = sysfs::MonitoredFile::new(path).ok();
         Self {
             monitor,
             default_val,
@@ -72,14 +72,15 @@ impl ThermalSensor {
 }
 
 pub struct BatterySensor {
-    monitor: Option<monitored_file::MonitoredFile<16>>,
+    monitor: Option<sysfs::MonitoredFile<16>>,
 }
 
 impl BatterySensor {
     pub fn new(path: &str) -> Self {
-        let monitor = monitored_file::MonitoredFile::new(path).ok();
+        let monitor = sysfs::MonitoredFile::new(path).ok();
         Self { monitor }
     }
+
     pub fn read(&mut self) -> f32 {
         self.monitor
             .as_mut()

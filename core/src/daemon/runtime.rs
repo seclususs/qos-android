@@ -2,7 +2,7 @@
 
 use crate::config::runtime;
 use crate::daemon::{bridge, state, traits, types};
-use crate::hal::{filesystem, properties};
+use crate::hal::{properties, sysfs};
 use crate::tweaks::{props, system};
 
 use rustix::event;
@@ -180,7 +180,7 @@ pub fn apply_file_tweaks() {
     let mut success_count = 0;
 
     for tweak in &file_tweaks_list {
-        match filesystem::write_to_file(&tweak.path, tweak.value) {
+        match sysfs::write_to_file(&tweak.path, tweak.value) {
             Ok(()) => success_count += 1,
             Err(e) => log::debug!("Failed to apply tweak {}: {}", tweak.path, e),
         }

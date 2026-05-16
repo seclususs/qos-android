@@ -1,7 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::hardware::DeviceTier;
-use crate::monitors::disk_monitor;
+use crate::hal::{hardware, monitors};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StorageKernelLimits {
@@ -27,9 +26,9 @@ pub struct StorageMathConfig {
 
 impl Default for StorageMathConfig {
     fn default() -> Self {
-        let tier = DeviceTier::get();
+        let tier = hardware::DeviceTier::get();
         match tier {
-            DeviceTier::Flagship => Self {
+            hardware::DeviceTier::Flagship => Self {
                 min_req_size_kb: 6.0,
                 max_req_size_kb: 768.0,
                 write_cost_factor: 3.5,
@@ -41,7 +40,7 @@ impl Default for StorageMathConfig {
                 smoothing_factor: 0.55,
                 idle_poll_interval: 5000.0,
             },
-            DeviceTier::MidRange => Self {
+            hardware::DeviceTier::MidRange => Self {
                 min_req_size_kb: 7.0,
                 max_req_size_kb: 640.0,
                 write_cost_factor: 4.0,
@@ -53,7 +52,7 @@ impl Default for StorageMathConfig {
                 smoothing_factor: 0.52,
                 idle_poll_interval: 5000.0,
             },
-            DeviceTier::LowEnd => Self {
+            hardware::DeviceTier::LowEnd => Self {
                 min_req_size_kb: 8.0,
                 max_req_size_kb: 512.0,
                 write_cost_factor: 4.5,
@@ -116,8 +115,8 @@ pub fn should_update_nr_requests(
 }
 
 pub fn calculate_io_deltas(
-    current: &disk_monitor::IoStats,
-    prev: &disk_monitor::IoStats,
+    current: &monitors::IoStats,
+    prev: &monitors::IoStats,
     dt_real: f32,
 ) -> IoDelta {
     if dt_real <= 0.000_001 {
