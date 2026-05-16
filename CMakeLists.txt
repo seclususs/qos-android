@@ -9,7 +9,7 @@ project(QoS
 # Global Configuration
 # ==============================================================================
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -84,7 +84,7 @@ file(GLOB_RECURSE NATIVE_SOURCES CONFIGURE_DEPENDS
     "${NATIVE_ROOT_DIR}/src/*.cpp"
 )
 file(GLOB_RECURSE NATIVE_HEADERS CONFIGURE_DEPENDS
-    "${NATIVE_ROOT_DIR}/include/*.h"
+    "${NATIVE_ROOT_DIR}/include/*.hpp"
 )
 
 list(REMOVE_ITEM NATIVE_SOURCES
