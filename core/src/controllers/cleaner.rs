@@ -1,10 +1,10 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::bindings::sys;
+use crate::config::paths;
 use crate::daemon::{state, traits, types};
 use crate::hal::{thermal, traversal};
 use crate::monitors::psi_monitor;
-use crate::resources::sys_paths;
 
 use std::{ffi, fs, io, os, path, sync, thread, time};
 
@@ -313,9 +313,9 @@ impl CleanerController {
             })?;
 
         Ok(Self {
-            io_monitor: psi_monitor::PsiMonitor::new(sys_paths::K_PSI_IO_PATH)?,
-            cpu_monitor: psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?,
-            thermal: thermal::ThermalSensor::new(sys_paths::K_BATTERY_TEMP_PATH, 35.0),
+            io_monitor: psi_monitor::PsiMonitor::new(paths::K_PSI_IO_PATH)?,
+            cpu_monitor: psi_monitor::PsiMonitor::new(paths::K_PSI_CPU_PATH)?,
+            thermal: thermal::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0),
             tunables,
             last_sweep: time::Instant::now()
                 .checked_sub(time::Duration::from_secs(SECONDS_PER_DAY))

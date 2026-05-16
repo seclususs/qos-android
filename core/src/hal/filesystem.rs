@@ -1,7 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::bindings::cstr;
 use crate::daemon::types;
-use crate::utils::strings;
 
 use std::{fs, os, path};
 
@@ -69,7 +69,7 @@ pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::Qos
 
 pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
     validate_path_secure(path)?;
-    if !strings::validate_value(value) {
+    if !cstr::validate_value(value) {
         return Err(types::QosError::SystemCheckFailed(format!(
             "Invalid characters in value for {path}: '{value}'"
         )));

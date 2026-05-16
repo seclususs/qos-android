@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::config::loop_settings;
+use crate::config::runtime;
 
 use std::time;
 
@@ -45,28 +45,33 @@ impl AdaptivePoller {
             .duration_since(time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
+
         Self {
-            current_interval: loop_settings::MIN_POLLING_MS,
+            current_interval: runtime::MIN_POLLING_MS,
             last_tick: time::Instant::now(),
-            target_interval: loop_settings::MIN_POLLING_MS,
+            target_interval: runtime::MIN_POLLING_MS,
             weight_pressure,
             weight_derivative,
             rng_state: start_seed,
             tunables,
         }
     }
+
     #[inline]
     fn next_random(&mut self, range: u64) -> u64 {
         if range == 0 {
             return 0;
         }
+
         self.rng_state = self
             .rng_state
             .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(1);
+
         let limit = range * 2;
         self.rng_state % (limit + 1)
     }
+
     pub fn calculate_next_interval(
         &mut self,
         current_pressure: f32,
@@ -78,16 +83,18 @@ impl AdaptivePoller {
         if elapsed_ms > (self.current_interval + self.tunables.sleep_tolerance_ms) {
             log::debug!("Time Discontinuity (Sleep?): {elapsed_ms}ms.");
             self.last_tick = now;
-            self.current_interval = loop_settings::MIN_POLLING_MS;
-            return loop_settings::MIN_POLLING_MS;
+            self.current_interval = runtime::MIN_POLLING_MS;
+            return runtime::MIN_POLLING_MS;
         }
+
         let (dynamic_min, dynamic_max) = if avg300 < 2.0 && current_pressure < 10.0 {
-            (6000u64, loop_settings::MAX_POLLING_MS)
+            (6000u64, runtime::MAX_POLLING_MS)
         } else if avg300 > 20.0 {
-            (loop_settings::MIN_POLLING_MS, 5000u64)
+            (runtime::MIN_POLLING_MS, 5000u64)
         } else {
-            (loop_settings::MIN_POLLING_MS, loop_settings::MAX_POLLING_MS)
+            (runtime::MIN_POLLING_MS, runtime::MAX_POLLING_MS)
         };
+
         let rate_change = pressure_velocity;
         let prediction = current_pressure + (rate_change * 0.5);
         let p_term = prediction * self.weight_pressure;
@@ -95,6 +102,7 @@ impl AdaptivePoller {
         let priority_score = (p_term + d_term).clamp(0.0, 100.0);
         let raw_interval =
             dynamic_max as f32 - ((priority_score / 100.0) * (dynamic_max - dynamic_min) as f32);
+
         let target_f32 = self.target_interval as f32;
         let next_target = if raw_interval < target_f32 {
             let alpha = self.tunables.fall_factor;
@@ -103,29 +111,36 @@ impl AdaptivePoller {
             let alpha = self.tunables.rise_factor;
             (alpha * raw_interval) + ((1.0 - alpha) * target_f32)
         };
+
         self.target_interval = next_target as u64;
+
         let diff = self.target_interval.abs_diff(self.current_interval);
         self.last_tick = now;
         if diff < self.tunables.hysteresis_threshold_ms {
             return self.apply_discrete_math_mut(self.current_interval, dynamic_min, dynamic_max);
         }
+
         self.current_interval = self.target_interval;
         self.apply_discrete_math_mut(self.current_interval, dynamic_min, dynamic_max)
     }
+
     fn apply_discrete_math_mut(&mut self, interval: u64, min_limit: u64, max_limit: u64) -> u64 {
         let step = self.tunables.quantization_step_ms as f32;
         let quantized = ((interval as f32 / step).round() * step) as u64;
         let clamped = quantized.clamp(min_limit, max_limit);
+
         let noise_amplitude = (clamped * self.tunables.noise_percent) / 100;
         if noise_amplitude == 0 {
             return clamped;
         }
         let noise_val = self.next_random(noise_amplitude);
+
         let final_val = if noise_val > noise_amplitude {
             clamped + (noise_val - noise_amplitude)
         } else {
             clamped.saturating_sub(noise_amplitude - noise_val)
         };
+
         final_val.clamp(min_limit, max_limit)
     }
 }

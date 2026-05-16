@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::config::loop_settings;
+use crate::config::runtime;
 use crate::daemon::{state, traits, types};
 use crate::hal::{bridge, filesystem, properties};
 use crate::registry::{file_tweaks, prop_tweaks};
@@ -26,9 +26,7 @@ impl RecoverableService {
         F: Fn() -> types::Result<Box<dyn traits::EventHandler>> + Send + Sync + 'static,
     {
         let initial_cooldown = time::Instant::now()
-            .checked_sub(time::Duration::from_secs(
-                loop_settings::COOLDOWN_DURATION_SEC,
-            ))
+            .checked_sub(time::Duration::from_secs(runtime::COOLDOWN_DURATION_SEC))
             .unwrap_or(time::Instant::now());
 
         Self {
@@ -46,6 +44,7 @@ impl RecoverableService {
         if self.is_permanently_disabled {
             return false;
         }
+
         match (self.factory)() {
             Ok(handler) => {
                 log::info!("Service '{}' initialized successfully.", self.name);
@@ -54,6 +53,7 @@ impl RecoverableService {
                 self.last_tick = time::Instant::now();
                 true
             }
+
             Err(e) => {
                 match &e {
                     types::QosError::IoError(io_err)
@@ -66,6 +66,7 @@ impl RecoverableService {
                         );
                         self.is_permanently_disabled = true;
                     }
+
                     types::QosError::SystemCheckFailed(msg)
                     | types::QosError::PermissionDenied(msg) => {
                         log::error!(
@@ -125,11 +126,13 @@ fn epoll_mod(
 
     if let Err(e) = res {
         let errno = e.raw_os_error();
+
         if (op == libc::EPOLL_CTL_DEL && errno == libc::ENOENT)
             || (op == libc::EPOLL_CTL_ADD && errno == libc::EEXIST)
         {
             return true;
         }
+
         log::warn!("Epoll op {op} failed for ID {id}: {e}");
         return false;
     }
@@ -198,29 +201,29 @@ pub fn wait_for_boot_completion(tag: &str) {
         if state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
             return;
         }
+
         if let Ok(val) = properties::get_system_property("sys.boot_completed")
             && val == "1"
         {
             break;
         }
+
         retry_count += 1;
-        if retry_count > loop_settings::BOOT_WAIT_RETRY_LIMIT {
+        if retry_count > runtime::BOOT_WAIT_RETRY_LIMIT {
             log::warn!("Rust [{tag}]: Boot property timeout.");
             break;
         }
-        thread::sleep(time::Duration::from_secs(
-            loop_settings::BOOT_POLL_INTERVAL_SEC,
-        ));
+
+        thread::sleep(time::Duration::from_secs(runtime::BOOT_POLL_INTERVAL_SEC));
     }
 
     if !state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
         log::info!(
             "Rust [{tag}]: Stabilizing for {}s...",
-            loop_settings::STABILIZATION_DELAY_SEC
+            runtime::STABILIZATION_DELAY_SEC
         );
-        thread::sleep(time::Duration::from_secs(
-            loop_settings::STABILIZATION_DELAY_SEC,
-        ));
+
+        thread::sleep(time::Duration::from_secs(runtime::STABILIZATION_DELAY_SEC));
     }
 }
 
@@ -230,15 +233,15 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()
         .map_err(|e| types::QosError::SystemCheckFailed(format!("Failed to create epoll: {e}")))?;
 
     let mut context = state::DaemonContext::new();
-    let cooldown_dur = time::Duration::from_secs(loop_settings::COOLDOWN_DURATION_SEC);
+    let cooldown_dur = time::Duration::from_secs(runtime::COOLDOWN_DURATION_SEC);
 
-    let mut events: [libc::epoll_event; loop_settings::MAX_EVENTS] =
-        [libc::epoll_event { events: 0, u64: 0 }; loop_settings::MAX_EVENTS];
+    let mut events: [libc::epoll_event; runtime::MAX_EVENTS] =
+        [libc::epoll_event { events: 0, u64: 0 }; runtime::MAX_EVENTS];
 
     while !state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
         let now = time::Instant::now();
         let mut next_wakeup =
-            now + time::Duration::from_millis(loop_settings::MAX_EPOLL_TIMEOUT_MS as u64);
+            now + time::Duration::from_millis(runtime::MAX_EPOLL_TIMEOUT_MS as u64);
 
         for (i, service) in services.iter_mut().enumerate() {
             if service.is_permanently_disabled {
@@ -303,7 +306,7 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()
             libc::epoll_wait(
                 os::fd::AsRawFd::as_raw_fd(&epoll_fd),
                 events.as_mut_ptr(),
-                loop_settings::MAX_EVENTS as i32,
+                runtime::MAX_EVENTS as i32,
                 min_wait_ms,
             )
         };

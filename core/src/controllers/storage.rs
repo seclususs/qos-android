@@ -1,11 +1,11 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::{poller, storage};
-use crate::config::{kernel_limits, loop_settings};
+use crate::config::paths;
+use crate::config::{limits, runtime};
 use crate::daemon::{state, traits, types};
 use crate::hal::{filesystem, kernel};
 use crate::monitors::{disk_monitor, psi_monitor};
-use crate::resources::sys_paths;
 use crate::utils::{cached_file, math};
 
 use std::{fs, io, os, time};
@@ -37,7 +37,7 @@ impl StorageController {
     pub fn new() -> types::Result<Self> {
         log::info!("StorageController: Initializing...");
 
-        let config_limits = kernel_limits::GlobalConfig::default().storage_config;
+        let config_limits = limits::GlobalConfig::default().storage_config;
         let storage_math_config = storage::StorageMathConfig::default();
         let storage_kernel_limits = storage::StorageKernelLimits {
             min_read_ahead: config_limits.min_read_ahead as f32,
@@ -47,12 +47,12 @@ impl StorageController {
         };
 
         let raw_fd =
-            kernel::register_psi_trigger(sys_paths::K_PSI_IO_PATH, PSI_THRESHOLD_US, PSI_WINDOW_US)
+            kernel::register_psi_trigger(paths::K_PSI_IO_PATH, PSI_THRESHOLD_US, PSI_WINDOW_US)
                 .map_err(|e| types::QosError::FfiError(format!("Storage PSI Error: {e}")))?;
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
 
-        let ra_path = sys_paths::get_read_ahead_path();
-        let nr_path = sys_paths::get_nr_requests_path();
+        let ra_path = paths::get_read_ahead_path();
+        let nr_path = paths::get_nr_requests_path();
 
         let read_ahead = cached_file::CachedFile::new_opt(
             filesystem::open_file_for_write(ra_path.to_str().unwrap_or_default()).ok(),
@@ -70,9 +70,9 @@ impl StorageController {
             ));
         }
 
-        let psi_monitor = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_IO_PATH)?;
+        let psi_monitor = psi_monitor::PsiMonitor::new(paths::K_PSI_IO_PATH)?;
 
-        let stats_path = sys_paths::get_diskstats_path();
+        let stats_path = paths::get_diskstats_path();
         let mut disk_monitor =
             disk_monitor::DiskMonitor::new(stats_path.to_str().unwrap_or_default())?;
 
@@ -100,7 +100,7 @@ impl StorageController {
             current_read_ahead: config_limits.min_read_ahead as f32,
             current_nr_requests: config_limits.max_nr_requests as f32,
             poller,
-            next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
+            next_wake_ms: runtime::MIN_POLLING_MS as i32,
         };
 
         controller.apply_values(true);
@@ -183,7 +183,7 @@ impl StorageController {
             current_io_stats.in_flight as f32,
             &self.storage_math_config,
         ) {
-            self.next_wake_ms = loop_settings::MIN_POLLING_MS as i32;
+            self.next_wake_ms = runtime::MIN_POLLING_MS as i32;
         } else {
             self.next_wake_ms = self.poller.calculate_next_interval(
                 psi_data.some.current,

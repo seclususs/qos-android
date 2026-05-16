@@ -1,11 +1,11 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::{cpu, poller, thermal};
-use crate::config::{kernel_limits, loop_settings};
+use crate::config::paths;
+use crate::config::{limits, runtime};
 use crate::daemon::{state, traits, types};
 use crate::hal;
 use crate::monitors::psi_monitor;
-use crate::resources::sys_paths;
 use crate::utils::{cached_file, math};
 
 use std::{fs, io, os, time};
@@ -53,7 +53,7 @@ impl CpuController {
     pub fn new() -> types::Result<Self> {
         log::info!("CpuController: Initializing...");
 
-        let config_limits = kernel_limits::GlobalConfig::default().cpu_config;
+        let config_limits = limits::GlobalConfig::default().cpu_config;
         let cpu_math_config = cpu::CpuMathConfig::default();
         let cpu_kernel_limits = cpu::CpuKernelLimits {
             min_latency_ns: config_limits.min_latency_ns as f32,
@@ -71,7 +71,7 @@ impl CpuController {
         };
 
         let raw_fd = hal::kernel::register_psi_trigger(
-            sys_paths::K_PSI_CPU_PATH,
+            paths::K_PSI_CPU_PATH,
             PSI_THRESHOLD_US,
             PSI_WINDOW_US,
         )
@@ -79,44 +79,44 @@ impl CpuController {
         let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
 
         let latency = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(sys_paths::K_SCHED_LATENCY_NS).ok(),
+            hal::filesystem::open_file_for_write(paths::K_SCHED_LATENCY_NS).ok(),
             0,
         );
 
         let min_gran = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(sys_paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
+            hal::filesystem::open_file_for_write(paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
             0,
         );
 
         let wakeup = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(sys_paths::K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
+            hal::filesystem::open_file_for_write(paths::K_SCHED_WAKEUP_GRANULARITY_NS).ok(),
             0,
         );
 
         let migration = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(sys_paths::K_SCHED_MIGRATION_COST_NS).ok(),
+            hal::filesystem::open_file_for_write(paths::K_SCHED_MIGRATION_COST_NS).ok(),
             0,
         );
 
         let walt_init = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(sys_paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
+            hal::filesystem::open_file_for_write(paths::K_SCHED_WALT_INIT_TASK_LOAD_PCT).ok(),
             config_limits.min_walt_init_pct,
         );
 
         let uclamp_min = cached_file::CachedFile::new_opt(
-            hal::filesystem::open_file_for_write(sys_paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
+            hal::filesystem::open_file_for_write(paths::K_SCHED_UCLAMP_UTIL_MIN).ok(),
             config_limits.min_uclamp_min,
         );
 
-        let psi_cpu = psi_monitor::PsiMonitor::new(sys_paths::K_PSI_CPU_PATH)?;
+        let psi_cpu = psi_monitor::PsiMonitor::new(paths::K_PSI_CPU_PATH)?;
 
-        let cpu_path = sys_paths::get_cpu_temp_path();
+        let cpu_path = paths::get_cpu_temp_path();
         let cpu_sensor =
             hal::thermal::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
 
-        let battery_sensor = hal::thermal::ThermalSensor::new(sys_paths::K_BATTERY_TEMP_PATH, 35.0);
+        let battery_sensor = hal::thermal::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0);
         let battery_capacity_sensor =
-            hal::battery::BatterySensor::new(sys_paths::K_BATTERY_CAPACITY_PATH);
+            hal::battery::BatterySensor::new(paths::K_BATTERY_CAPACITY_PATH);
 
         let thermal_config = thermal::ThermalConfig::default();
         let thermal_manager = thermal::ThermalManager::default();
@@ -155,7 +155,7 @@ impl CpuController {
             cpu_kernel_limits,
             last_tick: time::Instant::now(),
             poller,
-            next_wake_ms: loop_settings::MIN_POLLING_MS as i32,
+            next_wake_ms: runtime::MIN_POLLING_MS as i32,
         };
 
         controller.cached_bat_level = controller.battery_capacity_sensor.read();
