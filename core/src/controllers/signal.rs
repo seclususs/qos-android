@@ -5,33 +5,33 @@ use crate::daemon::{state, traits, types};
 use std::{fs, io, os, sync};
 
 pub struct SignalController {
-    file: fs::File,
+    signal_file: fs::File,
 }
 
 impl SignalController {
     /// # Safety
-    /// The caller must ensure that `fd` is a valid, open file descriptor that
+    /// The caller must ensure that `signal_fd` is a valid, open file descriptor that
     /// this process has ownership of. The `SignalController` will take ownership
     /// of this FD and close it when dropped.
-    pub unsafe fn new(fd: os::fd::RawFd) -> Self {
+    pub unsafe fn new(signal_fd: os::fd::RawFd) -> Self {
         Self {
             // Safety: Inherits the safety requirements of FromRawFd::from_raw_fd
-            file: unsafe { os::fd::FromRawFd::from_raw_fd(fd) },
+            signal_file: unsafe { os::fd::FromRawFd::from_raw_fd(signal_fd) },
         }
     }
 }
 
 impl traits::EventHandler for SignalController {
     fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.file)
+        os::fd::AsRawFd::as_raw_fd(&self.signal_file)
     }
     fn on_event(
         &mut self,
         _context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
         log::info!("SignalController: Signal received from Kernel.");
-        let mut buf = [0u8; 128];
-        match io::Read::read(&mut self.file, &mut buf) {
+        let mut buffer = [0u8; 128];
+        match io::Read::read(&mut self.signal_file, &mut buffer) {
             Ok(bytes_read) if bytes_read > 0 => {
                 log::info!("SignalController: Requesting shutdown...");
                 state::SHUTDOWN_REQUESTED.store(true, sync::atomic::Ordering::Release);

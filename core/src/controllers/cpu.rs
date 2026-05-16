@@ -8,33 +8,46 @@ use crate::hal::{kernel, monitors, sensors, sysfs};
 
 use std::{fs, io, os, time};
 
-const POLL_WEIGHT_PRESSURE: f32 = 1.5;
-const POLL_WEIGHT_DERIVATIVE: f32 = 0.05;
+#[derive(Debug, Clone, Copy)]
+struct ControllerConfig {
+    poll_weight_pressure: f32,
+    poll_weight_derivative: f32,
+    battery_check_interval_sec: u64,
+    psi_threshold_us: i32,
+    psi_window_us: i32,
+}
 
-const BATTERY_CHECK_INTERVAL_SEC: u64 = 5;
-
-const PSI_THRESHOLD_US: i32 = 100_000;
-const PSI_WINDOW_US: i32 = 1_000_000;
+impl Default for ControllerConfig {
+    fn default() -> Self {
+        Self {
+            poll_weight_pressure: 1.5,
+            poll_weight_derivative: 0.05,
+            battery_check_interval_sec: 5,
+            psi_threshold_us: 100_000,
+            psi_window_us: 1_000_000,
+        }
+    }
+}
 
 pub struct CpuController {
-    fd: fs::File,
+    trigger_fd: fs::File,
     latency: sysfs::CachedFile,
-    min_gran: sysfs::CachedFile,
+    min_granularity: sysfs::CachedFile,
     wakeup: sysfs::CachedFile,
     migration: sysfs::CachedFile,
     walt_init: sysfs::CachedFile,
     uclamp_min: sysfs::CachedFile,
-    psi_cpu: monitors::PsiMonitor,
+    psi_cpu_monitor: monitors::PsiMonitor,
     thermal_manager: thermal::ThermalManager,
     thermal_config: thermal::ThermalConfig,
     cpu_sensor: sensors::ThermalSensor,
     battery_sensor: sensors::ThermalSensor,
     battery_capacity_sensor: sensors::BatterySensor,
-    cached_bat_level: f32,
-    cached_bat_temp: f32,
-    last_bat_check: time::Instant,
+    cached_battery_level: f32,
+    cached_battery_temp: f32,
+    last_battery_check: time::Instant,
     current_latency: f32,
-    current_min_gran: f32,
+    current_min_granularity: f32,
     current_wakeup: f32,
     current_migration: f32,
     current_walt_init: f32,
@@ -42,8 +55,9 @@ pub struct CpuController {
     load_state: cpu::LoadState,
     cpu_math_config: cpu::CpuMathConfig,
     cpu_kernel_limits: cpu::CpuKernelLimits,
+    controller_config: ControllerConfig,
     last_tick: time::Instant,
-    poller: poller::AdaptivePoller,
+    adaptive_poller: poller::AdaptivePoller,
     next_wake_ms: i32,
 }
 
@@ -53,6 +67,8 @@ impl CpuController {
 
         let config_limits = limits::GlobalConfig::default().cpu_config;
         let cpu_math_config = cpu::CpuMathConfig::default();
+        let controller_config = ControllerConfig::default();
+
         let cpu_kernel_limits = cpu::CpuKernelLimits {
             min_latency_ns: config_limits.min_latency_ns as f32,
             max_latency_ns: config_limits.max_latency_ns as f32,
@@ -68,17 +84,20 @@ impl CpuController {
             max_uclamp_min: config_limits.max_uclamp_min as f32,
         };
 
-        let raw_fd =
-            kernel::register_psi_trigger(paths::K_PSI_CPU_PATH, PSI_THRESHOLD_US, PSI_WINDOW_US)
-                .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {e}")))?;
-        let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
+        let raw_trigger_fd = kernel::register_psi_trigger(
+            paths::K_PSI_CPU_PATH,
+            controller_config.psi_threshold_us,
+            controller_config.psi_window_us,
+        )
+        .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {e}")))?;
+        let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
         let latency = sysfs::CachedFile::new_opt(
             sysfs::open_file_for_write(paths::K_SCHED_LATENCY_NS).ok(),
             0,
         );
 
-        let min_gran = sysfs::CachedFile::new_opt(
+        let min_granularity = sysfs::CachedFile::new_opt(
             sysfs::open_file_for_write(paths::K_SCHED_MIN_GRANULARITY_NS).ok(),
             0,
         );
@@ -103,7 +122,7 @@ impl CpuController {
             config_limits.min_uclamp_min,
         );
 
-        let psi_cpu = monitors::PsiMonitor::new(paths::K_PSI_CPU_PATH)?;
+        let psi_cpu_monitor = monitors::PsiMonitor::new(paths::K_PSI_CPU_PATH)?;
 
         let cpu_path = paths::get_cpu_temp_path();
         let cpu_sensor = sensors::ThermalSensor::new(cpu_path.to_str().unwrap_or_default(), 70.0);
@@ -114,31 +133,31 @@ impl CpuController {
         let thermal_config = thermal::ThermalConfig::default();
         let thermal_manager = thermal::ThermalManager::default();
 
-        let poller = poller::AdaptivePoller::new(
-            POLL_WEIGHT_PRESSURE,
-            POLL_WEIGHT_DERIVATIVE,
+        let adaptive_poller = poller::AdaptivePoller::new(
+            controller_config.poll_weight_pressure,
+            controller_config.poll_weight_derivative,
             poller::PollerConfig::default(),
         );
 
         let mut controller = Self {
-            fd,
+            trigger_fd,
             latency,
-            min_gran,
+            min_granularity,
             wakeup,
             migration,
             walt_init,
             uclamp_min,
-            psi_cpu,
+            psi_cpu_monitor,
             thermal_manager,
             thermal_config,
             cpu_sensor,
             battery_sensor,
             battery_capacity_sensor,
-            cached_bat_level: 50.0,
-            cached_bat_temp: 35.0,
-            last_bat_check: time::Instant::now(),
+            cached_battery_level: 50.0,
+            cached_battery_temp: 35.0,
+            last_battery_check: time::Instant::now(),
             current_latency: config_limits.min_latency_ns as f32,
-            current_min_gran: config_limits.min_granularity_ns as f32,
+            current_min_granularity: config_limits.min_granularity_ns as f32,
             current_wakeup: config_limits.min_wakeup_ns as f32,
             current_migration: config_limits.min_migration_cost as f32,
             current_walt_init: config_limits.min_walt_init_pct as f32,
@@ -146,149 +165,157 @@ impl CpuController {
             load_state: cpu::LoadState::default(),
             cpu_math_config,
             cpu_kernel_limits,
+            controller_config,
             last_tick: time::Instant::now(),
-            poller,
+            adaptive_poller,
             next_wake_ms: runtime::MIN_POLLING_MS as i32,
         };
 
-        controller.cached_bat_level = controller.battery_capacity_sensor.read();
-        controller.cached_bat_temp = controller.battery_sensor.read();
+        controller.cached_battery_level = controller.battery_capacity_sensor.read();
+        controller.cached_battery_temp = controller.battery_sensor.read();
         controller.apply_values(true);
 
         Ok(controller)
     }
 
-    fn update_dynamics(&mut self, context: &mut state::DaemonContext) -> types::Result<()> {
-        let data_cpu = self.psi_cpu.read_state()?;
-        let some_cpu = data_cpu.some;
-        let io_psi = context.pressure.io_psi;
-        let target_psi = some_cpu.current;
-        let is_break = some_cpu.nis > self.cpu_math_config.nis_threshold;
+    fn update_cpu_logic(&mut self, context: &mut state::DaemonContext) -> types::Result<()> {
+        let cpu_psi_data = self.psi_cpu_monitor.read_state()?;
+        let cpu_some_trend = cpu_psi_data.some;
+        let current_io_psi = context.pressure.io_psi;
+        let target_psi = cpu_some_trend.current;
+        let is_structural_break = cpu_some_trend.nis > self.cpu_math_config.nis_threshold;
         let cpu_temp = self.cpu_sensor.read();
         let now = time::Instant::now();
 
-        if now.duration_since(self.last_bat_check).as_secs() >= BATTERY_CHECK_INTERVAL_SEC {
-            self.cached_bat_level = self.battery_capacity_sensor.read();
-            self.cached_bat_temp = self.battery_sensor.read();
-            self.last_bat_check = now;
+        if now.duration_since(self.last_battery_check).as_secs()
+            >= self.controller_config.battery_check_interval_sec
+        {
+            self.cached_battery_level = self.battery_capacity_sensor.read();
+            self.cached_battery_temp = self.battery_sensor.read();
+            self.last_battery_check = now;
         }
-        let bat_level = self.cached_bat_level;
-        let bat_temp = self.cached_bat_temp;
+
+        let battery_level = self.cached_battery_level;
+        let battery_temp = self.cached_battery_temp;
 
         let thermal_scale =
             self.thermal_manager
-                .update(cpu_temp, bat_temp, target_psi, &self.thermal_config);
+                .update(cpu_temp, battery_temp, target_psi, &self.thermal_config);
 
-        let trend_factor = cpu::calculate_trend_gain(some_cpu.velocity);
+        let trend_factor = cpu::calculate_trend_gain(cpu_some_trend.velocity);
 
-        let dt_duration = now.duration_since(self.last_tick);
+        let elapsed_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
-        let dt_real = dt_duration.as_secs_f32().max(0.000_001);
-        let dt_safe = cpu::sanitize_dt(dt_real);
+        let elapsed_sec = elapsed_duration.as_secs_f32().max(0.000_001);
+        let safe_elapsed_sec = cpu::sanitize_dt(elapsed_sec);
 
         let (integral_total, integral_dot) = cpu::update_integral_params(
             &mut self.load_state,
-            bat_level,
-            dt_safe,
+            battery_level,
+            safe_elapsed_sec,
             &self.cpu_math_config,
         );
 
         let demand_input = cpu::DemandInput {
             target_psi,
-            psi_velocity: some_cpu.velocity,
-            dt_real,
-            dt_safe,
+            psi_velocity: cpu_some_trend.velocity,
+            dt_real: elapsed_sec,
+            dt_safe: safe_elapsed_sec,
             thermal_scale,
             trend_factor,
             integral_total,
             integral_dot,
-            is_structural_break: is_break,
+            is_structural_break,
         };
 
         let load_demand =
             cpu::calculate_load_demand(&mut self.load_state, demand_input, &self.cpu_math_config);
 
-        let p_eff = cpu::calculate_effective_pressure(
+        let effective_pressure = cpu::calculate_effective_pressure(
             load_demand,
             trend_factor,
-            io_psi,
+            current_io_psi,
             &self.cpu_math_config,
         );
 
-        context.pressure.cpu_psi = p_eff;
+        context.pressure.cpu_psi = effective_pressure;
 
-        let mut calculated_poll =
-            self.poller
-                .calculate_next_interval(p_eff, some_cpu.avg300, some_cpu.velocity)
-                as i32;
+        let mut calculated_poll_interval_ms = self.adaptive_poller.calculate_next_interval(
+            effective_pressure,
+            cpu_some_trend.avg300,
+            cpu_some_trend.velocity,
+        ) as i32;
 
         if cpu::is_transient(&self.load_state, target_psi, &self.cpu_math_config) {
-            calculated_poll =
-                calculated_poll.min(self.cpu_math_config.transient_poll_interval as i32);
+            calculated_poll_interval_ms = calculated_poll_interval_ms
+                .min(self.cpu_math_config.transient_poll_interval as i32);
         }
-        self.next_wake_ms = calculated_poll;
+
+        self.next_wake_ms = calculated_poll_interval_ms;
 
         let thermal_min_latency_ns =
             cpu::calculate_thermal_latency_limit(thermal_scale, &self.cpu_kernel_limits);
 
-        let (target_latency, target_min_gran) = cpu::calculate_latency_and_granularity(
-            p_eff,
+        let (target_latency, target_min_granularity) = cpu::calculate_latency_and_granularity(
+            effective_pressure,
             load_demand,
             thermal_min_latency_ns,
             &self.cpu_math_config,
             &self.cpu_kernel_limits,
         );
 
-        let target_migration =
-            cpu::calculate_migration_cost(some_cpu.velocity, p_eff, &self.cpu_kernel_limits);
+        let target_migration = cpu::calculate_migration_cost(
+            cpu_some_trend.velocity,
+            effective_pressure,
+            &self.cpu_kernel_limits,
+        );
 
         let target_wakeup = cpu::calculate_wakeup_granularity(
-            p_eff,
+            effective_pressure,
             &self.cpu_math_config,
             &self.cpu_kernel_limits,
         );
 
-        let target_walt_init = cpu::calculate_walt_init(p_eff, &self.cpu_kernel_limits);
+        let target_walt_init =
+            cpu::calculate_walt_init(effective_pressure, &self.cpu_kernel_limits);
 
         let target_uclamp = cpu::calculate_uclamp_min(
-            p_eff,
+            effective_pressure,
             thermal_scale,
             &self.cpu_math_config,
             &self.cpu_kernel_limits,
         );
 
         self.current_latency = target_latency;
-        self.current_min_gran = target_min_gran;
+        self.current_min_granularity = target_min_granularity;
         self.current_wakeup = target_wakeup;
         self.current_migration = target_migration;
         self.current_walt_init = target_walt_init;
         self.current_uclamp_min = target_uclamp;
-
         self.apply_values(false);
-
         Ok(())
     }
 
     fn apply_values(&mut self, force: bool) {
-        let lat_u64 = helpers::sanitize_to_clean_u64(
+        let latency_u64 = helpers::sanitize_to_clean_u64(
             self.current_latency,
             self.cpu_kernel_limits.max_latency_ns as u64,
             50_000,
         );
 
-        let gran_u64 = helpers::sanitize_to_clean_u64(
-            self.current_min_gran,
+        let granularity_u64 = helpers::sanitize_to_clean_u64(
+            self.current_min_granularity,
             self.cpu_kernel_limits.max_granularity_ns as u64,
             50_000,
         );
 
-        let wake_u64 = helpers::sanitize_to_clean_u64(
+        let wakeup_u64 = helpers::sanitize_to_clean_u64(
             self.current_wakeup,
             self.cpu_kernel_limits.max_wakeup_ns as u64,
             50_000,
         );
 
-        let mig_u64 = helpers::sanitize_to_clean_u64(
+        let migration_u64 = helpers::sanitize_to_clean_u64(
             self.current_migration,
             self.cpu_kernel_limits.min_migration_cost as u64,
             50_000,
@@ -305,16 +332,19 @@ impl CpuController {
         );
 
         self.latency
-            .update(lat_u64, force, &sysfs::CheckStrategy::Relative(0.10));
+            .update(latency_u64, force, &sysfs::CheckStrategy::Relative(0.10));
 
-        self.min_gran
-            .update(gran_u64, force, &sysfs::CheckStrategy::Relative(0.10));
+        self.min_granularity.update(
+            granularity_u64,
+            force,
+            &sysfs::CheckStrategy::Relative(0.10),
+        );
 
         self.wakeup
-            .update(wake_u64, force, &sysfs::CheckStrategy::Relative(0.15));
+            .update(wakeup_u64, force, &sysfs::CheckStrategy::Relative(0.15));
 
         self.migration
-            .update(mig_u64, force, &sysfs::CheckStrategy::Absolute(50000));
+            .update(migration_u64, force, &sysfs::CheckStrategy::Absolute(50000));
 
         self.walt_init
             .update(walt_u64, force, &sysfs::CheckStrategy::Absolute(5));
@@ -326,16 +356,16 @@ impl CpuController {
 
 impl traits::EventHandler for CpuController {
     fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.fd)
+        os::fd::AsRawFd::as_raw_fd(&self.trigger_fd)
     }
 
     fn on_event(
         &mut self,
         context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
-        let mut buf = [0u8; 8];
-        let _ = io::Read::read(&mut self.fd, &mut buf);
-        if let Err(e) = self.update_dynamics(context) {
+        let mut buffer = [0u8; 8];
+        let _ = io::Read::read(&mut self.trigger_fd, &mut buffer);
+        if let Err(e) = self.update_cpu_logic(context) {
             log::warn!("Cpu Logic Error: {e}");
         }
         Ok(traits::LoopAction::Continue)
@@ -345,7 +375,7 @@ impl traits::EventHandler for CpuController {
         &mut self,
         context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
-        if let Err(e) = self.update_dynamics(context) {
+        if let Err(e) = self.update_cpu_logic(context) {
             log::warn!("Cpu Timeout Error: {e}");
         }
         Ok(traits::LoopAction::Continue)

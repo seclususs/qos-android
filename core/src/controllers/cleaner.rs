@@ -39,16 +39,16 @@ impl Default for CleanerConfig {
 
 struct CleanerWorker {
     tunables: CleanerConfig,
-    rx: sync::mpsc::Receiver<()>,
+    sweep_rx: sync::mpsc::Receiver<()>,
 }
 
 impl CleanerWorker {
-    fn new(tunables: CleanerConfig, rx: sync::mpsc::Receiver<()>) -> Self {
-        Self { tunables, rx }
+    fn new(tunables: CleanerConfig, sweep_rx: sync::mpsc::Receiver<()>) -> Self {
+        Self { tunables, sweep_rx }
     }
 
     fn run(&mut self) {
-        while self.rx.recv().is_ok() {
+        while self.sweep_rx.recv().is_ok() {
             let items = self.perform_cycle();
             if items > 0 {
                 log::info!("Cleaner: Cycle complete. Removed {items} items.");
@@ -68,8 +68,8 @@ impl CleanerWorker {
         let free = stats.f_bavail * stats.f_frsize;
 
         if total > 0 {
-            let pct = (free as f32 / total as f32) * 100.0;
-            return pct < self.tunables.storage_critical_threshold;
+            let percentage = (free as f32 / total as f32) * 100.0;
+            return percentage < self.tunables.storage_critical_threshold;
         }
         false
     }
@@ -97,7 +97,7 @@ impl CleanerWorker {
     }
 
     #[inline]
-    fn is_trash_ext(name: &ffi::OsStr) -> bool {
+    fn is_trash_extension(name: &ffi::OsStr) -> bool {
         let bytes = os::unix::ffi::OsStrExt::as_bytes(name);
         bytes.ends_with(b".tmp")
             || bytes.ends_with(b".temp")
@@ -109,12 +109,12 @@ impl CleanerWorker {
     }
 
     fn perform_cycle(&mut self) -> usize {
-        let is_critical = self.is_storage_critical();
+        let is_storage_critical = self.is_storage_critical();
         let now = time::SystemTime::now();
         let mut total_cleaned = 0;
 
         total_cleaned += self.clean_system_paths(now);
-        total_cleaned += self.clean_app_caches(is_critical, now);
+        total_cleaned += self.clean_app_caches(is_storage_critical, now);
 
         total_cleaned
     }
@@ -123,9 +123,9 @@ impl CleanerWorker {
         let mut cleaned = 0;
         let tunables = self.tunables;
 
-        for sys in ["/data/anr", "/data/tombstones"] {
-            let p = path::Path::new(sys);
-            if !p.exists() {
+        for system_path in ["/data/anr", "/data/tombstones"] {
+            let dir_path = path::Path::new(system_path);
+            if !dir_path.exists() {
                 continue;
             }
 
@@ -134,19 +134,19 @@ impl CleanerWorker {
                     return traversal::TraversalAction::Keep;
                 }
 
-                let Ok(meta) = entry.metadata() else {
+                let Ok(file_metadata) = entry.metadata() else {
                     return traversal::TraversalAction::Keep;
                 };
 
-                let threshold = if Self::is_trash_ext(&entry.file_name()) {
+                let threshold = if Self::is_trash_extension(&entry.file_name()) {
                     tunables.age_trash
                 } else {
                     tunables.age_stale_media
                 };
 
-                if let Ok(modified) = meta.modified()
-                    && let Ok(diff) = now.duration_since(modified)
-                    && diff > threshold
+                if let Ok(modified) = file_metadata.modified()
+                    && let Ok(time_since_modified) = now.duration_since(modified)
+                    && time_since_modified > threshold
                 {
                     return traversal::TraversalAction::DeleteFile;
                 }
@@ -154,12 +154,12 @@ impl CleanerWorker {
                 traversal::TraversalAction::Keep
             };
 
-            cleaned += traversal::walk_and_act(p, &policy, 0);
+            cleaned += traversal::walk_and_act(dir_path, &policy, 0);
         }
         cleaned
     }
 
-    fn clean_app_caches(&self, is_critical: bool, now: time::SystemTime) -> usize {
+    fn clean_app_caches(&self, is_storage_critical: bool, now: time::SystemTime) -> usize {
         let mut cleaned = 0;
         let tunables = self.tunables;
 
@@ -174,11 +174,11 @@ impl CleanerWorker {
             };
 
             for entry in entries.flatten() {
-                let Ok(ft) = entry.file_type() else {
+                let Ok(file_type) = entry.file_type() else {
                     continue;
                 };
 
-                if !ft.is_dir() {
+                if !file_type.is_dir() {
                     continue;
                 }
 
@@ -186,7 +186,7 @@ impl CleanerWorker {
                 let cache_dir = app_dir.join("cache");
 
                 if cache_dir.exists() {
-                    let size = if is_critical {
+                    let cache_size_bytes = if is_storage_critical {
                         0
                     } else {
                         traversal::get_tree_size_capped(
@@ -195,9 +195,9 @@ impl CleanerWorker {
                         )
                     };
 
-                    let age = if is_critical {
+                    let target_age = if is_storage_critical {
                         tunables.age_emergency
-                    } else if size > tunables.bloat_limit_bytes {
+                    } else if cache_size_bytes > tunables.bloat_limit_bytes {
                         tunables.age_bloat
                     } else {
                         tunables.age_stale_media
@@ -205,23 +205,23 @@ impl CleanerWorker {
 
                     let policy =
                         |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-                            if !is_critical && Self::is_safe_name(&entry.file_name()) {
+                            if !is_storage_critical && Self::is_safe_name(&entry.file_name()) {
                                 return traversal::TraversalAction::Keep;
                             }
 
-                            let Ok(meta) = entry.metadata() else {
+                            let Ok(file_metadata) = entry.metadata() else {
                                 return traversal::TraversalAction::Keep;
                             };
 
-                            let threshold = if Self::is_trash_ext(&entry.file_name()) {
+                            let threshold = if Self::is_trash_extension(&entry.file_name()) {
                                 tunables.age_trash
                             } else {
-                                age
+                                target_age
                             };
 
-                            if let Ok(modified) = meta.modified()
-                                && let Ok(diff) = now.duration_since(modified)
-                                && diff > threshold
+                            if let Ok(modified) = file_metadata.modified()
+                                && let Ok(time_since_modified) = now.duration_since(modified)
+                                && time_since_modified > threshold
                             {
                                 return traversal::TraversalAction::DeleteFile;
                             }
@@ -234,7 +234,7 @@ impl CleanerWorker {
 
                 let code_dir = app_dir.join("code_cache");
                 if code_dir.exists() {
-                    let age = if is_critical {
+                    let target_age = if is_storage_critical {
                         tunables.age_emergency
                     } else {
                         tunables.age_stale_code
@@ -242,23 +242,23 @@ impl CleanerWorker {
 
                     let policy =
                         |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-                            if !is_critical && Self::is_safe_name(&entry.file_name()) {
+                            if !is_storage_critical && Self::is_safe_name(&entry.file_name()) {
                                 return traversal::TraversalAction::Keep;
                             }
 
-                            let Ok(meta) = entry.metadata() else {
+                            let Ok(file_metadata) = entry.metadata() else {
                                 return traversal::TraversalAction::Keep;
                             };
 
-                            let threshold = if Self::is_trash_ext(&entry.file_name()) {
+                            let threshold = if Self::is_trash_extension(&entry.file_name()) {
                                 tunables.age_trash
                             } else {
-                                age
+                                target_age
                             };
 
-                            if let Ok(modified) = meta.modified()
-                                && let Ok(diff) = now.duration_since(modified)
-                                && diff > threshold
+                            if let Ok(modified) = file_metadata.modified()
+                                && let Ok(time_since_modified) = now.duration_since(modified)
+                                && time_since_modified > threshold
                             {
                                 return traversal::TraversalAction::DeleteFile;
                             }
@@ -277,34 +277,35 @@ impl CleanerWorker {
 pub struct CleanerController {
     io_monitor: monitors::PsiMonitor,
     cpu_monitor: monitors::PsiMonitor,
-    thermal: sensors::ThermalSensor,
+    thermal_sensor: sensors::ThermalSensor,
     tunables: CleanerConfig,
     last_sweep: time::Instant,
-    dummy_fd: fs::File,
-    tx: sync::mpsc::Sender<()>,
+    event_fd: fs::File,
+    sweep_tx: sync::mpsc::Sender<()>,
 }
 
 impl CleanerController {
     pub fn new() -> types::Result<Self> {
         log::info!("CleanerController: Initializing...");
-        let evt = rustix::event::eventfd(
+        let event_fd_raw = rustix::event::eventfd(
             0,
             rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK,
         )
         .map_err(|e| {
             types::QosError::SystemCheckFailed(format!("Failed to create eventfd: {e}"))
         })?;
-        let dummy = unsafe { os::fd::FromRawFd::from_raw_fd(os::fd::IntoRawFd::into_raw_fd(evt)) };
+        let event_fd =
+            unsafe { os::fd::FromRawFd::from_raw_fd(os::fd::IntoRawFd::into_raw_fd(event_fd_raw)) };
 
         let tunables = CleanerConfig::default();
-        let (tx, rx) = sync::mpsc::channel();
+        let (sweep_tx, sweep_rx) = sync::mpsc::channel();
         let worker_tunables = tunables;
 
         thread::Builder::new()
             .name("CleanerWorker".into())
             .stack_size(64 * 1024)
             .spawn(move || {
-                let mut worker = CleanerWorker::new(worker_tunables, rx);
+                let mut worker = CleanerWorker::new(worker_tunables, sweep_rx);
                 worker.run();
             })
             .map_err(|e| {
@@ -314,13 +315,13 @@ impl CleanerController {
         Ok(Self {
             io_monitor: monitors::PsiMonitor::new(paths::K_PSI_IO_PATH)?,
             cpu_monitor: monitors::PsiMonitor::new(paths::K_PSI_CPU_PATH)?,
-            thermal: sensors::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0),
+            thermal_sensor: sensors::ThermalSensor::new(paths::K_BATTERY_TEMP_PATH, 35.0),
             tunables,
             last_sweep: time::Instant::now()
                 .checked_sub(time::Duration::from_secs(SECONDS_PER_DAY))
                 .unwrap_or_else(time::Instant::now),
-            dummy_fd: dummy,
-            tx,
+            event_fd,
+            sweep_tx,
         })
     }
 
@@ -333,8 +334,8 @@ impl CleanerController {
         let free = stats.f_bavail * stats.f_frsize;
 
         if total > 0 {
-            let pct = (free as f32 / total as f32) * 100.0;
-            return pct < self.tunables.storage_critical_threshold;
+            let percentage = (free as f32 / total as f32) * 100.0;
+            return percentage < self.tunables.storage_critical_threshold;
         }
         false
     }
@@ -342,15 +343,15 @@ impl CleanerController {
 
 impl traits::EventHandler for CleanerController {
     fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.dummy_fd)
+        os::fd::AsRawFd::as_raw_fd(&self.event_fd)
     }
 
     fn on_event(
         &mut self,
         _context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
-        let mut buf = [0u8; 8];
-        let _ = io::Read::read(&mut self.dummy_fd, &mut buf);
+        let mut buffer = [0u8; 8];
+        let _ = io::Read::read(&mut self.event_fd, &mut buffer);
         Ok(traits::LoopAction::Continue)
     }
 
@@ -365,38 +366,38 @@ impl traits::EventHandler for CleanerController {
         }
 
         let is_emergency = self.is_storage_critical();
-        let temp = self.thermal.read();
+        let temperature = self.thermal_sensor.read();
 
         if is_emergency {
-            if temp > 46.0 {
+            if temperature > 46.0 {
                 return Ok(traits::LoopAction::Continue);
             }
-        } else if temp > 40.0 {
+        } else if temperature > 40.0 {
             return Ok(traits::LoopAction::Continue);
         }
 
-        let io_busy = self
+        let is_io_busy = self
             .io_monitor
             .read_state()
             .is_ok_and(|d| d.some.avg10 > 3.0);
 
-        if !is_emergency && io_busy {
+        if !is_emergency && is_io_busy {
             return Ok(traits::LoopAction::Continue);
         }
 
         let cpu_stats_opt = self.cpu_monitor.read_state().ok();
         let cpu_avg10 = cpu_stats_opt.as_ref().map_or(0.0, |d| d.some.avg10);
-        let cpu_busy = cpu_avg10 > 3.0;
+        let is_cpu_busy = cpu_avg10 > 3.0;
 
         if is_emergency {
-            if cpu_busy && cpu_avg10 > 80.0 {
+            if is_cpu_busy && cpu_avg10 > 80.0 {
                 return Ok(traits::LoopAction::Continue);
             }
-        } else if cpu_busy {
+        } else if is_cpu_busy {
             return Ok(traits::LoopAction::Continue);
         }
 
-        match self.tx.send(()) {
+        match self.sweep_tx.send(()) {
             Ok(()) => self.last_sweep = now,
             Err(e) => log::error!("CleanerController: Failed to signal: {e}"),
         }

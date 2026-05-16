@@ -8,17 +8,30 @@ use crate::hal::{kernel, monitors, sysfs};
 
 use std::{fs, io, os, time};
 
-const POLL_WEIGHT_PRESSURE: f32 = 1.2;
-const POLL_WEIGHT_DERIVATIVE: f32 = 0.08;
+#[derive(Debug, Clone, Copy)]
+struct ControllerConfig {
+    poll_weight_pressure: f32,
+    poll_weight_derivative: f32,
+    psi_threshold_us: i32,
+    psi_window_us: i32,
+}
 
-const PSI_THRESHOLD_US: i32 = 250_000;
-const PSI_WINDOW_US: i32 = 1_000_000;
+impl Default for ControllerConfig {
+    fn default() -> Self {
+        Self {
+            poll_weight_pressure: 1.2,
+            poll_weight_derivative: 0.08,
+            psi_threshold_us: 250_000,
+            psi_window_us: 1_000_000,
+        }
+    }
+}
 
 pub struct StorageController {
-    fd: fs::File,
+    trigger_fd: fs::File,
     read_ahead: sysfs::CachedFile,
     nr_requests: sysfs::CachedFile,
-    psi_monitor: monitors::PsiMonitor,
+    psi_io_monitor: monitors::PsiMonitor,
     disk_monitor: monitors::DiskMonitor,
     prev_io_stats: monitors::IoStats,
     workload_state: storage::WorkloadState,
@@ -27,7 +40,7 @@ pub struct StorageController {
     last_tick: time::Instant,
     current_read_ahead: f32,
     current_nr_requests: f32,
-    poller: poller::AdaptivePoller,
+    adaptive_poller: poller::AdaptivePoller,
     next_wake_ms: i32,
 }
 
@@ -37,6 +50,8 @@ impl StorageController {
 
         let config_limits = limits::GlobalConfig::default().storage_config;
         let storage_math_config = storage::StorageMathConfig::default();
+        let controller_config = ControllerConfig::default();
+
         let storage_kernel_limits = storage::StorageKernelLimits {
             min_read_ahead: config_limits.min_read_ahead as f32,
             max_read_ahead: config_limits.max_read_ahead as f32,
@@ -44,21 +59,24 @@ impl StorageController {
             max_nr_requests: config_limits.max_nr_requests as f32,
         };
 
-        let raw_fd =
-            kernel::register_psi_trigger(paths::K_PSI_IO_PATH, PSI_THRESHOLD_US, PSI_WINDOW_US)
-                .map_err(|e| types::QosError::FfiError(format!("Storage PSI Error: {e}")))?;
-        let fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_fd) };
+        let raw_trigger_fd = kernel::register_psi_trigger(
+            paths::K_PSI_IO_PATH,
+            controller_config.psi_threshold_us,
+            controller_config.psi_window_us,
+        )
+        .map_err(|e| types::QosError::FfiError(format!("Storage PSI Error: {e}")))?;
+        let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
-        let ra_path = paths::get_read_ahead_path();
-        let nr_path = paths::get_nr_requests_path();
+        let read_ahead_path = paths::get_read_ahead_path();
+        let nr_requests_path = paths::get_nr_requests_path();
 
         let read_ahead = sysfs::CachedFile::new_opt(
-            sysfs::open_file_for_write(ra_path.to_str().unwrap_or_default()).ok(),
+            sysfs::open_file_for_write(read_ahead_path.to_str().unwrap_or_default()).ok(),
             0,
         );
 
         let nr_requests = sysfs::CachedFile::new_opt(
-            sysfs::open_file_for_write(nr_path.to_str().unwrap_or_default()).ok(),
+            sysfs::open_file_for_write(nr_requests_path.to_str().unwrap_or_default()).ok(),
             0,
         );
 
@@ -68,7 +86,7 @@ impl StorageController {
             ));
         }
 
-        let psi_monitor = monitors::PsiMonitor::new(paths::K_PSI_IO_PATH)?;
+        let psi_io_monitor = monitors::PsiMonitor::new(paths::K_PSI_IO_PATH)?;
 
         let stats_path = paths::get_diskstats_path();
         let mut disk_monitor = monitors::DiskMonitor::new(stats_path.to_str().unwrap_or_default())?;
@@ -77,17 +95,17 @@ impl StorageController {
             .read_stats()
             .unwrap_or(monitors::IoStats::default());
 
-        let poller = poller::AdaptivePoller::new(
-            POLL_WEIGHT_PRESSURE,
-            POLL_WEIGHT_DERIVATIVE,
+        let adaptive_poller = poller::AdaptivePoller::new(
+            controller_config.poll_weight_pressure,
+            controller_config.poll_weight_derivative,
             poller::PollerConfig::default(),
         );
 
         let mut controller = Self {
-            fd,
+            trigger_fd,
             read_ahead,
             nr_requests,
-            psi_monitor,
+            psi_io_monitor,
             disk_monitor,
             prev_io_stats: initial_stats,
             workload_state: storage::WorkloadState::default(),
@@ -96,25 +114,23 @@ impl StorageController {
             last_tick: time::Instant::now(),
             current_read_ahead: config_limits.min_read_ahead as f32,
             current_nr_requests: config_limits.max_nr_requests as f32,
-            poller,
+            adaptive_poller,
             next_wake_ms: runtime::MIN_POLLING_MS as i32,
         };
 
         controller.apply_values(true);
-
         Ok(controller)
     }
 
     fn update_io_logic(&mut self, context: &mut state::DaemonContext) -> types::Result<()> {
-        let psi_data = self.psi_monitor.read_state()?;
+        let psi_data = self.psi_io_monitor.read_state()?;
         let current_io_stats = self.disk_monitor.read_stats()?;
-
         let now = time::Instant::now();
-        let dt_duration = now.duration_since(self.last_tick);
+        let elapsed_duration = now.duration_since(self.last_tick);
         self.last_tick = now;
-        let dt_real = dt_duration.as_secs_f32().max(0.000_001);
-
-        let delta = storage::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, dt_real);
+        let elapsed_sec = elapsed_duration.as_secs_f32().max(0.000_001);
+        let stats_delta =
+            storage::calculate_io_deltas(&current_io_stats, &self.prev_io_stats, elapsed_sec);
         self.prev_io_stats = current_io_stats;
 
         context.pressure.io_psi = psi_data.some.current;
@@ -125,9 +141,9 @@ impl StorageController {
             return Ok(());
         }
 
-        let req_size_ratio =
-            storage::calculate_request_size_ratio(&delta, &self.storage_math_config);
-        let merge_ratio = storage::calculate_merge_ratio(&delta);
+        let request_size_ratio =
+            storage::calculate_request_size_ratio(&stats_delta, &self.storage_math_config);
+        let merge_ratio = storage::calculate_merge_ratio(&stats_delta);
         let pressure_ratio = storage::calculate_pressure_ratio(
             current_io_stats.in_flight as f32,
             &self.storage_math_config,
@@ -135,28 +151,29 @@ impl StorageController {
 
         let sequentiality = storage::resolve_sequentiality_factor(
             &mut self.workload_state,
-            req_size_ratio,
+            request_size_ratio,
             merge_ratio,
             pressure_ratio,
             &self.storage_math_config,
         );
 
-        let calculated_ra =
+        let calculated_read_ahead =
             storage::calculate_target_read_ahead(sequentiality, &self.storage_kernel_limits);
 
-        let lambda_eff = storage::calculate_weighted_throughput(&delta, &self.storage_math_config);
+        let effective_throughput =
+            storage::calculate_weighted_throughput(&stats_delta, &self.storage_math_config);
 
         let target_latency =
             storage::calculate_target_latency(psi_data.some.current, &self.storage_math_config);
 
         let current_latency = storage::calculate_effective_latency(
-            &delta,
-            lambda_eff,
+            &stats_delta,
+            effective_throughput,
             current_io_stats.in_flight as f32,
         );
 
-        let calculated_nr = storage::calculate_next_queue_depth(
-            lambda_eff,
+        let calculated_nr_requests = storage::calculate_next_queue_depth(
+            effective_throughput,
             current_latency,
             target_latency,
             self.current_nr_requests,
@@ -166,14 +183,14 @@ impl StorageController {
         );
 
         if storage::should_update_nr_requests(
-            calculated_nr,
+            calculated_nr_requests,
             self.current_nr_requests,
             &self.storage_math_config,
             &self.storage_kernel_limits,
         ) {
-            self.current_nr_requests = calculated_nr;
+            self.current_nr_requests = calculated_nr_requests;
         }
-        self.current_read_ahead = calculated_ra;
+        self.current_read_ahead = calculated_read_ahead;
 
         if storage::is_congestion_critical(
             psi_data.some.current,
@@ -182,7 +199,7 @@ impl StorageController {
         ) {
             self.next_wake_ms = runtime::MIN_POLLING_MS as i32;
         } else {
-            self.next_wake_ms = self.poller.calculate_next_interval(
+            self.next_wake_ms = self.adaptive_poller.calculate_next_interval(
                 psi_data.some.current,
                 psi_data.some.avg300,
                 psi_data.some.velocity,
@@ -190,42 +207,41 @@ impl StorageController {
         }
 
         self.apply_values(false);
-
         Ok(())
     }
 
     fn apply_values(&mut self, force: bool) {
-        let ra_u64 = helpers::sanitize_to_clean_u64(
+        let read_ahead_u64 = helpers::sanitize_to_clean_u64(
             self.current_read_ahead,
             self.storage_kernel_limits.max_read_ahead as u64,
             32,
         );
 
-        let nr_u64 = helpers::sanitize_to_clean_u64(
+        let nr_requests_u64 = helpers::sanitize_to_clean_u64(
             self.current_nr_requests,
             self.storage_kernel_limits.min_nr_requests as u64,
             16,
         );
 
         self.read_ahead
-            .update(ra_u64, force, &sysfs::CheckStrategy::Absolute(32));
+            .update(read_ahead_u64, force, &sysfs::CheckStrategy::Absolute(32));
 
         self.nr_requests
-            .update(nr_u64, force, &sysfs::CheckStrategy::Absolute(16));
+            .update(nr_requests_u64, force, &sysfs::CheckStrategy::Absolute(16));
     }
 }
 
 impl traits::EventHandler for StorageController {
     fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.fd)
+        os::fd::AsRawFd::as_raw_fd(&self.trigger_fd)
     }
 
     fn on_event(
         &mut self,
         context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
-        let mut buf = [0u8; 8];
-        let _ = io::Read::read(&mut self.fd, &mut buf);
+        let mut buffer = [0u8; 8];
+        let _ = io::Read::read(&mut self.trigger_fd, &mut buffer);
         if let Err(e) = self.update_io_logic(context) {
             log::warn!("Storage Error: {e}");
         }
