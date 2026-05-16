@@ -1,9 +1,9 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::config::runtime;
-use crate::daemon::{state, traits, types};
-use crate::hal::{bridge, filesystem, properties};
-use crate::registry::{file_tweaks, prop_tweaks};
+use crate::daemon::{bridge, state, traits, types};
+use crate::hal::{filesystem, properties};
+use crate::tweaks::{props, system};
 
 use rustix::event;
 use std::{io, os, sync, thread, time};
@@ -152,7 +152,7 @@ fn is_fatal_runtime_error(e: &types::QosError) -> bool {
 
 pub fn apply_prop_tweaks() {
     log::info!("Rust: Applying Prop tweaks...");
-    let prop_tweaks_list = prop_tweaks::get_prop_tweaks();
+    let prop_tweaks_list = props::get_prop_tweaks();
     let mut success_count = 0;
 
     for tweak in prop_tweaks_list {
@@ -176,7 +176,7 @@ pub fn apply_prop_tweaks() {
 
 pub fn apply_file_tweaks() {
     log::info!("Rust: Applying File tweaks...");
-    let file_tweaks_list = file_tweaks::generate_file_tweaks();
+    let file_tweaks_list = system::generate_file_tweaks();
     let mut success_count = 0;
 
     for tweak in &file_tweaks_list {

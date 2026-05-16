@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::registry::file_tweaks::FileTweak;
+use crate::tweaks::system::FileTweak;
 
 use std::{fs, path};
 

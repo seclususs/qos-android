@@ -59,6 +59,6 @@ pub fn generate_file_tweaks() -> Vec<FileTweak> {
         FileTweak::new_static("/proc/sys/debug/exception-trace", "0"),
         // FileTweak::new_static("/proc/sys/net/ipv4/tcp_congestion_control", "westwood"),
     ]);
-    tweaks.extend(super::scheduler_io::generate_scheduler_tweaks());
+    tweaks.extend(super::scheduler::generate_scheduler_tweaks());
     tweaks
 }

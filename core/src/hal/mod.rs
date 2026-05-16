@@ -1,5 +1,4 @@
 pub mod battery;
-pub mod bridge;
 pub mod filesystem;
 pub mod kernel;
 pub mod properties;

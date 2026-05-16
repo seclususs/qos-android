@@ -1,8 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::controllers::{blocker, cleaner, cpu, signal, storage};
-use crate::daemon::{logging, runtime, state};
-use crate::hal::bridge;
+use crate::daemon::{bridge, logging, runtime, state};
 
 use std::{sync, thread, time};
 
