@@ -1,9 +1,9 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::{hardware, monitors};
+use crate::hal::monitors;
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct StorageKernelLimits {
+pub struct StorageLimits {
     pub min_read_ahead: f32,
     pub max_read_ahead: f32,
     pub min_nr_requests: f32,
@@ -26,44 +26,17 @@ pub struct StorageMathConfig {
 
 impl Default for StorageMathConfig {
     fn default() -> Self {
-        let tier = hardware::DeviceTier::get();
-        match tier {
-            hardware::DeviceTier::Flagship => Self {
-                min_req_size_kb: 6.0,
-                max_req_size_kb: 768.0,
-                write_cost_factor: 3.5,
-                target_latency_base_ms: 30.0,
-                hysteresis_threshold: 0.15,
-                critical_threshold_psi: 18.0,
-                queue_pressure_low: 0.15,
-                queue_pressure_high: 6.0,
-                smoothing_factor: 0.55,
-                idle_poll_interval: 5000.0,
-            },
-            hardware::DeviceTier::MidRange => Self {
-                min_req_size_kb: 7.0,
-                max_req_size_kb: 640.0,
-                write_cost_factor: 4.0,
-                target_latency_base_ms: 35.0,
-                hysteresis_threshold: 0.18,
-                critical_threshold_psi: 19.5,
-                queue_pressure_low: 0.2,
-                queue_pressure_high: 5.5,
-                smoothing_factor: 0.52,
-                idle_poll_interval: 5000.0,
-            },
-            hardware::DeviceTier::LowEnd => Self {
-                min_req_size_kb: 8.0,
-                max_req_size_kb: 512.0,
-                write_cost_factor: 4.5,
-                target_latency_base_ms: 50.0,
-                hysteresis_threshold: 0.20,
-                critical_threshold_psi: 22.0,
-                queue_pressure_low: 0.25,
-                queue_pressure_high: 5.0,
-                smoothing_factor: 0.5,
-                idle_poll_interval: 5000.0,
-            },
+        Self {
+            min_req_size_kb: 8.0,
+            max_req_size_kb: 512.0,
+            write_cost_factor: 4.5,
+            target_latency_base_ms: 50.0,
+            hysteresis_threshold: 0.20,
+            critical_threshold_psi: 22.0,
+            queue_pressure_low: 0.25,
+            queue_pressure_high: 5.0,
+            smoothing_factor: 0.5,
+            idle_poll_interval: 5000.0,
         }
     }
 }
@@ -104,7 +77,7 @@ pub fn should_update_nr_requests(
     calculated: f32,
     current: f32,
     math_config: &StorageMathConfig,
-    kernel_limits: &StorageKernelLimits,
+    kernel_limits: &StorageLimits,
 ) -> bool {
     let diff = (calculated - current).abs();
     let error_ratio = if current > 0.0 { diff / current } else { 1.0 };
@@ -218,7 +191,7 @@ pub fn calculate_target_latency(psi_some_avg10: f32, math_config: &StorageMathCo
 }
 
 #[inline]
-pub fn calculate_target_read_ahead(sequentiality: f32, kernel_limits: &StorageKernelLimits) -> f32 {
+pub fn calculate_target_read_ahead(sequentiality: f32, kernel_limits: &StorageLimits) -> f32 {
     let range = kernel_limits.max_read_ahead - kernel_limits.min_read_ahead;
     kernel_limits.min_read_ahead + (range * sequentiality)
 }
@@ -231,7 +204,7 @@ pub fn calculate_next_queue_depth(
     current_nr_requests: f32,
     psi_pressure: f32,
     math_config: &StorageMathConfig,
-    kernel_limits: &StorageKernelLimits,
+    kernel_limits: &StorageLimits,
 ) -> f32 {
     if psi_pressure > math_config.critical_threshold_psi {
         return kernel_limits.min_nr_requests;

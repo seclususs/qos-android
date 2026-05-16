@@ -36,7 +36,7 @@ pub struct StorageController {
     prev_io_stats: monitors::IoStats,
     workload_state: storage::WorkloadState,
     storage_math_config: storage::StorageMathConfig,
-    storage_kernel_limits: storage::StorageKernelLimits,
+    storage_kernel_limits: storage::StorageLimits,
     last_tick: time::Instant,
     current_read_ahead: f32,
     current_nr_requests: f32,
@@ -52,7 +52,7 @@ impl StorageController {
         let storage_math_config = storage::StorageMathConfig::default();
         let controller_config = ControllerConfig::default();
 
-        let storage_kernel_limits = storage::StorageKernelLimits {
+        let storage_kernel_limits = storage::StorageLimits {
             min_read_ahead: config_limits.min_read_ahead as f32,
             max_read_ahead: config_limits.max_read_ahead as f32,
             min_nr_requests: config_limits.min_nr_requests as f32,

@@ -1,7 +1,5 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::hal::hardware::DeviceTier;
-
 #[derive(Debug, Clone, Copy)]
 pub struct LoadState {
     pub psi_value: f32,
@@ -22,7 +20,7 @@ impl Default for LoadState {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct CpuKernelLimits {
+pub struct CpuLimits {
     pub min_latency_ns: f32,
     pub max_latency_ns: f32,
     pub min_granularity_ns: f32,
@@ -63,74 +61,27 @@ pub struct CpuMathConfig {
 
 impl Default for CpuMathConfig {
     fn default() -> Self {
-        let tier = DeviceTier::get();
-        match tier {
-            DeviceTier::Flagship => Self {
-                latency_gran_ratio: 0.32,
-                decay_coeff: 0.014,
-                uclamp_k: 0.21,
-                uclamp_mid: 7.5,
-                response_gain: 36.0,
-                stability_ratio: 2.05,
-                stability_margin: 4.0,
-                gain_scheduling_alpha: 0.982,
-                sigmoid_k: 0.085,
-                sigmoid_mid: 5.5,
-                lookahead_time: 0.14,
-                efficiency_gain: 6.2,
-                trend_amplification: 0.135,
-                surge_threshold: 15.0,
-                surge_gain: 0.115,
-                transient_rate_threshold: 0.095,
-                transient_diff_threshold: 0.45,
-                transient_poll_interval: 45.0,
-                nis_threshold: 6.5,
-                bat_level_weight: 94.0,
-            },
-            DeviceTier::MidRange => Self {
-                latency_gran_ratio: 0.33,
-                decay_coeff: 0.017,
-                uclamp_k: 0.195,
-                uclamp_mid: 8.5,
-                response_gain: 33.0,
-                stability_ratio: 2.12,
-                stability_margin: 3.5,
-                gain_scheduling_alpha: 0.978,
-                sigmoid_k: 0.078,
-                sigmoid_mid: 6.2,
-                lookahead_time: 0.155,
-                efficiency_gain: 5.85,
-                trend_amplification: 0.125,
-                surge_threshold: 16.5,
-                surge_gain: 0.105,
-                transient_rate_threshold: 0.105,
-                transient_diff_threshold: 0.52,
-                transient_poll_interval: 48.0,
-                nis_threshold: 7.2,
-                bat_level_weight: 95.5,
-            },
-            DeviceTier::LowEnd => Self {
-                latency_gran_ratio: 0.34,
-                decay_coeff: 0.019,
-                uclamp_k: 0.185,
-                uclamp_mid: 9.5,
-                response_gain: 31.0,
-                stability_ratio: 2.18,
-                stability_margin: 3.1,
-                gain_scheduling_alpha: 0.972,
-                sigmoid_k: 0.072,
-                sigmoid_mid: 6.8,
-                lookahead_time: 0.17,
-                efficiency_gain: 5.6,
-                trend_amplification: 0.115,
-                surge_threshold: 17.5,
-                surge_gain: 0.095,
-                transient_rate_threshold: 0.115,
-                transient_diff_threshold: 0.58,
-                transient_poll_interval: 52.0,
-                nis_threshold: 7.8,
-                bat_level_weight: 97.0,
-            },
+        Self {
+            latency_gran_ratio: 0.34,
+            decay_coeff: 0.019,
+            uclamp_k: 0.185,
+            uclamp_mid: 9.5,
+            response_gain: 31.0,
+            stability_ratio: 2.18,
+            stability_margin: 3.1,
+            gain_scheduling_alpha: 0.972,
+            sigmoid_k: 0.072,
+            sigmoid_mid: 6.8,
+            lookahead_time: 0.17,
+            efficiency_gain: 5.6,
+            trend_amplification: 0.115,
+            surge_threshold: 17.5,
+            surge_gain: 0.095,
+            transient_rate_threshold: 0.115,
+            transient_diff_threshold: 0.58,
+            transient_poll_interval: 52.0,
+            nis_threshold: 7.8,
+            bat_level_weight: 97.0,
         }
     }
 }
@@ -267,7 +218,7 @@ pub fn calculate_effective_pressure(
 }
 
 #[inline]
-pub fn calculate_thermal_latency_limit(thermal_scale: f32, kernel_limits: &CpuKernelLimits) -> f32 {
+pub fn calculate_thermal_latency_limit(thermal_scale: f32, kernel_limits: &CpuLimits) -> f32 {
     let limit_ratio = (1.0 - thermal_scale).clamp(0.0, 1.0);
     kernel_limits.min_latency_ns
         + (kernel_limits.max_latency_ns - kernel_limits.min_latency_ns) * limit_ratio
@@ -278,7 +229,7 @@ pub fn calculate_latency_and_granularity(
     load_demand: f32,
     thermal_min_latency_ns: f32,
     math_config: &CpuMathConfig,
-    kernel_limits: &CpuKernelLimits,
+    kernel_limits: &CpuLimits,
 ) -> (f32, f32) {
     let sigmoid_val = sigmoid_param(p_eff, math_config.sigmoid_k, math_config.sigmoid_mid);
     let factor = 1.0 - sigmoid_val;
@@ -305,7 +256,7 @@ pub fn calculate_latency_and_granularity(
 pub fn calculate_wakeup_granularity(
     p_eff: f32,
     math_config: &CpuMathConfig,
-    kernel_limits: &CpuKernelLimits,
+    kernel_limits: &CpuLimits,
 ) -> f32 {
     let decay = decay(p_eff, math_config.decay_coeff);
     let raw_wake = kernel_limits.min_wakeup_ns
@@ -314,7 +265,7 @@ pub fn calculate_wakeup_granularity(
 }
 
 #[inline]
-pub fn calculate_migration_cost(velocity: f32, p_eff: f32, kernel_limits: &CpuKernelLimits) -> f32 {
+pub fn calculate_migration_cost(velocity: f32, p_eff: f32, kernel_limits: &CpuLimits) -> f32 {
     let x = (p_eff / 100.0).clamp(0.0, 1.0);
     let factor = 1.0 - x;
     let curve = factor * factor;
@@ -329,7 +280,7 @@ pub fn calculate_migration_cost(velocity: f32, p_eff: f32, kernel_limits: &CpuKe
 }
 
 #[inline]
-pub fn calculate_walt_init(pressure: f32, kernel_limits: &CpuKernelLimits) -> f32 {
+pub fn calculate_walt_init(pressure: f32, kernel_limits: &CpuLimits) -> f32 {
     let ratio = pressure / 100.0;
     let load_curve = ratio * ratio;
     let range = kernel_limits.max_walt_init_pct - kernel_limits.min_walt_init_pct;
@@ -345,7 +296,7 @@ pub fn calculate_uclamp_min(
     pressure: f32,
     thermal_scale: f32,
     math_config: &CpuMathConfig,
-    kernel_limits: &CpuKernelLimits,
+    kernel_limits: &CpuLimits,
 ) -> f32 {
     let sigmoid_val = sigmoid_param(pressure, math_config.uclamp_k, math_config.uclamp_mid);
     let range = kernel_limits.max_uclamp_min - kernel_limits.min_uclamp_min;

@@ -54,7 +54,7 @@ pub struct CpuController {
     current_uclamp_min: f32,
     load_state: cpu::LoadState,
     cpu_math_config: cpu::CpuMathConfig,
-    cpu_kernel_limits: cpu::CpuKernelLimits,
+    cpu_kernel_limits: cpu::CpuLimits,
     controller_config: ControllerConfig,
     last_tick: time::Instant,
     adaptive_poller: poller::AdaptivePoller,
@@ -69,7 +69,7 @@ impl CpuController {
         let cpu_math_config = cpu::CpuMathConfig::default();
         let controller_config = ControllerConfig::default();
 
-        let cpu_kernel_limits = cpu::CpuKernelLimits {
+        let cpu_kernel_limits = cpu::CpuLimits {
             min_latency_ns: config_limits.min_latency_ns as f32,
             max_latency_ns: config_limits.max_latency_ns as f32,
             min_granularity_ns: config_limits.min_granularity_ns as f32,
