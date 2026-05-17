@@ -1,55 +1,65 @@
-# Local configuration
-local.properties
-
-# Logs
-*.log
-*.hprof
-
 # Android Studio / Gradle
+.gradle/
+*/build/
+app/build/
 captures/
 .externalNativeBuild/
 .cxx/
-*.aab
 *.apk
+*.aab
 output-metadata.json
-build/
-obj/
-libs/
-*.zip
-magisk-module/system/
+
+# Local configuration
+local.properties
+
+# Keystore & Google Services
+*.jks
+*.keystore
+keystore.properties
+google-services.json
 
 # IDE
 .vscode/
-*.iml
 .idea/
+*.iml
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
-
-# Keystore
-*.jks
-*.keystore
-
-# Google Services
-google-services.json
 
 # Rust
 target/
 Cargo.lock
 **/*.rs.bk
 
-# C / C++
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-*.exe
-*.out
-*.app
+# C / C++ / CMake
+build/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
+*.o
+*.obj
+*.out
+*.exe
+*.app
+compile_commands.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Magisk
+magisk-module/system/
+*.zip
+
+# Logs & OS Files
+*.log
+*.hprof
+.DS_Store
+Thumbs.db
+
+# Editor temporary files
+*.swp
+*~
+*.bak
