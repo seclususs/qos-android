@@ -4,3 +4,4 @@ pub mod runtime;
 pub mod state;
 pub mod traits;
 pub mod types;
+pub mod worker;
