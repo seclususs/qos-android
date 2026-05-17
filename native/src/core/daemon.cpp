@@ -67,6 +67,16 @@ namespace qos::core
         ::set_tweaks(run_tweaks);
         ::set_blocker_service(run_blocker);
 
+        if (cfg.has_cpu_limits)
+        {
+            ::set_cpu_limits(&cfg.cpu_limits);
+        }
+
+        if (cfg.has_storage_limits)
+        {
+            ::set_storage_limits(&cfg.storage_limits);
+        }
+
         ::mallopt(M_PURGE, 0);
         qos::system::Tuner::lock_memory();
 

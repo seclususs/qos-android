@@ -1,5 +1,5 @@
 /**
- * @file native_bridge.h
+ * @file bridge.hpp
  * @brief ABI boundary declaration for the Native-to-Core interface.
  *
  * This header defines the C linkage functions used to interoperate between
@@ -13,11 +13,190 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+
+/**
+ * @brief Foreign Function Interface (FFI) layout for CPU kernel limits.
+ *
+ * This structure defines the absolute upper and lower scheduling boundaries.
+ * The core service dynamically adjusts the actual system parameters within
+ * these configured bounds based on real-time hardware conditions.
+ */
+struct FfiCpuLimits
+{
+    /**
+     * @brief Lower bound for CFS scheduler latency.
+     *
+     * Defines the minimum allowable latency to ensure that context switching
+     * remains highly responsive during extreme computational workloads.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t min_latency_ns;
+
+    /**
+     * @brief Upper bound for CFS scheduler latency.
+     *
+     * Defines the maximum allowable latency used to conserve power during
+     * idle periods or to mitigate hardware thermal constraints.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t max_latency_ns;
+
+    /**
+     * @brief Lower bound for task execution timeslice.
+     *
+     * Guarantees a strict minimum execution window for active tasks to
+     * prevent cache thrashing and excessive context switch overhead.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t min_granularity_ns;
+
+    /**
+     * @brief Upper bound for task execution timeslice.
+     *
+     * Sets a ceiling on task execution time to prevent heavy background
+     * processes from monopolizing CPU cycles and degrading responsiveness.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t max_granularity_ns;
+
+    /**
+     * @brief Lower bound for preemption penalty.
+     *
+     * Defines the minimum penalty to allow newly awakened tasks (e.g., UI
+     * threads) to interrupt currently running tasks as quickly as possible.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t min_wakeup_ns;
+
+    /**
+     * @brief Upper bound for preemption penalty.
+     *
+     * Defines the maximum penalty to protect the throughput of active tasks
+     * by preventing unnecessary interruptions from minor background events.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t max_wakeup_ns;
+
+    /**
+     * @brief Lower bound for inter-core migration penalty.
+     *
+     * The minimum cost threshold, allowing the system to aggressively
+     * offload tasks to other cores during sudden spikes in workload.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t min_migration_cost;
+
+    /**
+     * @brief Upper bound for inter-core migration penalty.
+     *
+     * The maximum cost threshold to prevent tasks from bouncing between
+     * cores, forcing them to utilize warm cache data during stable loads.
+     * Unit: Nanoseconds (ns).
+     */
+    uint64_t max_migration_cost;
+
+    /**
+     * @brief Lower bound for new task weight prediction.
+     *
+     * The minimum initial load assumption for newly spawned tasks,
+     * preventing them from unnecessarily waking up high-performance cores.
+     * Range: 1 to 100.
+     */
+    uint64_t min_walt_init_pct;
+
+    /**
+     * @brief Upper bound for new task weight prediction.
+     *
+     * The maximum initial load assumption, ensuring that new tasks are
+     * immediately allocated adequate performance during heavy system loads.
+     * Range: 1 to 100.
+     */
+    uint64_t max_walt_init_pct;
+
+    /**
+     * @brief Lower bound for utilization clamp floor.
+     *
+     * The absolute minimum base frequency boost limit, allowing maximum
+     * power savings when the device is completely idle. Range: 0 to 1024.
+     */
+    uint64_t min_uclamp_min;
+
+    /**
+     * @brief Upper bound for utilization clamp floor.
+     *
+     * The maximum allowable base frequency boost limit. Range: 0 to 1024.
+     */
+    uint64_t max_uclamp_min;
+};
+
+/**
+ * @brief Foreign Function Interface (FFI) layout for block storage limits.
+ *
+ * This structure defines the operational boundaries for I/O queue management.
+ * The core service operates within these limits to optimize throughput and
+ * latency based on real-time storage characteristics.
+ */
+struct FfiStorageLimits
+{
+    /**
+     * @brief Lower bound for read-ahead buffer size.
+     *
+     * Targeted when processing small, random files to minimize RAM usage
+     * and queue latency. Unit: Kilobytes (KB).
+     */
+    uint64_t min_read_ahead;
+
+    /**
+     * @brief Upper bound for read-ahead buffer size.
+     *
+     * Targeted when loading large, sequential files to maximize hardware
+     * transfer speeds. Unit: Kilobytes (KB).
+     */
+    uint64_t max_read_ahead;
+
+    /**
+     * @brief Lower bound for disk queue depth.
+     *
+     * The strict minimum queue length enforced during critical I/O
+     * congestion to prevent severe bufferbloat. Unit: Request count.
+     */
+    uint64_t min_nr_requests;
+
+    /**
+     * @brief Upper bound for disk queue depth.
+     *
+     * The maximum allowed queue expansion point to fully utilize hardware
+     * capabilities during healthy latency periods. Unit: Request count.
+     */
+    uint64_t max_nr_requests;
+};
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+    /**
+     * @brief Injects custom boundaries for the CPU scheduling service.
+     *
+     * Provides the core backend with custom operational limits. The service
+     * will strictly adhere to these boundaries for its tuning operations.
+     *
+     * @param[in] limits Pointer to the FfiCpuLimits configuration. If NULL,
+     * the backend safely falls back to its internal defaults.
+     */
+    void set_cpu_limits(const FfiCpuLimits* limits);
+
+    /**
+     * @brief Injects custom boundaries for the storage queue service.
+     *
+     * Provides the core backend with custom I/O operational limits.
+     *
+     * @param[in] limits Pointer to the FfiStorageLimits configuration.
+     * If NULL, the backend safely falls back to its internal defaults.
+     */
+    void set_storage_limits(const FfiStorageLimits* limits);
 
     /**
      * @brief Configures the enabled state of the Blocker Controller service.
@@ -68,17 +247,6 @@ extern "C"
      * @param[in] enabled True to enable the service, false to disable.
      */
     void set_storage_service(bool enabled);
-
-    /**
-     * @brief Configures the enabled state of the Display Controller service.
-     *
-     * Updates the configuration state for the Adaptive Display monitor.
-     * This operation is thread-safe and the new state takes effect immediately
-     * for the next polling cycle.
-     *
-     * @param[in] enabled True to enable the service, false to disable.
-     */
-    void set_display_service(bool enabled);
 
     /**
      * @brief Configures the enabled state of the System Tweaks module.
