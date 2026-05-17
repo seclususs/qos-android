@@ -65,7 +65,11 @@ impl CpuController {
     pub fn new() -> types::Result<Self> {
         log::info!("CpuController: Initializing...");
 
-        let config_limits = limits::GlobalConfig::default().cpu_config;
+        let config_limits = state::CPU_LIMITS_OVERRIDE
+            .get()
+            .copied()
+            .unwrap_or_else(|| limits::GlobalConfig::default().cpu_config);
+
         let cpu_math_config = cpu::CpuMathConfig::default();
         let controller_config = ControllerConfig::default();
 

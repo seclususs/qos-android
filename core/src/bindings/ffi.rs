@@ -1,9 +1,90 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
+use crate::config::limits;
 use crate::controllers::{blocker, cleaner, cpu, signal, storage};
 use crate::daemon::{bridge, logging, runtime, state};
 
 use std::{sync, thread, time};
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FfiCpuLimits {
+    pub min_latency_ns: u64,
+    pub max_latency_ns: u64,
+    pub min_granularity_ns: u64,
+    pub max_granularity_ns: u64,
+    pub min_wakeup_ns: u64,
+    pub max_wakeup_ns: u64,
+    pub min_migration_cost: u64,
+    pub max_migration_cost: u64,
+    pub min_walt_init_pct: u64,
+    pub max_walt_init_pct: u64,
+    pub min_uclamp_min: u64,
+    pub max_uclamp_min: u64,
+}
+
+impl From<FfiCpuLimits> for limits::CpuLimitsConfig {
+    fn from(ffi: FfiCpuLimits) -> Self {
+        Self {
+            min_latency_ns: ffi.min_latency_ns,
+            max_latency_ns: ffi.max_latency_ns,
+            min_granularity_ns: ffi.min_granularity_ns,
+            max_granularity_ns: ffi.max_granularity_ns,
+            min_wakeup_ns: ffi.min_wakeup_ns,
+            max_wakeup_ns: ffi.max_wakeup_ns,
+            min_migration_cost: ffi.min_migration_cost,
+            max_migration_cost: ffi.max_migration_cost,
+            min_walt_init_pct: ffi.min_walt_init_pct,
+            max_walt_init_pct: ffi.max_walt_init_pct,
+            min_uclamp_min: ffi.min_uclamp_min,
+            max_uclamp_min: ffi.max_uclamp_min,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FfiStorageLimits {
+    pub min_read_ahead: u64,
+    pub max_read_ahead: u64,
+    pub min_nr_requests: u64,
+    pub max_nr_requests: u64,
+}
+
+impl From<FfiStorageLimits> for limits::StorageLimitsConfig {
+    fn from(ffi: FfiStorageLimits) -> Self {
+        Self {
+            min_read_ahead: ffi.min_read_ahead,
+            max_read_ahead: ffi.max_read_ahead,
+            min_nr_requests: ffi.min_nr_requests,
+            max_nr_requests: ffi.max_nr_requests,
+        }
+    }
+}
+
+/// # Safety
+/// * `limits` must be a valid pointer to an initialized `FfiCpuLimits` struct, or a null pointer.
+/// * The caller must ensure the pointer remains valid for the duration of this function call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn set_cpu_limits(limits: *const FfiCpuLimits) {
+    if !limits.is_null() {
+        unsafe {
+            let _ = state::CPU_LIMITS_OVERRIDE.set((*limits).into());
+        }
+    }
+}
+
+/// # Safety
+/// * `limits` must be a valid pointer to an initialized `FfiStorageLimits` struct, or a null pointer.
+/// * The caller must ensure the pointer remains valid for the duration of this function call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn set_storage_limits(limits: *const FfiStorageLimits) {
+    if !limits.is_null() {
+        unsafe {
+            let _ = state::STORAGE_LIMITS_OVERRIDE.set((*limits).into());
+        }
+    }
+}
 
 static MAIN_THREAD: sync::Mutex<Option<thread::JoinHandle<()>>> = sync::Mutex::new(None);
 
