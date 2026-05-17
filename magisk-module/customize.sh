@@ -147,21 +147,6 @@ run_setup_wizard() {
   ui_print_info "Configuration Setup Complete."
 }
 
-ask_bootanimation() {
-  ui_print " "
-  ui_print "  [?] Install Custom Bootanimation?"
-  ui_print "    (+) Vol Up   : YES (Install)"
-  ui_print "    (-) Vol Down : NO  (Skip)"
-  
-  if chooseport; then
-    ui_print_info "Bootanimation: ENABLED"
-    return 0
-  else
-    ui_print_warn "Bootanimation: SKIPPED"
-    return 1
-  fi
-}
-
 REQUIRED_PROPS="
 ro.vendor.mtk.bt_sap_enable
 ro.vendor.mtk_wappush_support
@@ -206,8 +191,7 @@ backup_config
 HAS_BACKUP=$?
 
 ui_print_log "Extracting module files..."
-unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' 'system.prop' 'system/product/media/bootanimation.zip' -d "$MODPATH" >&2
-unzip -o "$ZIPFILE" 'common/*' -d "$MODPATH" >&2
+unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' 'system.prop' -d "$MODPATH" >&2
 
 validate_system_props
 
@@ -235,35 +219,11 @@ else
   fi
 fi
 
-INSTALL_BOOTANIM=0
-if ask_bootanimation; then
-  INSTALL_BOOTANIM=1
-fi
-
 ui_print_log "Setting permissions..."
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 set_perm "$MODPATH/service.sh" 0 0 0755
 set_perm "$MODPATH/system/bin/qos_daemon" 0 0 0755
 set_perm "$MODPATH/config.ini" 0 0 0644
-
-if [ -d "$MODPATH/common" ]; then
-  ui_print_log "Running additional scripts..."
-  
-  if [ $INSTALL_BOOTANIM -eq 1 ]; then
-    export BootAnimation_location='/system/product/media/bootanimation.zip'
-  else
-    rm -f "$MODPATH/system/product/media/bootanimation.zip" 2>/dev/null
-    rmdir -p "$MODPATH/system/product" 2>/dev/null
-    unset BootAnimation_location
-  fi
-
-  for script in "$MODPATH"/common/*.sh; do
-    if [ -f "$script" ]; then
-        . "$script"
-    fi
-  done
-  rm -rf "$MODPATH/common"
-fi
 
 ui_print_log "Cleaning up..."
 rm -f "$MODPATH/customize.sh" 2>/dev/null
