@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">QoS</string>
+    <string name="nav_services">Layanan</string>
+    <string name="nav_modules">Modul</string>
+    <string name="nav_advanced">Lanjutan</string>
+    <string name="nav_settings">Pengaturan</string>
+</resources>

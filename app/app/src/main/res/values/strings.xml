@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">QoS</string>
+    <string name="nav_services">Services</string>
+    <string name="nav_modules">Modules</string>
+    <string name="nav_advanced">Advanced</string>
+    <string name="nav_settings">Settings</string>
+</resources>
