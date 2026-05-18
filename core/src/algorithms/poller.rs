@@ -69,6 +69,7 @@ impl AdaptivePoller {
             .wrapping_add(1);
 
         let limit = range * 2;
+
         self.rng_state % (limit + 1)
     }
 
@@ -80,6 +81,7 @@ impl AdaptivePoller {
     ) -> u64 {
         let now = time::Instant::now();
         let elapsed_ms = now.duration_since(self.last_tick).as_millis() as u64;
+
         if elapsed_ms > (self.current_interval + self.tunables.sleep_tolerance_ms) {
             log::debug!("Time Discontinuity (Sleep?): {elapsed_ms}ms.");
             self.last_tick = now;
@@ -88,22 +90,25 @@ impl AdaptivePoller {
         }
 
         let (dynamic_min, dynamic_max) = if avg300 < 2.0 && current_pressure < 10.0 {
-            (6000u64, runtime::MAX_POLLING_MS)
+            (6000_u64, runtime::MAX_POLLING_MS)
         } else if avg300 > 20.0 {
-            (runtime::MIN_POLLING_MS, 5000u64)
+            (runtime::MIN_POLLING_MS, 5000_u64)
         } else {
             (runtime::MIN_POLLING_MS, runtime::MAX_POLLING_MS)
         };
 
         let rate_change = pressure_velocity;
         let prediction = current_pressure + (rate_change * 0.5);
+
         let p_term = prediction * self.weight_pressure;
         let d_term = rate_change.abs() * self.weight_derivative;
+
         let priority_score = (p_term + d_term).clamp(0.0, 100.0);
-        let raw_interval =
-            dynamic_max as f32 - ((priority_score / 100.0) * (dynamic_max - dynamic_min) as f32);
+        let interval_range = (dynamic_max - dynamic_min) as f32;
+        let raw_interval = dynamic_max as f32 - ((priority_score / 100.0) * interval_range);
 
         let target_f32 = self.target_interval as f32;
+
         let next_target = if raw_interval < target_f32 {
             let alpha = self.tunables.fall_factor;
             (alpha * raw_interval) + ((1.0 - alpha) * target_f32)
@@ -113,26 +118,30 @@ impl AdaptivePoller {
         };
 
         self.target_interval = next_target as u64;
+        self.last_tick = now;
 
         let diff = self.target_interval.abs_diff(self.current_interval);
-        self.last_tick = now;
+
         if diff < self.tunables.hysteresis_threshold_ms {
             return self.apply_discrete_math_mut(self.current_interval, dynamic_min, dynamic_max);
         }
 
         self.current_interval = self.target_interval;
+
         self.apply_discrete_math_mut(self.current_interval, dynamic_min, dynamic_max)
     }
 
     fn apply_discrete_math_mut(&mut self, interval: u64, min_limit: u64, max_limit: u64) -> u64 {
         let step = self.tunables.quantization_step_ms as f32;
         let quantized = ((interval as f32 / step).round() * step) as u64;
-        let clamped = quantized.clamp(min_limit, max_limit);
 
+        let clamped = quantized.clamp(min_limit, max_limit);
         let noise_amplitude = (clamped * self.tunables.noise_percent) / 100;
+
         if noise_amplitude == 0 {
             return clamped;
         }
+
         let noise_val = self.next_random(noise_amplitude);
 
         let final_val = if noise_val > noise_amplitude {

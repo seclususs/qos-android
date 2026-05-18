@@ -65,6 +65,7 @@ impl LeadLagFilter {
             first_run: true,
         }
     }
+
     #[inline]
     fn update(&mut self, input: f32, dt: f32, gain: f32, t_lead: f32, t_lag: f32) -> f32 {
         if self.first_run {
@@ -73,14 +74,18 @@ impl LeadLagFilter {
             self.first_run = false;
             return self.prev_y;
         }
+
         let denom = 2.0 * t_lag + dt;
         let coeff_prev_y = 2.0 * t_lag - dt;
         let coeff_input = gain * (2.0 * t_lead + dt);
         let coeff_prev_u = gain * (2.0 * t_lead - dt);
+
         let output =
             (coeff_input * input + coeff_prev_u * self.prev_u - coeff_prev_y * self.prev_y) / denom;
+
         self.prev_u = input;
         self.prev_y = output;
+
         output
     }
 }
@@ -112,10 +117,12 @@ impl SmithPredictor {
     fn new(capacity: usize) -> Self {
         let safe_capacity = capacity.min(SMITH_BUFFER_SIZE);
         let now = time::Instant::now();
+
         let init_point = HistoryPoint {
             value: 0.0,
             timestamp: now,
         };
+
         Self {
             model_output_no_delay: 0.0,
             delay_buffer: [init_point; SMITH_BUFFER_SIZE],
@@ -124,6 +131,7 @@ impl SmithPredictor {
             capacity: safe_capacity,
         }
     }
+
     fn update(
         &mut self,
         u_control: f32,
@@ -134,28 +142,37 @@ impl SmithPredictor {
     ) -> (f32, f32) {
         let alpha = dt / (tau + dt);
         let y_no_delay = alpha * (u_control * k_gain) + (1.0 - alpha) * self.model_output_no_delay;
+
         self.model_output_no_delay = y_no_delay;
+
         let now = time::Instant::now();
+
         self.delay_buffer[self.head] = HistoryPoint {
             value: y_no_delay,
             timestamp: now,
         };
+
         let current_head_idx = self.head;
         self.head = (self.head + 1) % self.capacity;
+
         if self.count < self.capacity {
             self.count += 1;
         }
+
         let target_delay = time::Duration::from_secs_f32(delay_sec);
         let mut y_delayed = y_no_delay;
+
         for i in 0..self.count {
             let idx = (current_head_idx + self.capacity - i) % self.capacity;
             let point = &self.delay_buffer[idx];
             let age = now.duration_since(point.timestamp);
+
             if age >= target_delay {
                 y_delayed = point.value;
                 break;
             }
         }
+
         (y_no_delay, y_delayed)
     }
 }
@@ -188,6 +205,7 @@ impl ThermalManager {
             smith_predictor: SmithPredictor::new(512),
         }
     }
+
     pub fn update(
         &mut self,
         cpu_temp: f32,
@@ -199,19 +217,24 @@ impl ThermalManager {
         let dt = now.duration_since(self.last_tick).as_secs_f32();
         let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;
+
         let sigma = ((bat_temp - tunables.sched_temp_cool)
             / (tunables.sched_temp_hot - tunables.sched_temp_cool))
             .clamp(0.0, 1.0);
+
         let k_p = tunables.kp_base + sigma * (tunables.kp_fast - tunables.kp_base);
         let k_i = tunables.ki_base + sigma * (tunables.ki_fast - tunables.ki_base);
         let k_d = tunables.kd_base + sigma * (tunables.kd_fast - tunables.kd_base);
+
         let bat_margin = (tunables.hard_limit_bat - bat_temp).max(0.0);
         let control_margin = if bat_margin < 5.0 {
             5.0 - bat_margin
         } else {
             0.0
         };
+
         let setpoint = tunables.hard_limit_cpu - control_margin;
+
         let u_ff = self.feedforward.update(
             psi_load,
             dt_safe,
@@ -219,7 +242,9 @@ impl ThermalManager {
             tunables.ff_lead_time,
             tunables.ff_lag_time,
         );
+
         let current_control_effort = self.prev_output_sat;
+
         let (y_pred_no_delay, y_pred_delayed) = self.smith_predictor.update(
             current_control_effort,
             dt_safe,
@@ -227,38 +252,51 @@ impl ThermalManager {
             tunables.smith_tau,
             tunables.smith_delay_sec,
         );
+
         let pred_error_term = y_pred_no_delay - y_pred_delayed;
         let adjusted_pv = cpu_temp + pred_error_term;
         let error = adjusted_pv - setpoint;
+
         let p_term = k_p * error;
+
         let i_increment = k_i * error * dt_safe;
         self.integral_accum += i_increment;
         self.integral_accum = self.integral_accum.clamp(-50.0, 50.0);
+
         let t_d = if k_p > 1e-6 { k_d / k_p } else { 0.0 };
         let n = tunables.deriv_filter_n;
         let denominator = t_d + n * dt_safe;
+
         let d_term = if denominator > 1e-6 {
             let alpha = t_d / denominator;
             let beta = (k_d * n) / denominator;
             let delta_pv = adjusted_pv - self.prev_adjusted_pv;
+
             alpha * self.prev_deriv_output + beta * delta_pv
         } else {
             0.0
         };
+
         self.prev_adjusted_pv = adjusted_pv;
         self.prev_deriv_output = d_term;
+
         let u_raw = p_term + self.integral_accum + d_term + u_ff;
         let u_sat = u_raw.clamp(0.0, 100.0);
+
         if (u_raw - u_sat).abs() > 0.001 {
             let excess = u_raw - u_sat;
             self.integral_accum -= excess * tunables.anti_windup_k * dt_safe;
         }
+
         self.prev_output_sat = u_sat;
+
         let pid_saturation = u_sat / 100.0;
         let final_scale = 1.0 - pid_saturation;
+
         if bat_temp >= tunables.hard_limit_bat {
             return final_scale.min(0.2);
         }
+
         final_scale.clamp(0.1, 1.0)
     }
 }

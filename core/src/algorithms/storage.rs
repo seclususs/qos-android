@@ -81,6 +81,7 @@ pub fn should_update_nr_requests(
 ) -> bool {
     let diff = (calculated - current).abs();
     let error_ratio = if current > 0.0 { diff / current } else { 1.0 };
+
     error_ratio > math_config.hysteresis_threshold
         || diff > 4.0
         || calculated <= kernel_limits.min_nr_requests
@@ -95,19 +96,24 @@ pub fn calculate_io_deltas(
     if dt_real <= 0.000_001 {
         return IoDelta::default();
     }
+
     let delta_read_ios = current.read_ios.saturating_sub(prev.read_ios) as f32;
     let delta_read_merges = current.read_merges.saturating_sub(prev.read_merges) as f32;
     let delta_read_sectors = current.read_sectors.saturating_sub(prev.read_sectors) as f32;
+    let delta_read_ticks = current.read_ticks.saturating_sub(prev.read_ticks) as f32;
+
     let delta_write_ios = current.write_ios.saturating_sub(prev.write_ios) as f32;
     let delta_write_ticks = current.write_ticks.saturating_sub(prev.write_ticks) as f32;
-    let delta_read_ticks = current.read_ticks.saturating_sub(prev.read_ticks) as f32;
+
     let total_ios = delta_read_ios + delta_write_ios;
     let total_ticks = delta_read_ticks + delta_write_ticks;
+
     let service_time_ms = if total_ios > 0.0 {
         total_ticks / total_ios
     } else {
         0.0
     };
+
     IoDelta {
         throughput_read: delta_read_ios / dt_real,
         throughput_write: delta_write_ios / dt_real,
@@ -123,31 +129,40 @@ pub fn calculate_request_size_ratio(delta: &IoDelta, math_config: &StorageMathCo
     if delta.delta_read_ios <= 0.0 {
         return 0.0;
     }
+
     let avg_size_kb = (delta.delta_read_sectors / delta.delta_read_ios) * 0.5;
     let range = math_config.max_req_size_kb - math_config.min_req_size_kb;
+
     if range <= 0.0 {
         return 0.0;
     }
+
     let ratio = (avg_size_kb - math_config.min_req_size_kb) / range;
+
     ratio.clamp(0.0, 1.0)
 }
 
 #[inline]
 pub fn calculate_merge_ratio(delta: &IoDelta) -> f32 {
     let total_submissions = delta.delta_read_merges + delta.delta_read_ios;
+
     if total_submissions <= 0.0 {
         return 0.0;
     }
+
     delta.delta_read_merges / total_submissions
 }
 
 #[inline]
 pub fn calculate_pressure_ratio(in_flight: f32, math_config: &StorageMathConfig) -> f32 {
     let range = math_config.queue_pressure_high - math_config.queue_pressure_low;
+
     if range <= 0.0 {
         return 0.0;
     }
+
     let ratio = (in_flight - math_config.queue_pressure_low) / range;
+
     ratio.clamp(0.0, 1.0)
 }
 
@@ -161,9 +176,12 @@ pub fn resolve_sequentiality_factor(
 ) -> f32 {
     let pattern_factor = req_size_ratio.max(merge_ratio);
     let raw_sequentiality = pattern_factor * pressure_ratio;
+
     let alpha = math_config.smoothing_factor;
     let smoothed = (raw_sequentiality * alpha) + (state.sequentiality_smoothed * (1.0 - alpha));
+
     state.sequentiality_smoothed = smoothed;
+
     smoothed
 }
 
@@ -187,12 +205,14 @@ pub fn calculate_effective_latency(delta: &IoDelta, lambda_eff: f32, in_flight: 
 pub fn calculate_target_latency(psi_some_avg10: f32, math_config: &StorageMathConfig) -> f32 {
     let psi_ratio = (psi_some_avg10 / 100.0).clamp(0.0, 1.0);
     let target = math_config.target_latency_base_ms * (1.0 - psi_ratio);
+
     target.max(1.0)
 }
 
 #[inline]
 pub fn calculate_target_read_ahead(sequentiality: f32, kernel_limits: &StorageLimits) -> f32 {
     let range = kernel_limits.max_read_ahead - kernel_limits.min_read_ahead;
+
     kernel_limits.min_read_ahead + (range * sequentiality)
 }
 
@@ -209,8 +229,10 @@ pub fn calculate_next_queue_depth(
     if psi_pressure > math_config.critical_threshold_psi {
         return kernel_limits.min_nr_requests;
     }
+
     let safe_latency = current_latency_ms.max(0.05);
     let gradient = target_latency_ms / safe_latency;
+
     let next_nr = if gradient > 1.25 {
         current_nr_requests * 1.15 + 2.0
     } else if gradient < 0.75 {
@@ -220,5 +242,6 @@ pub fn calculate_next_queue_depth(
     } else {
         current_nr_requests
     };
+
     next_nr.clamp(kernel_limits.min_nr_requests, kernel_limits.max_nr_requests)
 }
