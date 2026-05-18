@@ -22,7 +22,7 @@
       "name": "android-debug",
       "displayName": "Android aarch64 (API 33) Debug",
       "inherits": "android-base",
-      "binaryDir": "${sourceDir}/build/Debug/arm64-v8a",
+      "binaryDir": "${sourceDir}/../build/Debug/arm64-v8a",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
@@ -31,7 +31,7 @@
       "name": "android-release",
       "displayName": "Android aarch64 (API 33) Release",
       "inherits": "android-base",
-      "binaryDir": "${sourceDir}/build/Release/arm64-v8a",
+      "binaryDir": "${sourceDir}/../build/Release/arm64-v8a",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }

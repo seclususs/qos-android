@@ -24,8 +24,8 @@ include(CheckIPOSupported)
 check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_ERROR)
 
 # Root paths
-set(RUST_ROOT_DIR   "${CMAKE_SOURCE_DIR}/core")
-set(NATIVE_ROOT_DIR "${CMAKE_SOURCE_DIR}/native")
+set(RUST_ROOT_DIR   "${CMAKE_SOURCE_DIR}/../core")
+set(NATIVE_ROOT_DIR "${CMAKE_SOURCE_DIR}")
 set(RUST_TARGET_TRIPLE "aarch64-linux-android")
 
 # ==============================================================================
@@ -54,7 +54,7 @@ file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS
 # Rust library output
 set(RUST_LIB_NAME "qos_logic")
 set(RUST_STATIC_LIB
-    "${CMAKE_SOURCE_DIR}/target/${RUST_TARGET_TRIPLE}/${RUST_PROFILE}/lib${RUST_LIB_NAME}.a"
+    "${CMAKE_SOURCE_DIR}/../target/${RUST_TARGET_TRIPLE}/${RUST_PROFILE}/lib${RUST_LIB_NAME}.a"
 )
 
 # Cargo build step
@@ -197,10 +197,10 @@ if(CLANG_TIDY_EXE)
         COMMAND "${CLANG_TIDY_EXE}"
                 -p "${CMAKE_BINARY_DIR}"
                 --quiet
-                "--header-filter=.*native/.*"
+                "--header-filter=.*"
                 ${NATIVE_SOURCES} "${NATIVE_ROOT_DIR}/src/main.cpp"
                 "-checks=${TIDY_CHECKS_STR}"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/.."
         COMMAND ${CMAKE_COMMAND} -E echo "Linter Analysis Finished."
         VERBATIM
     )

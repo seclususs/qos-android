@@ -164,7 +164,7 @@ def run_quality_checks(ndk_path, api_level, do_check, do_lint):
         "-DCMAKE_BUILD_TYPE=Release",
         "-G",
         "Ninja",
-        "../../..",
+        "../../../native",
     ]
 
     try:
@@ -212,7 +212,7 @@ def build_project(ndk_path, api_level, build_type):
         f"-DCMAKE_BUILD_TYPE={build_type}",
         "-G",
         "Ninja",
-        "../../..",
+        "../../../native",
     ]
 
     run_cmd(cmake_cmd, cwd=build_dir, silent=True)
@@ -230,6 +230,9 @@ def build_project(ndk_path, api_level, build_type):
 
 
 def main():
+    root_dir = Path(__file__).resolve().parent.parent
+    os.chdir(root_dir)
+
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
