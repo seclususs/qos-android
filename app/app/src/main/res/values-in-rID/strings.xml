@@ -1,7 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">QoS</string>
     <string name="nav_services">Layanan</string>
     <string name="nav_modules">Modul</string>
     <string name="nav_advanced">Lanjutan</string>
     <string name="nav_settings">Pengaturan</string>
+    <string name="settings_theme_title">Tema Aplikasi</string>
+    <string name="settings_select_theme">Pilih Tema</string>
+    <string name="theme_system">Default Sistem</string>
+    <string name="theme_light">Mode Terang</string>
+    <string name="theme_dark">Mode Gelap</string>
+    <string name="theme_change_success">Tema berhasil diubah!</string>
+    <string name="theme_change_error">Gagal mengubah tema.</string>
 </resources>

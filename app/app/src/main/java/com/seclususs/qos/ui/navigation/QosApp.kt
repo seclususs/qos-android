@@ -17,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.seclususs.qos.ui.components.NavBar
+import com.seclususs.qos.ui.features.settings.SettingsScreen
 
 @Composable
 fun QosApp() {
@@ -61,10 +62,7 @@ fun QosApp() {
                 }
 
                 composable<Settings> {
-                    // TODO
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Settings", style = MaterialTheme.typography.titleLarge)
-                    }
+                    SettingsScreen()
                 }
             }
         }

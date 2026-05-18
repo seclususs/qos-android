@@ -1,7 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">QoS</string>
     <string name="nav_services">Services</string>
     <string name="nav_modules">Modules</string>
     <string name="nav_advanced">Advanced</string>
     <string name="nav_settings">Settings</string>
+    <string name="settings_theme_title">App Theme</string>
+    <string name="settings_select_theme">Select Theme</string>
+    <string name="theme_system">System Default</string>
+    <string name="theme_light">Light Mode</string>
+    <string name="theme_dark">Dark Mode</string>
+    <string name="theme_change_success">Theme successfully changed!</string>
+    <string name="theme_change_error">Failed to change theme.</string>
 </resources>
