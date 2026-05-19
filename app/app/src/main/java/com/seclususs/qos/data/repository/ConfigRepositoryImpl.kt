@@ -19,6 +19,10 @@ class ConfigRepositoryImpl @Inject constructor(
 
     private val configPath = "/data/adb/modules/sys_qos/config.ini"
 
+    override suspend fun checkConfigExists(): Boolean = withContext(ioDispatcher) {
+        rootShell.executeSilently("ls $configPath")
+    }
+
     override suspend fun getConfig(): QosConfig = withContext(ioDispatcher) {
         val rawText = rootShell.readFile(configPath)
         if (rawText.isNullOrBlank()) {

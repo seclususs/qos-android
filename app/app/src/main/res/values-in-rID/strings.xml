@@ -30,4 +30,30 @@
     <string name="error_daemon_missing_title">Daemon Tidak Ditemukan</string>
     <string name="error_daemon_missing_desc">Biner sistem inti tidak ditemukan. Pastikan modul Magisk QoS sudah terpasang dan aktif, lalu mulai ulang perangkat Anda.</string>
     <string name="action_check_again">Cek Ulang</string>
+
+    <string name="module_update_success">Konfigurasi diperbarui!</string>
+    <string name="module_update_error">Gagal menerapkan konfigurasi.</string>
+
+    <string name="module_blocker_title">Kontroler Blocker</string>
+    <string name="module_blocker_subtitle">Nonaktifkan layanan latar belakang berat.</string>
+    <string name="module_blocker_desc">Memastikan penonaktifan komponen latar belakang tertentu (seperti analitik GMS dan layanan iklan) untuk mengurangi konsumsi sumber daya dan proses bangun yang tidak perlu.</string>
+
+    <string name="module_cleaner_title">Kontroler Cleaner</string>
+    <string name="module_cleaner_subtitle">Pembersihan cache &amp; data usang oportunistik.</string>
+    <string name="module_cleaner_desc">Melakukan pembersihan cache dan data usang di latar belakang secara oportunistik berdasarkan beban sistem, kondisi termal, dan tekanan penyimpanan tanpa mengganggu aplikasi yang sedang aktif.</string>
+
+    <string name="module_cpu_title">Kontroler CPU</string>
+    <string name="module_cpu_subtitle">Penyetelan penjadwal CFS dinamis.</string>
+    <string name="module_cpu_desc">Secara dinamis mengelola parameter penjadwal CFS kernel dan UClamp berdasarkan tekanan beban sistem (PSI) dan kondisi termal. Melindungi throughput tugas aktif sambil mempertahankan responsivitas maksimal.</string>
+
+    <string name="module_storage_title">Kontroler Penyimpanan</string>
+    <string name="module_storage_subtitle">Penyetelan antrean I/O perangkat blok.</string>
+    <string name="module_storage_desc">Menyetel antrean I/O dan memori read-ahead pada penyimpanan secara dinamis untuk memaksimalkan throughput data dan secara drastis mengurangi latensi baca/tulis saat terjadi kemacetan I/O.</string>
+
+    <string name="module_tweaks_title">Tweak Sistem</string>
+    <string name="module_tweaks_subtitle">Terapkan optimasi kernel statis.</string>
+    <string name="module_tweaks_desc">Menerapkan sekumpulan konfigurasi kernel statis, parameter penjadwal I/O, dan properti sistem saat perangkat menyala untuk meningkatkan latensi jaringan dan stabilitas sistem secara keseluruhan.</string>
+
+    <string name="error_config_missing_title">Konfigurasi Tidak Ditemukan</string>
+    <string name="error_config_missing_desc">File config hilang. Silakan instal ulang modul Magisk untuk mengembalikan konfigurasi.</string>
 </resources>

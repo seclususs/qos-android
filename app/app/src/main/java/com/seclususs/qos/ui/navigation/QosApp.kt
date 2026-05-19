@@ -17,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.seclususs.qos.ui.components.NavBar
+import com.seclususs.qos.ui.features.modules.ModulesScreen
 import com.seclususs.qos.ui.features.services.ServicesScreen
 import com.seclususs.qos.ui.features.settings.SettingsScreen
 
@@ -46,10 +47,7 @@ fun QosApp() {
                 }
 
                 composable<Modules> {
-                    // TODO
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Modules", style = MaterialTheme.typography.titleLarge)
-                    }
+                    ModulesScreen()
                 }
 
                 composable<Advanced> {
