@@ -5,6 +5,7 @@
     <string name="nav_modules">Modul</string>
     <string name="nav_advanced">Lanjutan</string>
     <string name="nav_settings">Pengaturan</string>
+
     <string name="settings_theme_title">Tema Aplikasi</string>
     <string name="settings_select_theme">Pilih Tema</string>
     <string name="theme_system">Default Sistem</string>
@@ -12,4 +13,21 @@
     <string name="theme_dark">Mode Gelap</string>
     <string name="theme_change_success">Tema berhasil diubah!</string>
     <string name="theme_change_error">Gagal mengubah tema.</string>
+
+    <string name="services_title">Layanan</string>
+    <string name="action_start">Mulai</string>
+    <string name="action_stop">Berhenti</string>
+    <string name="action_restart">Mulai Ulang</string>
+    <string name="metric_cpu">Penggunaan CPU</string>
+    <string name="metric_ram">Penggunaan RAM</string>
+    <string name="metric_uptime">Waktu Aktif</string>
+    <string name="metric_pid">PID</string>
+    <string name="status_starting">MEMULAI...</string>
+    <string name="status_stopping">MENGHENTIKAN...</string>
+    <string name="status_restarting">MEMULAI ULANG...</string>
+
+    <string name="status_missing">TIDAK DITEMUKAN</string>
+    <string name="error_daemon_missing_title">Daemon Tidak Ditemukan</string>
+    <string name="error_daemon_missing_desc">Biner sistem inti tidak ditemukan. Pastikan modul Magisk QoS sudah terpasang dan aktif, lalu mulai ulang perangkat Anda.</string>
+    <string name="action_check_again">Cek Ulang</string>
 </resources>

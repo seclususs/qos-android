@@ -15,6 +15,10 @@ class DaemonRepositoryImpl @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : DaemonRepository {
 
+    override suspend fun checkDaemonExists(): Boolean = withContext(ioDispatcher) {
+        rootShell.executeSilently("ls /data/adb/modules/sys_qos/system/bin/qos_daemon")
+    }
+
     override suspend fun isDaemonRunning(): Boolean = withContext(ioDispatcher) {
         val pid = rootShell.execute("pidof qos_daemon")
         !pid.isNullOrBlank()
@@ -30,7 +34,14 @@ class DaemonRepositoryImpl @Inject constructor(
     }
 
     override suspend fun stopDaemon(): Boolean = withContext(ioDispatcher) {
-        rootShell.executeSilently("killall qos_daemon")
+        val pid = getDaemonPid()
+
+        if (!pid.isNullOrBlank()) {
+            rootShell.executeSilently("kill -9 $pid")
+        }
+
+        rootShell.executeSilently("killall -9 qos_daemon")
+        true
     }
 
     override suspend fun getDaemonMetrics(pid: String): DaemonMetrics = withContext(ioDispatcher) {

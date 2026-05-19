@@ -7,6 +7,10 @@ import javax.inject.Inject
 class DaemonStatusUseCase @Inject constructor(
     private val repository: DaemonRepository
 ) {
+    suspend fun checkDaemonExists(): Boolean {
+        return repository.checkDaemonExists()
+    }
+
     suspend fun isRunning(): Boolean {
         return repository.isDaemonRunning()
     }

@@ -17,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.seclususs.qos.ui.components.NavBar
+import com.seclususs.qos.ui.features.services.ServicesScreen
 import com.seclususs.qos.ui.features.settings.SettingsScreen
 
 @Composable
@@ -41,10 +42,7 @@ fun QosApp() {
                 enterTransition = { fadeIn(animationSpec = tween(300)) },
                 exitTransition = { fadeOut(animationSpec = tween(300)) }) {
                 composable<Services> {
-                    // TODO
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Services", style = MaterialTheme.typography.titleLarge)
-                    }
+                    ServicesScreen()
                 }
 
                 composable<Modules> {
