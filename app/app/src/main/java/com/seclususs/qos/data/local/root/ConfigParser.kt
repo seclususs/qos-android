@@ -50,70 +50,22 @@ class ConfigParser @Inject constructor() {
                     tweaksEnabled = value.toBooleanStrictOrNull() ?: currentConfig.tweaksEnabled
                 )
 
-                "min_latency_ns" -> currentConfig.copy(
-                    minLatencyNs = value.toLongOrNull() ?: currentConfig.minLatencyNs
-                )
-
-                "max_latency_ns" -> currentConfig.copy(
-                    maxLatencyNs = value.toLongOrNull() ?: currentConfig.maxLatencyNs
-                )
-
-                "min_granularity_ns" -> currentConfig.copy(
-                    minGranularityNs = value.toLongOrNull() ?: currentConfig.minGranularityNs
-                )
-
-                "max_granularity_ns" -> currentConfig.copy(
-                    maxGranularityNs = value.toLongOrNull() ?: currentConfig.maxGranularityNs
-                )
-
-                "min_wakeup_ns" -> currentConfig.copy(
-                    minWakeupNs = value.toLongOrNull() ?: currentConfig.minWakeupNs
-                )
-
-                "max_wakeup_ns" -> currentConfig.copy(
-                    maxWakeupNs = value.toLongOrNull() ?: currentConfig.maxWakeupNs
-                )
-
-                "min_migration_cost" -> currentConfig.copy(
-                    minMigrationCost = value.toLongOrNull() ?: currentConfig.minMigrationCost
-                )
-
-                "max_migration_cost" -> currentConfig.copy(
-                    maxMigrationCost = value.toLongOrNull() ?: currentConfig.maxMigrationCost
-                )
-
-                "min_walt_init_pct" -> currentConfig.copy(
-                    minWaltInitPct = value.toLongOrNull() ?: currentConfig.minWaltInitPct
-                )
-
-                "max_walt_init_pct" -> currentConfig.copy(
-                    maxWaltInitPct = value.toLongOrNull() ?: currentConfig.maxWaltInitPct
-                )
-
-                "min_uclamp_min" -> currentConfig.copy(
-                    minUclampMin = value.toLongOrNull() ?: currentConfig.minUclampMin
-                )
-
-                "max_uclamp_min" -> currentConfig.copy(
-                    maxUclampMin = value.toLongOrNull() ?: currentConfig.maxUclampMin
-                )
-
-                "min_read_ahead" -> currentConfig.copy(
-                    minReadAhead = value.toLongOrNull() ?: currentConfig.minReadAhead
-                )
-
-                "max_read_ahead" -> currentConfig.copy(
-                    maxReadAhead = value.toLongOrNull() ?: currentConfig.maxReadAhead
-                )
-
-                "min_nr_requests" -> currentConfig.copy(
-                    minNrRequests = value.toLongOrNull() ?: currentConfig.minNrRequests
-                )
-
-                "max_nr_requests" -> currentConfig.copy(
-                    maxNrRequests = value.toLongOrNull() ?: currentConfig.maxNrRequests
-                )
-
+                "min_latency_ns" -> currentConfig.copy(minLatencyNs = if (value.isBlank()) null else value.toLongOrNull())
+                "max_latency_ns" -> currentConfig.copy(maxLatencyNs = if (value.isBlank()) null else value.toLongOrNull())
+                "min_granularity_ns" -> currentConfig.copy(minGranularityNs = if (value.isBlank()) null else value.toLongOrNull())
+                "max_granularity_ns" -> currentConfig.copy(maxGranularityNs = if (value.isBlank()) null else value.toLongOrNull())
+                "min_wakeup_ns" -> currentConfig.copy(minWakeupNs = if (value.isBlank()) null else value.toLongOrNull())
+                "max_wakeup_ns" -> currentConfig.copy(maxWakeupNs = if (value.isBlank()) null else value.toLongOrNull())
+                "min_migration_cost" -> currentConfig.copy(minMigrationCost = if (value.isBlank()) null else value.toLongOrNull())
+                "max_migration_cost" -> currentConfig.copy(maxMigrationCost = if (value.isBlank()) null else value.toLongOrNull())
+                "min_walt_init_pct" -> currentConfig.copy(minWaltInitPct = if (value.isBlank()) null else value.toLongOrNull())
+                "max_walt_init_pct" -> currentConfig.copy(maxWaltInitPct = if (value.isBlank()) null else value.toLongOrNull())
+                "min_uclamp_min" -> currentConfig.copy(minUclampMin = if (value.isBlank()) null else value.toLongOrNull())
+                "max_uclamp_min" -> currentConfig.copy(maxUclampMin = if (value.isBlank()) null else value.toLongOrNull())
+                "min_read_ahead" -> currentConfig.copy(minReadAhead = if (value.isBlank()) null else value.toLongOrNull())
+                "max_read_ahead" -> currentConfig.copy(maxReadAhead = if (value.isBlank()) null else value.toLongOrNull())
+                "min_nr_requests" -> currentConfig.copy(minNrRequests = if (value.isBlank()) null else value.toLongOrNull())
+                "max_nr_requests" -> currentConfig.copy(maxNrRequests = if (value.isBlank()) null else value.toLongOrNull())
                 else -> currentConfig
             }
         } catch (_: Exception) {
@@ -147,24 +99,24 @@ class ConfigParser @Inject constructor() {
             ; ==============================================================================
             
             ; [CPU Kernel Limits]
-            min_latency_ns=${config.minLatencyNs}
-            max_latency_ns=${config.maxLatencyNs}
-            min_granularity_ns=${config.minGranularityNs}
-            max_granularity_ns=${config.maxGranularityNs}
-            min_wakeup_ns=${config.minWakeupNs}
-            max_wakeup_ns=${config.maxWakeupNs}
-            min_migration_cost=${config.minMigrationCost}
-            max_migration_cost=${config.maxMigrationCost}
-            min_walt_init_pct=${config.minWaltInitPct}
-            max_walt_init_pct=${config.maxWaltInitPct}
-            min_uclamp_min=${config.minUclampMin}
-            max_uclamp_min=${config.maxUclampMin}
+            min_latency_ns=${config.minLatencyNs ?: ""}
+            max_latency_ns=${config.maxLatencyNs ?: ""}
+            min_granularity_ns=${config.minGranularityNs ?: ""}
+            max_granularity_ns=${config.maxGranularityNs ?: ""}
+            min_wakeup_ns=${config.minWakeupNs ?: ""}
+            max_wakeup_ns=${config.maxWakeupNs ?: ""}
+            min_migration_cost=${config.minMigrationCost ?: ""}
+            max_migration_cost=${config.maxMigrationCost ?: ""}
+            min_walt_init_pct=${config.minWaltInitPct ?: ""}
+            max_walt_init_pct=${config.maxWaltInitPct ?: ""}
+            min_uclamp_min=${config.minUclampMin ?: ""}
+            max_uclamp_min=${config.maxUclampMin ?: ""}
             
             ; [Storage Kernel Limits]
-            min_read_ahead=${config.minReadAhead}
-            max_read_ahead=${config.maxReadAhead}
-            min_nr_requests=${config.minNrRequests}
-            max_nr_requests=${config.maxNrRequests}
+            min_read_ahead=${config.minReadAhead ?: ""}
+            max_read_ahead=${config.maxReadAhead ?: ""}
+            min_nr_requests=${config.minNrRequests ?: ""}
+            max_nr_requests=${config.maxNrRequests ?: ""}
         """.trimIndent()
     }
 }

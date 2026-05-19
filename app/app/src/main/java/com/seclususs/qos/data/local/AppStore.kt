@@ -24,6 +24,8 @@ class AppStore @Inject constructor(
 
     companion object {
         val APP_THEME_KEY = stringPreferencesKey("app_theme")
+        val CACHED_CPU_LIMITS_KEY = stringPreferencesKey("cached_cpu_limits")
+        val CACHED_STORAGE_LIMITS_KEY = stringPreferencesKey("cached_storage_limits")
     }
 
     val appThemeFlow: Flow<AppTheme> = dataStore.data.map { preferences ->
@@ -35,9 +37,29 @@ class AppStore @Inject constructor(
         }
     }
 
+    val cachedCpuLimitsFlow: Flow<String> = dataStore.data.map { preferences ->
+        preferences[CACHED_CPU_LIMITS_KEY] ?: ""
+    }
+
+    val cachedStorageLimitsFlow: Flow<String> = dataStore.data.map { preferences ->
+        preferences[CACHED_STORAGE_LIMITS_KEY] ?: ""
+    }
+
     suspend fun setAppTheme(theme: AppTheme) {
         dataStore.edit { preferences ->
             preferences[APP_THEME_KEY] = theme.name
+        }
+    }
+
+    suspend fun setCachedCpuLimits(data: String) {
+        dataStore.edit { preferences ->
+            preferences[CACHED_CPU_LIMITS_KEY] = data
+        }
+    }
+
+    suspend fun setCachedStorageLimits(data: String) {
+        dataStore.edit { preferences ->
+            preferences[CACHED_STORAGE_LIMITS_KEY] = data
         }
     }
 }

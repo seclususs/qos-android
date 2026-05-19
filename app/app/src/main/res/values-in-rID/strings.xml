@@ -25,7 +25,6 @@
     <string name="status_starting">MEMULAI...</string>
     <string name="status_stopping">MENGHENTIKAN...</string>
     <string name="status_restarting">MEMULAI ULANG...</string>
-
     <string name="status_missing">TIDAK DITEMUKAN</string>
     <string name="error_daemon_missing_title">Daemon Tidak Ditemukan</string>
     <string name="error_daemon_missing_desc">Biner sistem inti tidak ditemukan. Pastikan modul Magisk QoS sudah terpasang dan aktif, lalu mulai ulang perangkat Anda.</string>
@@ -56,4 +55,25 @@
 
     <string name="error_config_missing_title">Konfigurasi Tidak Ditemukan</string>
     <string name="error_config_missing_desc">File config hilang. Silakan instal ulang modul Magisk untuk mengembalikan konfigurasi.</string>
+
+    <string name="advanced_cpu_title">Batas Kernel CPU</string>
+    <string name="advanced_storage_title">Batas Storage I/O</string>
+
+    <string name="advanced_label_latency">Latency (ns)</string>
+    <string name="advanced_label_granularity">Granularity (ns)</string>
+    <string name="advanced_label_wakeup">Wakeup (ns)</string>
+    <string name="advanced_label_migration_cost">Migration Cost</string>
+    <string name="advanced_label_walt_init">Walt Init Pct</string>
+    <string name="advanced_label_uclamp_min">Uclamp Min</string>
+
+    <string name="advanced_label_read_ahead">Read Ahead (KB)</string>
+    <string name="advanced_label_nr_requests">Nr Requests</string>
+
+    <string name="advanced_prefix_min">Min: </string>
+    <string name="advanced_prefix_max">Max: </string>
+    <string name="action_apply_config">Terapkan Konfigurasi</string>
+
+    <string name="advanced_action_modify">Modifikasi Parameter</string>
+    <string name="advanced_sheet_cpu_title">Modifikasi Batas CPU</string>
+    <string name="advanced_sheet_storage_title">Modifikasi Batas Storage I/O</string>
 </resources>

@@ -25,7 +25,6 @@
     <string name="status_starting">STARTING...</string>
     <string name="status_stopping">STOPPING...</string>
     <string name="status_restarting">RESTARTING...</string>
-
     <string name="status_missing">NOT FOUND</string>
     <string name="error_daemon_missing_title">Daemon Not Found</string>
     <string name="error_daemon_missing_desc">The core system binary file was not found. Make sure the Magisk QoS module is installed and enabled, then restart your device.</string>
@@ -56,4 +55,25 @@
 
     <string name="error_config_missing_title">Config Not Found</string>
     <string name="error_config_missing_desc">The config file is missing. Please reinstall the Magisk module to restore configuration.</string>
+
+    <string name="advanced_cpu_title">Kernel CPU Limits</string>
+    <string name="advanced_storage_title">Storage I/O Limits</string>
+
+    <string name="advanced_label_latency">Latency (ns)</string>
+    <string name="advanced_label_granularity">Granularity (ns)</string>
+    <string name="advanced_label_wakeup">Wakeup (ns)</string>
+    <string name="advanced_label_migration_cost">Migration Cost</string>
+    <string name="advanced_label_walt_init">Walt Init Pct</string>
+    <string name="advanced_label_uclamp_min">Uclamp Min</string>
+
+    <string name="advanced_label_read_ahead">Read Ahead (KB)</string>
+    <string name="advanced_label_nr_requests">Nr Requests</string>
+
+    <string name="advanced_prefix_min">Min: </string>
+    <string name="advanced_prefix_max">Max: </string>
+    <string name="action_apply_config">Apply Configuration</string>
+
+    <string name="advanced_action_modify">Modify Parameters</string>
+    <string name="advanced_sheet_cpu_title">CPU Limits Modification</string>
+    <string name="advanced_sheet_storage_title">Storage I/O Limits Modification</string>
 </resources>
