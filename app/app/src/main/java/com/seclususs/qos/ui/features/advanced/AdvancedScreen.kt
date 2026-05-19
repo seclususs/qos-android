@@ -2,10 +2,8 @@ package com.seclususs.qos.ui.features.advanced
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -14,7 +12,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,58 +23,50 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.seclususs.qos.R
 import com.seclususs.qos.ui.components.BottomSheet
+import com.seclususs.qos.ui.components.ExpandableSwitchCard
+import com.seclususs.qos.ui.components.MissingConfigCard
+import com.seclususs.qos.ui.components.MissingDaemonCard
+import com.seclususs.qos.ui.components.NumericInputField
 import com.seclususs.qos.ui.components.QosCard
 import com.seclususs.qos.ui.components.TopSnackbar
+import kotlinx.coroutines.delay
 
 @Composable
 fun AdvancedScreen(
@@ -152,7 +141,7 @@ private fun AdvancedContent(state: AdvancedState, viewModel: AdvancedViewModel) 
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        ExpandableLimitsCard(
+        ExpandableSwitchCard(
             title = stringResource(id = R.string.advanced_cpu_title),
             icon = Icons.Filled.Memory,
             isExpanded = state.cpuLimitsEnabled,
@@ -162,7 +151,7 @@ private fun AdvancedContent(state: AdvancedState, viewModel: AdvancedViewModel) 
                 onClick = { viewModel.onEvent(AdvancedEvent.ShowSheet(AdvancedSheetType.CPU)) })
         }
 
-        ExpandableLimitsCard(
+        ExpandableSwitchCard(
             title = stringResource(id = R.string.advanced_storage_title),
             icon = Icons.Filled.Storage,
             isExpanded = state.storageLimitsEnabled,
@@ -222,7 +211,21 @@ private fun ModifyButtonCard(onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewModel) {
-    BottomSheet(onDismissRequest = { viewModel.onEvent(AdvancedEvent.HideSheet) }) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val currentApplyState =
+        if (state.activeSheet == AdvancedSheetType.CPU) state.cpuApplyState else state.storageApplyState
+
+    LaunchedEffect(currentApplyState) {
+        if (currentApplyState == ApplyState.SUCCESS) {
+            delay(600)
+            sheetState.hide()
+            viewModel.onEvent(AdvancedEvent.HideSheet)
+        }
+    }
+
+    BottomSheet(
+        onDismissRequest = { viewModel.onEvent(AdvancedEvent.HideSheet) }, sheetState = sheetState
+    ) {
         val title = if (state.activeSheet == AdvancedSheetType.CPU) {
             stringResource(id = R.string.advanced_sheet_cpu_title)
         } else {
@@ -428,58 +431,6 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
 }
 
 @Composable
-private fun ExpandableLimitsCard(
-    title: String,
-    icon: ImageVector,
-    isExpanded: Boolean,
-    isProcessing: Boolean,
-    onToggle: (Boolean) -> Unit,
-    content: @Composable () -> Unit
-) {
-    QosCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessLow))) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = { if (!isProcessing) onToggle(!isExpanded) })
-                    .padding(16.dp), verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                AnimatedQosSwitch(isChecked = isExpanded, isProcessing = isProcessing)
-            }
-
-            if (isExpanded) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-                Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                    content()
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun ApplyConfigurationButton(
     applyState: ApplyState, onClick: () -> Unit
 ) {
@@ -566,178 +517,6 @@ private fun AdvancedLimitRow(
                 placeholder = placeholderMax,
                 modifier = Modifier.weight(1f)
             )
-        }
-    }
-}
-
-@Composable
-private fun NumericInputField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    prefixLabel: String,
-    placeholder: String,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { newVal -> onValueChange(newVal.filter { it.isDigit() }) },
-        prefix = {
-            Text(
-                text = prefixLabel,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelLarge
-            )
-        },
-        placeholder = {
-            Text(
-                text = placeholder, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-            )
-        },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-        shape = RoundedCornerShape(12.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-            focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.2f)
-        ),
-        modifier = modifier.height(52.dp)
-    )
-}
-
-@Composable
-private fun AnimatedQosSwitch(isChecked: Boolean, isProcessing: Boolean) {
-    val switchWidth = 52.dp
-    val switchHeight = 30.dp
-    val thumbSize = 22.dp
-    val thumbPadding = 4.dp
-    val trackColor by animateColorAsState(
-        targetValue = if (isChecked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
-            alpha = 0.2f
-        ), animationSpec = tween(300), label = "switchTrackColor"
-    )
-    val thumbOffset by animateDpAsState(
-        targetValue = if (isChecked) (switchWidth - thumbSize - thumbPadding) else thumbPadding,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "switchThumbOffset"
-    )
-
-    Box(
-        modifier = Modifier
-            .width(switchWidth)
-            .height(switchHeight)
-            .clip(CircleShape)
-            .background(trackColor), contentAlignment = Alignment.CenterStart
-    ) {
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(thumbOffset.roundToPx(), 0) }
-                .size(thumbSize)
-                .shadow(elevation = 2.dp, shape = CircleShape)
-                .clip(CircleShape)
-                .background(Color.White), contentAlignment = Alignment.Center) {
-            AnimatedContent(
-                targetState = isProcessing, transitionSpec = {
-                    (fadeIn(tween(200)) + scaleIn(tween(200))) togetherWith (fadeOut(tween(200)) + scaleOut(
-                        tween(200)
-                    ))
-                }, label = "switchIconAnimation"
-            ) { processing ->
-                if (processing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (isChecked) Icons.Filled.Check else Icons.Filled.Close,
-                        contentDescription = null,
-                        tint = if (isChecked) MaterialTheme.colorScheme.primary else Color.Gray,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MissingDaemonCard(onRefresh: () -> Unit) {
-    QosCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Warning,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(48.dp)
-            )
-            Text(
-                text = stringResource(id = R.string.error_daemon_missing_title),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = stringResource(id = R.string.error_daemon_missing_desc),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center
-            )
-            Button(onClick = onRefresh) {
-                Icon(
-                    imageVector = Icons.Filled.Refresh,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = stringResource(id = R.string.action_check_again))
-            }
-        }
-    }
-}
-
-@Composable
-private fun MissingConfigCard(onRefresh: () -> Unit) {
-    QosCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Error,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(48.dp)
-            )
-            Text(
-                text = stringResource(id = R.string.error_config_missing_title),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = stringResource(id = R.string.error_config_missing_desc),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center
-            )
-            Button(onClick = onRefresh) {
-                Icon(
-                    imageVector = Icons.Filled.Refresh,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = stringResource(id = R.string.action_check_again))
-            }
         }
     }
 }

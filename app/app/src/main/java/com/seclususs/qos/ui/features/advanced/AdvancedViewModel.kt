@@ -67,7 +67,14 @@ class AdvancedViewModel @Inject constructor(
             }
 
             is AdvancedEvent.ShowSheet -> _state.update { it.copy(activeSheet = event.type) }
-            is AdvancedEvent.HideSheet -> _state.update { it.copy(activeSheet = null) }
+            is AdvancedEvent.HideSheet -> _state.update {
+                it.copy(
+                    activeSheet = null,
+                    cpuApplyState = ApplyState.IDLE,
+                    storageApplyState = ApplyState.IDLE
+                )
+            }
+
             is AdvancedEvent.ApplyCpuConfig -> applyCpuConfig()
             is AdvancedEvent.ApplyStorageConfig -> applyStorageConfig()
             is AdvancedEvent.RefreshStatus -> viewModelScope.launch { refreshInternal() }
@@ -215,13 +222,10 @@ class AdvancedViewModel @Inject constructor(
             val success = updateConfigUseCase(newConfig)
             if (success) {
                 toggleDaemonUseCase.restart()
-                _state.update { it.copy(cpuApplyState = ApplyState.SUCCESS) }
-                delay(600)
                 _state.update {
                     it.copy(
                         config = newConfig,
-                        cpuApplyState = ApplyState.IDLE,
-                        activeSheet = null,
+                        cpuApplyState = ApplyState.SUCCESS,
                         snackbarMessageResId = R.string.module_update_success,
                         snackbarIsError = false,
                         snackbarVisible = true
@@ -261,13 +265,10 @@ class AdvancedViewModel @Inject constructor(
             val success = updateConfigUseCase(newConfig)
             if (success) {
                 toggleDaemonUseCase.restart()
-                _state.update { it.copy(storageApplyState = ApplyState.SUCCESS) }
-                delay(600)
                 _state.update {
                     it.copy(
                         config = newConfig,
-                        storageApplyState = ApplyState.IDLE,
-                        activeSheet = null,
+                        storageApplyState = ApplyState.SUCCESS,
                         snackbarMessageResId = R.string.module_update_success,
                         snackbarIsError = false,
                         snackbarVisible = true

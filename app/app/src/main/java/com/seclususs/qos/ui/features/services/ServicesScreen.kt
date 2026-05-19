@@ -1,12 +1,10 @@
 package com.seclususs.qos.ui.features.services
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -29,21 +27,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,16 +52,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.seclususs.qos.R
-import com.seclususs.qos.ui.components.QosCard
-import com.seclususs.qos.ui.theme.TechnicalTextStyle
+import com.seclususs.qos.ui.components.ActionCard
+import com.seclususs.qos.ui.components.MissingDaemonCard
+import com.seclususs.qos.ui.components.TelemetryCard
 
 @Composable
 fun ServicesScreen(
@@ -170,44 +161,6 @@ fun ServicesScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun MissingDaemonCard(onRefresh: () -> Unit) {
-    QosCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Warning,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(48.dp)
-            )
-            Text(
-                text = stringResource(id = R.string.error_daemon_missing_title),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = stringResource(id = R.string.error_daemon_missing_desc),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            ActionCard(
-                title = stringResource(id = R.string.action_check_again),
-                color = MaterialTheme.colorScheme.primary,
-                filledIcon = Icons.Filled.Refresh,
-                outlinedIcon = Icons.Outlined.Refresh,
-                onClick = onRefresh
-            )
         }
     }
 }
@@ -393,132 +346,5 @@ private fun ReactorCore(
                 alpha = 0.5f
             ) else animatedColor
         )
-    }
-}
-
-@Composable
-private fun CustomProgressBar(
-    progress: Float, color: Color, modifier: Modifier = Modifier
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(durationMillis = 800, easing = LinearOutSlowInEasing),
-        label = "CustomProgressBar"
-    )
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(8.dp)
-            .clip(RoundedCornerShape(percent = 50))
-            .background(color.copy(alpha = 0.15f)), contentAlignment = Alignment.CenterStart
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(fraction = animatedProgress.coerceIn(0.001f, 1f))
-                .height(8.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(color)
-        )
-    }
-}
-
-@Composable
-private fun ActionCard(
-    title: String,
-    color: Color,
-    filledIcon: ImageVector,
-    outlinedIcon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "buttonScale"
-    )
-
-    QosCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clickable(
-                interactionSource = interactionSource, indication = null, onClick = onClick
-            ), alpha = 0.6f) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start
-        ) {
-            Box(
-                modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center
-            ) {
-                Crossfade(
-                    targetState = if (isPressed) filledIcon else outlinedIcon,
-                    animationSpec = tween(durationMillis = 150),
-                    label = "iconCrossfade"
-                ) { icon ->
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = title,
-                        tint = color,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Text(
-                text = title, style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = FontWeight.SemiBold, fontSize = 15.sp
-                ), color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
-@Composable
-private fun TelemetryCard(
-    title: String, value: String, progress: Float?, modifier: Modifier = Modifier
-) {
-    QosCard(
-        modifier = modifier.height(96.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.Start
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = value,
-                style = TechnicalTextStyle,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            if (progress != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                CustomProgressBar(
-                    progress = progress, color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
     }
 }

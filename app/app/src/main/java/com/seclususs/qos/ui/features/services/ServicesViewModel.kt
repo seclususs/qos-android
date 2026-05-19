@@ -108,9 +108,17 @@ class ServicesViewModel @Inject constructor(
         val cpuRaw = metrics.cpuUsage.replace("%", "").trim().toFloatOrNull() ?: 0f
         val cpuProg = (cpuRaw / 100f).coerceIn(0f, 1f)
 
-        val ramRaw =
-            metrics.ramUsage.replace("MB", "", ignoreCase = true).trim().toFloatOrNull() ?: 0f
-        val ramProg = (ramRaw / 100f).coerceIn(0f, 1f)
+        val ramPercentRegex = Regex("\\((.*?)%\\)")
+        val ramPercentMatch = ramPercentRegex.find(metrics.ramUsage)
+
+        val ramProg = if (ramPercentMatch != null) {
+            val percentValue = ramPercentMatch.groupValues[1].toFloatOrNull() ?: 0f
+            (percentValue / 100f).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+
+        val displayRam = metrics.ramUsage.split("(")[0].trim()
 
         val finalStatus = if (isRunning) DaemonStatus.ACTIVE else DaemonStatus.INACTIVE
 
@@ -119,7 +127,7 @@ class ServicesViewModel @Inject constructor(
                 status = finalStatus,
                 pid = pid,
                 cpuUsage = metrics.cpuUsage,
-                ramUsage = metrics.ramUsage,
+                ramUsage = displayRam,
                 uptime = metrics.uptime,
                 cpuProgress = cpuProg,
                 ramProgress = ramProg

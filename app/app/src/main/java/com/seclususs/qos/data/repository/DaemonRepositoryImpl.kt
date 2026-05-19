@@ -47,18 +47,19 @@ class DaemonRepositoryImpl @Inject constructor(
     override suspend fun getDaemonMetrics(pid: String): DaemonMetrics = withContext(ioDispatcher) {
         if (pid.isBlank() || pid == "-") return@withContext DaemonMetrics()
 
-        val result = rootShell.execute("ps -o %cpu,rss,etime -p $pid | tail -n 1")
+        val result = rootShell.execute("ps -o %cpu,rss,%mem,etime -p $pid | tail -n 1")
 
         if (result.isNullOrBlank()) return@withContext DaemonMetrics()
 
         try {
             val parts = result.trim().split(Regex("\\s+"))
-            if (parts.size >= 3) {
+            if (parts.size >= 4) {
                 val cpu = "${parts[0]}%"
                 val ramKb = parts[1].toLongOrNull() ?: 0L
                 val ramMb = ramKb / 1024
-                val ram = "${ramMb}MB"
-                val uptime = parts[2]
+                val ramPercent = parts[2]
+                val ram = "${ramMb}MB ($ramPercent%)"
+                val uptime = parts[3]
                 return@withContext DaemonMetrics(
                     cpuUsage = cpu, ramUsage = ram, uptime = uptime
                 )

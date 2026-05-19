@@ -48,42 +48,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
-import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.compose.currentBackStackEntryAsState
 import com.seclususs.qos.R
-import com.seclususs.qos.ui.navigation.Advanced
-import com.seclususs.qos.ui.navigation.Modules
-import com.seclususs.qos.ui.navigation.Services
-import com.seclususs.qos.ui.navigation.Settings
 
-private data class TopLevelRoute<out T : Any>(
+enum class TopLevelRoute(
     @param:StringRes val nameResId: Int,
-    val route: T,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
-)
+) {
+    SERVICES(
+        R.string.nav_services, Icons.Filled.Dns, Icons.Outlined.Dns
+    ),
+    MODULES(
+        R.string.nav_modules, Icons.Filled.Extension, Icons.Outlined.Extension
+    ),
+    ADVANCED(
+        R.string.nav_advanced, Icons.Filled.Build, Icons.Outlined.Build
+    ),
+    SETTINGS(R.string.nav_settings, Icons.Filled.Settings, Icons.Outlined.Settings)
+}
 
 @Composable
 fun NavBar(
-    navController: NavController, modifier: Modifier = Modifier
+    selectedIndex: Int, onItemSelected: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
-    val topLevelRoutes = listOf(
-        TopLevelRoute(
-            R.string.nav_services, Services, Icons.Filled.Dns, Icons.Outlined.Dns
-        ),
-        TopLevelRoute(
-            R.string.nav_modules, Modules, Icons.Filled.Extension, Icons.Outlined.Extension
-        ),
-        TopLevelRoute(R.string.nav_advanced, Advanced, Icons.Filled.Build, Icons.Outlined.Build),
-        TopLevelRoute(
-            R.string.nav_settings, Settings, Icons.Filled.Settings, Icons.Outlined.Settings
-        )
-    )
-
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
+    val topLevelRoutes = TopLevelRoute.entries
 
     Surface(
         modifier = modifier
@@ -107,19 +95,11 @@ fun NavBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            topLevelRoutes.forEach { topLevelRoute ->
-                val isSelected = currentDestination?.hierarchy?.any {
-                    it.hasRoute(topLevelRoute.route::class)
-                } == true
-
+            topLevelRoutes.forEachIndexed { index, route ->
                 CustomNavBarItem(
-                    route = topLevelRoute, isSelected = isSelected, onClick = {
-                        navController.navigate(topLevelRoute.route) {
-                            popUpTo(Services) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    })
+                    route = route,
+                    isSelected = selectedIndex == index,
+                    onClick = { onItemSelected(index) })
             }
         }
     }
@@ -127,7 +107,7 @@ fun NavBar(
 
 @Composable
 private fun RowScope.CustomNavBarItem(
-    route: TopLevelRoute<*>, isSelected: Boolean, onClick: () -> Unit
+    route: TopLevelRoute, isSelected: Boolean, onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
 
