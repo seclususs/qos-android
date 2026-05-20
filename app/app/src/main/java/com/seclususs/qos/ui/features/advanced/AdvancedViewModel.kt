@@ -3,8 +3,8 @@ package com.seclususs.qos.ui.features.advanced
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.R
-import com.seclususs.qos.data.local.AppStore
 import com.seclususs.qos.domain.model.QosConfig
+import com.seclususs.qos.domain.repository.AppPreferencesRepository
 import com.seclususs.qos.domain.usecase.CheckConfigUseCase
 import com.seclususs.qos.domain.usecase.DaemonStatusUseCase
 import com.seclususs.qos.domain.usecase.GetConfigUseCase
@@ -26,7 +26,7 @@ class AdvancedViewModel @Inject constructor(
     private val toggleDaemonUseCase: ToggleDaemonUseCase,
     private val daemonStatusUseCase: DaemonStatusUseCase,
     private val checkConfigExistsUseCase: CheckConfigUseCase,
-    private val appStore: AppStore
+    private val appPreferencesRepository: AppPreferencesRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AdvancedState())
@@ -34,12 +34,12 @@ class AdvancedViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            appStore.cachedCpuLimitsFlow.collect { encoded ->
+            appPreferencesRepository.cachedCpuLimitsFlow.collect { encoded ->
                 _state.update { it.copy(cachedCpuValues = encoded.decodeToMap()) }
             }
         }
         viewModelScope.launch {
-            appStore.cachedStorageLimitsFlow.collect { encoded ->
+            appPreferencesRepository.cachedStorageLimitsFlow.collect { encoded ->
                 _state.update { it.copy(cachedStorageValues = encoded.decodeToMap()) }
             }
         }
@@ -50,22 +50,6 @@ class AdvancedViewModel @Inject constructor(
         when (event) {
             is AdvancedEvent.ToggleCpu -> handleToggleCpu(event.enabled)
             is AdvancedEvent.ToggleStorage -> handleToggleStorage(event.enabled)
-            is AdvancedEvent.UpdateCpuField -> {
-                _state.update {
-                    it.copy(
-                        cpuValues = it.cpuValues.toMutableMap()
-                            .apply { put(event.key, event.value) })
-                }
-            }
-
-            is AdvancedEvent.UpdateStorageField -> {
-                _state.update {
-                    it.copy(
-                        storageValues = it.storageValues.toMutableMap()
-                            .apply { put(event.key, event.value) })
-                }
-            }
-
             is AdvancedEvent.ShowSheet -> _state.update { it.copy(activeSheet = event.type) }
             is AdvancedEvent.HideSheet -> _state.update {
                 it.copy(
@@ -75,8 +59,8 @@ class AdvancedViewModel @Inject constructor(
                 )
             }
 
-            is AdvancedEvent.ApplyCpuConfig -> applyCpuConfig()
-            is AdvancedEvent.ApplyStorageConfig -> applyStorageConfig()
+            is AdvancedEvent.ApplyCpuConfig -> applyCpuConfig(event.cpuValues)
+            is AdvancedEvent.ApplyStorageConfig -> applyStorageConfig(event.storageValues)
             is AdvancedEvent.RefreshStatus -> viewModelScope.launch { refreshInternal() }
             is AdvancedEvent.DismissSnackbar -> _state.update { it.copy(snackbarVisible = false) }
         }
@@ -120,7 +104,7 @@ class AdvancedViewModel @Inject constructor(
                     maxUclampMin = getCachedOrDef(cached, "uclamp_min_max", default.maxUclampMin)
                 )
             } else {
-                appStore.setCachedCpuLimits(_state.value.cpuValues.encodeToString())
+                appPreferencesRepository.setCachedCpuLimits(_state.value.cpuValues.encodeToString())
                 newConfig = currentConfig.copy(
                     minLatencyNs = null,
                     maxLatencyNs = null,
@@ -172,7 +156,7 @@ class AdvancedViewModel @Inject constructor(
                     maxNrRequests = getCachedOrDef(cached, "nr_requests_max", default.maxNrRequests)
                 )
             } else {
-                appStore.setCachedStorageLimits(_state.value.storageValues.encodeToString())
+                appPreferencesRepository.setCachedStorageLimits(_state.value.storageValues.encodeToString())
                 newConfig = currentConfig.copy(
                     minReadAhead = null,
                     maxReadAhead = null,
@@ -196,13 +180,12 @@ class AdvancedViewModel @Inject constructor(
         }
     }
 
-    private fun applyCpuConfig() {
+    private fun applyCpuConfig(cpuValues: Map<String, String>) {
         viewModelScope.launch {
             _state.update { it.copy(cpuApplyState = ApplyState.LOADING) }
             val currentConfig = _state.value.config
-            val cpuValues = _state.value.cpuValues
 
-            appStore.setCachedCpuLimits(cpuValues.encodeToString())
+            appPreferencesRepository.setCachedCpuLimits(cpuValues.encodeToString())
 
             val newConfig = currentConfig.copy(
                 minLatencyNs = cpuValues["latency_min"]?.toLongOrNull(),
@@ -225,6 +208,7 @@ class AdvancedViewModel @Inject constructor(
                 _state.update {
                     it.copy(
                         config = newConfig,
+                        cpuValues = cpuValues,
                         cpuApplyState = ApplyState.SUCCESS,
                         snackbarMessageResId = R.string.module_update_success,
                         snackbarIsError = false,
@@ -247,13 +231,12 @@ class AdvancedViewModel @Inject constructor(
         }
     }
 
-    private fun applyStorageConfig() {
+    private fun applyStorageConfig(storageValues: Map<String, String>) {
         viewModelScope.launch {
             _state.update { it.copy(storageApplyState = ApplyState.LOADING) }
             val currentConfig = _state.value.config
-            val storageValues = _state.value.storageValues
 
-            appStore.setCachedStorageLimits(storageValues.encodeToString())
+            appPreferencesRepository.setCachedStorageLimits(storageValues.encodeToString())
 
             val newConfig = currentConfig.copy(
                 minReadAhead = storageValues["read_ahead_min"]?.toLongOrNull(),
@@ -268,6 +251,7 @@ class AdvancedViewModel @Inject constructor(
                 _state.update {
                     it.copy(
                         config = newConfig,
+                        storageValues = storageValues,
                         storageApplyState = ApplyState.SUCCESS,
                         snackbarMessageResId = R.string.module_update_success,
                         snackbarIsError = false,

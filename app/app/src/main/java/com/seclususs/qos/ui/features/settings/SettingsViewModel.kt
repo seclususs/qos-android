@@ -3,7 +3,7 @@ package com.seclususs.qos.ui.features.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.R
-import com.seclususs.qos.data.local.AppStore
+import com.seclususs.qos.domain.repository.AppPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,7 +15,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val appStore: AppStore
+    private val appPreferencesRepository: AppPreferencesRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsState())
@@ -23,7 +23,7 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            appStore.appThemeFlow.collect { theme ->
+            appPreferencesRepository.appThemeFlow.collect { theme ->
                 _state.update { it.copy(appTheme = theme) }
             }
         }
@@ -46,7 +46,7 @@ class SettingsViewModel @Inject constructor(
                     delay(600)
 
                     try {
-                        appStore.setAppTheme(event.theme)
+                        appPreferencesRepository.setAppTheme(event.theme)
 
                         _state.update {
                             it.copy(

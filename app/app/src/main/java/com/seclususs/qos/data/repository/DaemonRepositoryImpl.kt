@@ -15,6 +15,10 @@ class DaemonRepositoryImpl @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : DaemonRepository {
 
+    companion object {
+        private val SPACE_REGEX = Regex("\\s+")
+    }
+
     override suspend fun checkDaemonExists(): Boolean = withContext(ioDispatcher) {
         rootShell.executeSilently("ls /data/adb/modules/sys_qos/system/bin/qos_daemon")
     }
@@ -52,7 +56,7 @@ class DaemonRepositoryImpl @Inject constructor(
         if (result.isNullOrBlank()) return@withContext DaemonMetrics()
 
         try {
-            val parts = result.trim().split(Regex("\\s+"))
+            val parts = result.trim().split(SPACE_REGEX)
             if (parts.size >= 4) {
                 val cpu = "${parts[0]}%"
                 val ramKb = parts[1].toLongOrNull() ?: 0L

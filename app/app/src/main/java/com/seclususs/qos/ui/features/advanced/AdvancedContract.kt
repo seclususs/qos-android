@@ -29,12 +29,10 @@ data class AdvancedState(
 sealed interface AdvancedEvent {
     data class ToggleCpu(val enabled: Boolean) : AdvancedEvent
     data class ToggleStorage(val enabled: Boolean) : AdvancedEvent
-    data class UpdateCpuField(val key: String, val value: String) : AdvancedEvent
-    data class UpdateStorageField(val key: String, val value: String) : AdvancedEvent
     data class ShowSheet(val type: AdvancedSheetType) : AdvancedEvent
     object HideSheet : AdvancedEvent
-    object ApplyCpuConfig : AdvancedEvent
-    object ApplyStorageConfig : AdvancedEvent
+    data class ApplyCpuConfig(val cpuValues: Map<String, String>) : AdvancedEvent
+    data class ApplyStorageConfig(val storageValues: Map<String, String>) : AdvancedEvent
     object RefreshStatus : AdvancedEvent
     object DismissSnackbar : AdvancedEvent
 }

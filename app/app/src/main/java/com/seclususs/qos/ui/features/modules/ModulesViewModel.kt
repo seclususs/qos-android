@@ -9,6 +9,7 @@ import com.seclususs.qos.domain.usecase.GetConfigUseCase
 import com.seclususs.qos.domain.usecase.ToggleDaemonUseCase
 import com.seclususs.qos.domain.usecase.UpdateConfigUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,9 +29,23 @@ class ModulesViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(ModulesState())
     val state: StateFlow<ModulesState> = _state.asStateFlow()
+    private var pollingJob: Job? = null
 
     init {
         viewModelScope.launch {
+            _state.subscriptionCount.collect { count ->
+                if (count > 0) {
+                    startPolling()
+                } else {
+                    stopPolling()
+                }
+            }
+        }
+    }
+
+    private fun startPolling() {
+        if (pollingJob?.isActive == true) return
+        pollingJob = viewModelScope.launch {
             refreshInternal()
             while (true) {
                 delay(1500)
@@ -39,6 +54,11 @@ class ModulesViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun stopPolling() {
+        pollingJob?.cancel()
+        pollingJob = null
     }
 
     fun onEvent(event: ModulesEvent) {

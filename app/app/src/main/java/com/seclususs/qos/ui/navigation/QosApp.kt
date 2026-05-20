@@ -41,7 +41,7 @@ fun QosApp() {
                 .background(MaterialTheme.colorScheme.background)
         ) {
             HorizontalPager(
-                state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 3
+                state = pagerState, modifier = Modifier.fillMaxSize()
             ) { page ->
                 when (page) {
                     0 -> ServicesScreen()

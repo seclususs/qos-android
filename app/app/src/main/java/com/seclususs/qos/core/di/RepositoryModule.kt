@@ -1,7 +1,9 @@
 package com.seclususs.qos.core.di
 
+import com.seclususs.qos.data.repository.AppPreferencesRepositoryImpl
 import com.seclususs.qos.data.repository.ConfigRepositoryImpl
 import com.seclususs.qos.data.repository.DaemonRepositoryImpl
+import com.seclususs.qos.domain.repository.AppPreferencesRepository
 import com.seclususs.qos.domain.repository.ConfigRepository
 import com.seclususs.qos.domain.repository.DaemonRepository
 import dagger.Binds
@@ -12,6 +14,7 @@ import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
+@Suppress("unused")
 abstract class RepositoryModule {
 
     @Binds
@@ -25,4 +28,10 @@ abstract class RepositoryModule {
     abstract fun bindConfigRepository(
         configRepositoryImpl: ConfigRepositoryImpl
     ): ConfigRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAppPreferencesRepository(
+        appPreferencesRepositoryImpl: AppPreferencesRepositoryImpl
+    ): AppPreferencesRepository
 }

@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -52,11 +51,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
 import com.seclususs.qos.ui.components.ActionCard
 import com.seclususs.qos.ui.components.MissingDaemonCard
@@ -66,7 +67,7 @@ import com.seclususs.qos.ui.components.TelemetryCard
 fun ServicesScreen(
     viewModel: ServicesViewModel = hiltViewModel()
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -265,6 +266,9 @@ private fun ReactorCore(
         DaemonStatus.MISSING -> stringResource(id = R.string.status_missing).uppercase()
     }
 
+    val density = LocalDensity.current
+    val strokeWidthPx = remember(density) { with(density) { 6.dp.toPx() } }
+
     Box(
         modifier = Modifier
             .size(180.dp)
@@ -300,9 +304,8 @@ private fun ReactorCore(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { rotationZ = currentRotation }) {
-            val strokeWidth = 6.dp.toPx()
-            val sizeValue = size.minDimension - strokeWidth
-            val offset = strokeWidth / 2f
+            val sizeValue = size.minDimension - strokeWidthPx
+            val offset = strokeWidthPx / 2f
 
             drawArc(
                 color = animatedColor.copy(alpha = 0.3f),
@@ -311,7 +314,7 @@ private fun ReactorCore(
                 useCenter = false,
                 topLeft = Offset(offset, offset),
                 size = Size(sizeValue, sizeValue),
-                style = Stroke(width = strokeWidth)
+                style = Stroke(width = strokeWidthPx)
             )
 
             if (isActiveOrTransitioning) {
@@ -322,7 +325,7 @@ private fun ReactorCore(
                     useCenter = false,
                     topLeft = Offset(offset, offset),
                     size = Size(sizeValue, sizeValue),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
                 )
 
                 drawArc(
@@ -332,7 +335,7 @@ private fun ReactorCore(
                     useCenter = false,
                     topLeft = Offset(offset, offset),
                     size = Size(sizeValue, sizeValue),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
                 )
             }
         }

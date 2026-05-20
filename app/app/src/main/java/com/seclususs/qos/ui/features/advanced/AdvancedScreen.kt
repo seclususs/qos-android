@@ -48,8 +48,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
 import com.seclususs.qos.ui.components.BottomSheet
 import com.seclususs.qos.ui.components.ExpandableSwitchCard
@@ -72,7 +75,7 @@ import kotlinx.coroutines.delay
 fun AdvancedScreen(
     viewModel: AdvancedViewModel = hiltViewModel()
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val targetUiState = when {
         state.isDaemonMissing -> 1
         state.isConfigMissing -> 2
@@ -223,6 +226,9 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
         }
     }
 
+    var localCpuValues by remember(state.cpuValues) { mutableStateOf(state.cpuValues) }
+    var localStorageValues by remember(state.storageValues) { mutableStateOf(state.storageValues) }
+
     BottomSheet(
         onDismissRequest = { viewModel.onEvent(AdvancedEvent.HideSheet) }, sheetState = sheetState
     ) {
@@ -250,126 +256,90 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
             if (state.activeSheet == AdvancedSheetType.CPU) {
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_latency),
-                    minVal = state.cpuValues["latency_min"] ?: "",
-                    maxVal = state.cpuValues["latency_max"] ?: "",
+                    minVal = localCpuValues["latency_min"] ?: "",
+                    maxVal = localCpuValues["latency_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "latency_min", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("latency_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "latency_max", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("latency_max", it) }
                     },
                     placeholderMin = "8000000",
                     placeholderMax = "20000000"
                 )
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_granularity),
-                    minVal = state.cpuValues["granularity_min"] ?: "",
-                    maxVal = state.cpuValues["granularity_max"] ?: "",
+                    minVal = localCpuValues["granularity_min"] ?: "",
+                    maxVal = localCpuValues["granularity_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "granularity_min", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("granularity_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "granularity_max", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("granularity_max", it) }
                     },
                     placeholderMin = "2500000",
                     placeholderMax = "6500000"
                 )
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_wakeup),
-                    minVal = state.cpuValues["wakeup_min"] ?: "",
-                    maxVal = state.cpuValues["wakeup_max"] ?: "",
+                    minVal = localCpuValues["wakeup_min"] ?: "",
+                    maxVal = localCpuValues["wakeup_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "wakeup_min", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("wakeup_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "wakeup_max", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("wakeup_max", it) }
                     },
                     placeholderMin = "1500000",
                     placeholderMax = "6500000"
                 )
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_migration_cost),
-                    minVal = state.cpuValues["migration_cost_min"] ?: "",
-                    maxVal = state.cpuValues["migration_cost_max"] ?: "",
+                    minVal = localCpuValues["migration_cost_min"] ?: "",
+                    maxVal = localCpuValues["migration_cost_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "migration_cost_min", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("migration_cost_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "migration_cost_max", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("migration_cost_max", it) }
                     },
                     placeholderMin = "200000",
                     placeholderMax = "600000"
                 )
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_walt_init),
-                    minVal = state.cpuValues["walt_init_min"] ?: "",
-                    maxVal = state.cpuValues["walt_init_max"] ?: "",
+                    minVal = localCpuValues["walt_init_min"] ?: "",
+                    maxVal = localCpuValues["walt_init_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "walt_init_min", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("walt_init_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "walt_init_max", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("walt_init_max", it) }
                     },
                     placeholderMin = "10",
                     placeholderMax = "40"
                 )
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_uclamp_min),
-                    minVal = state.cpuValues["uclamp_min_min"] ?: "",
-                    maxVal = state.cpuValues["uclamp_min_max"] ?: "",
+                    minVal = localCpuValues["uclamp_min_min"] ?: "",
+                    maxVal = localCpuValues["uclamp_min_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "uclamp_min_min", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("uclamp_min_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateCpuField(
-                                "uclamp_min_max", it
-                            )
-                        )
+                        localCpuValues =
+                            localCpuValues.toMutableMap().apply { put("uclamp_min_max", it) }
                     },
                     placeholderMin = "0",
                     placeholderMax = "384"
@@ -377,42 +347,30 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
             } else if (state.activeSheet == AdvancedSheetType.STORAGE) {
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_read_ahead),
-                    minVal = state.storageValues["read_ahead_min"] ?: "",
-                    maxVal = state.storageValues["read_ahead_max"] ?: "",
+                    minVal = localStorageValues["read_ahead_min"] ?: "",
+                    maxVal = localStorageValues["read_ahead_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateStorageField(
-                                "read_ahead_min", it
-                            )
-                        )
+                        localStorageValues =
+                            localStorageValues.toMutableMap().apply { put("read_ahead_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateStorageField(
-                                "read_ahead_max", it
-                            )
-                        )
+                        localStorageValues =
+                            localStorageValues.toMutableMap().apply { put("read_ahead_max", it) }
                     },
                     placeholderMin = "128",
                     placeholderMax = "1024"
                 )
                 AdvancedLimitRow(
                     title = stringResource(id = R.string.advanced_label_nr_requests),
-                    minVal = state.storageValues["nr_requests_min"] ?: "",
-                    maxVal = state.storageValues["nr_requests_max"] ?: "",
+                    minVal = localStorageValues["nr_requests_min"] ?: "",
+                    maxVal = localStorageValues["nr_requests_max"] ?: "",
                     onMinChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateStorageField(
-                                "nr_requests_min", it
-                            )
-                        )
+                        localStorageValues =
+                            localStorageValues.toMutableMap().apply { put("nr_requests_min", it) }
                     },
                     onMaxChange = {
-                        viewModel.onEvent(
-                            AdvancedEvent.UpdateStorageField(
-                                "nr_requests_max", it
-                            )
-                        )
+                        localStorageValues =
+                            localStorageValues.toMutableMap().apply { put("nr_requests_max", it) }
                     },
                     placeholderMin = "64",
                     placeholderMax = "256"
@@ -424,8 +382,12 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
         ApplyConfigurationButton(
             applyState = if (state.activeSheet == AdvancedSheetType.CPU) state.cpuApplyState else state.storageApplyState,
             onClick = {
-                if (state.activeSheet == AdvancedSheetType.CPU) viewModel.onEvent(AdvancedEvent.ApplyCpuConfig)
-                else viewModel.onEvent(AdvancedEvent.ApplyStorageConfig)
+                if (state.activeSheet == AdvancedSheetType.CPU) viewModel.onEvent(
+                    AdvancedEvent.ApplyCpuConfig(
+                        localCpuValues
+                    )
+                )
+                else viewModel.onEvent(AdvancedEvent.ApplyStorageConfig(localStorageValues))
             })
     }
 }

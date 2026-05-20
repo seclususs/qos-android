@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.domain.usecase.DaemonStatusUseCase
 import com.seclususs.qos.domain.usecase.ToggleDaemonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,13 +20,31 @@ class ServicesViewModel @Inject constructor(
     private val daemonStatusUseCase: DaemonStatusUseCase
 ) : ViewModel() {
 
+    companion object {
+        private val RAM_PERCENT_REGEX = Regex("\\((.*?)%\\)")
+    }
+
     private val _state = MutableStateFlow(ServicesState())
     val state: StateFlow<ServicesState> = _state.asStateFlow()
 
     private var isTransitioning = false
+    private var pollingJob: Job? = null
 
     init {
         viewModelScope.launch {
+            _state.subscriptionCount.collect { count ->
+                if (count > 0) {
+                    startPolling()
+                } else {
+                    stopPolling()
+                }
+            }
+        }
+    }
+
+    private fun startPolling() {
+        if (pollingJob?.isActive == true) return
+        pollingJob = viewModelScope.launch {
             refreshInternal()
             while (true) {
                 delay(1000)
@@ -34,6 +53,11 @@ class ServicesViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun stopPolling() {
+        pollingJob?.cancel()
+        pollingJob = null
     }
 
     fun onEvent(event: ServicesEvent) {
@@ -108,8 +132,7 @@ class ServicesViewModel @Inject constructor(
         val cpuRaw = metrics.cpuUsage.replace("%", "").trim().toFloatOrNull() ?: 0f
         val cpuProg = (cpuRaw / 100f).coerceIn(0f, 1f)
 
-        val ramPercentRegex = Regex("\\((.*?)%\\)")
-        val ramPercentMatch = ramPercentRegex.find(metrics.ramUsage)
+        val ramPercentMatch = RAM_PERCENT_REGEX.find(metrics.ramUsage)
 
         val ramProg = if (ramPercentMatch != null) {
             val percentValue = ramPercentMatch.groupValues[1].toFloatOrNull() ?: 0f
