@@ -14,6 +14,11 @@
     <string name="theme_change_success">Tema berhasil diubah!</string>
     <string name="theme_change_error">Gagal mengubah tema.</string>
 
+    <string name="settings_developer_title">Pengembang</string>
+    <string name="developer_sheet_title">Terhubung dengan Pengembang</string>
+    <string name="developer_github">\@seclususs</string>
+    <string name="developer_x">\@greperror</string>
+
     <string name="services_title">Layanan</string>
     <string name="action_start">Mulai</string>
     <string name="action_stop">Berhenti</string>

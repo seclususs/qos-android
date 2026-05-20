@@ -72,6 +72,14 @@ class SettingsViewModel @Inject constructor(
                 }
             }
 
+            is SettingsEvent.OnDeveloperCardClicked -> {
+                _state.update { it.copy(showDeveloperSheet = true) }
+            }
+
+            is SettingsEvent.OnDismissDeveloperSheet -> {
+                _state.update { it.copy(showDeveloperSheet = false) }
+            }
+
             is SettingsEvent.OnDismissSnackbar -> {
                 _state.update { it.copy(snackbarVisible = false) }
             }

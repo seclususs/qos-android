@@ -16,15 +16,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,6 +63,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val uriHandler = LocalUriHandler.current
 
     Box(
         modifier = Modifier
@@ -111,6 +120,43 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            QosCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { viewModel.onEvent(SettingsEvent.OnDeveloperCardClicked) }) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Code,
+                            contentDescription = stringResource(id = R.string.settings_developer_title),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.settings_developer_title),
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
 
         val snackbarMessage = state.snackbarMessageResId?.let { stringResource(id = it) } ?: ""
@@ -136,19 +182,43 @@ fun SettingsScreen(
                 )
                 ThemeSelectionItem(
                     label = stringResource(id = R.string.theme_system),
+                    icon = Icons.Filled.BrightnessAuto,
                     isSelected = state.appTheme == AppTheme.SYSTEM,
                     isProcessing = state.processingTheme == AppTheme.SYSTEM,
                     onClick = { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.SYSTEM)) })
                 ThemeSelectionItem(
                     label = stringResource(id = R.string.theme_light),
+                    icon = Icons.Filled.LightMode,
                     isSelected = state.appTheme == AppTheme.LIGHT,
                     isProcessing = state.processingTheme == AppTheme.LIGHT,
                     onClick = { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.LIGHT)) })
                 ThemeSelectionItem(
                     label = stringResource(id = R.string.theme_dark),
+                    icon = Icons.Filled.DarkMode,
                     isSelected = state.appTheme == AppTheme.DARK,
                     isProcessing = state.processingTheme == AppTheme.DARK,
                     onClick = { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.DARK)) })
+            }
+        }
+
+        if (state.showDeveloperSheet) {
+            BottomSheet(
+                onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissDeveloperSheet) }) {
+                Text(
+                    text = stringResource(id = R.string.developer_sheet_title),
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                DeveloperLinkCard(
+                    iconRes = R.drawable.ic_github,
+                    username = stringResource(id = R.string.developer_github),
+                    onClick = { uriHandler.openUri("https://github.com/seclususs") })
+                Spacer(modifier = Modifier.height(12.dp))
+                DeveloperLinkCard(
+                    iconRes = R.drawable.ic_x,
+                    username = stringResource(id = R.string.developer_x),
+                    onClick = { uriHandler.openUri("https://x.com/greperror") })
             }
         }
     }
@@ -156,7 +226,11 @@ fun SettingsScreen(
 
 @Composable
 private fun ThemeSelectionItem(
-    label: String, isSelected: Boolean, isProcessing: Boolean, onClick: () -> Unit
+    label: String,
+    icon: ImageVector,
+    isSelected: Boolean,
+    isProcessing: Boolean,
+    onClick: () -> Unit
 ) {
     val bgColor =
         if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent
@@ -174,11 +248,20 @@ private fun ThemeSelectionItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            color = textColor
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = textColor
+            )
+        }
 
         Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
             AnimatedContent(
@@ -203,6 +286,35 @@ private fun ThemeSelectionItem(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DeveloperLinkCard(
+    iconRes: Int, username: String, onClick: () -> Unit
+) {
+    QosCard(
+        modifier = Modifier.fillMaxWidth(), onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(id = iconRes),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = username,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

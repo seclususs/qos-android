@@ -6,6 +6,7 @@ data class SettingsState(
     val appTheme: AppTheme = AppTheme.SYSTEM,
     val processingTheme: AppTheme? = null,
     val showThemeSheet: Boolean = false,
+    val showDeveloperSheet: Boolean = false,
     val snackbarMessageResId: Int? = null,
     val snackbarIsError: Boolean = false,
     val snackbarVisible: Boolean = false
@@ -15,5 +16,7 @@ sealed class SettingsEvent {
     object OnThemeCardClicked : SettingsEvent()
     object OnDismissThemeSheet : SettingsEvent()
     data class OnThemeSelected(val theme: AppTheme) : SettingsEvent()
+    object OnDeveloperCardClicked : SettingsEvent()
+    object OnDismissDeveloperSheet : SettingsEvent()
     object OnDismissSnackbar : SettingsEvent()
 }
