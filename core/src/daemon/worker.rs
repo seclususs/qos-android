@@ -24,7 +24,7 @@ impl CleanerWorker {
         while let Ok(is_emergency) = self.sweep_rx.recv() {
             let items = self.perform_cycle(is_emergency);
             if items > 0 {
-                log::info!("Cleaner Worker: Cycle complete. Removed {items} items.");
+                log::debug!("Cycle complete. Removed {items} items.");
             }
             unsafe {
                 sys::mallopt(MALLOPT_TRIM, 0);

@@ -46,7 +46,7 @@ pub struct CleanerController {
 
 impl CleanerController {
     pub fn new() -> types::Result<Self> {
-        log::info!("Daemon Cleaner Control: Initializing...");
+        log::debug!("Initializing Cleaner Controller...");
 
         let config = CleanerConfig::default();
         let (sweep_tx, sweep_rx) = sync::mpsc::channel();
@@ -115,13 +115,22 @@ impl traits::EventHandler for CleanerController {
         }
 
         let is_emergency = self.is_storage_critical();
+
+        if is_emergency {
+            log::info!(
+                "CRITICAL: Storage space (/data) is nearly full! Aggressive cleaning mode enabled."
+            );
+        }
+
         let temperature = self.thermal_sensor.read();
 
         if is_emergency {
             if temperature > 46.0 {
+                log::debug!("Cleaner sweep skipped: Thermal too high ({temperature}) in emergency");
                 return Ok(traits::LoopAction::Continue);
             }
         } else if temperature > 40.0 {
+            log::debug!("Cleaner sweep skipped: Thermal too high ({temperature})");
             return Ok(traits::LoopAction::Continue);
         }
 
@@ -131,6 +140,7 @@ impl traits::EventHandler for CleanerController {
             .is_ok_and(|d| d.some.avg10 > 3.0);
 
         if !is_emergency && is_io_busy {
+            log::debug!("Cleaner sweep skipped: IO is busy");
             return Ok(traits::LoopAction::Continue);
         }
 
@@ -140,15 +150,22 @@ impl traits::EventHandler for CleanerController {
 
         if is_emergency {
             if is_cpu_busy && cpu_avg10 > 80.0 {
+                log::debug!(
+                    "Cleaner sweep skipped: CPU is extremely busy ({cpu_avg10}) in emergency"
+                );
                 return Ok(traits::LoopAction::Continue);
             }
         } else if is_cpu_busy {
+            log::debug!("Cleaner sweep skipped: CPU is busy ({cpu_avg10})");
             return Ok(traits::LoopAction::Continue);
         }
 
         match self.sweep_tx.send(is_emergency) {
-            Ok(()) => self.last_sweep = now,
-            Err(e) => log::error!("Daemon Cleaner Control: Failed to signal: {e}"),
+            Ok(()) => {
+                self.last_sweep = now;
+                log::debug!("Cleaning cycle sent to worker. Emergency mode: {is_emergency}");
+            }
+            Err(e) => log::error!("Failed to signal cleaner worker: {e}"),
         }
 
         Ok(traits::LoopAction::Continue)

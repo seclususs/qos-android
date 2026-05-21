@@ -61,14 +61,14 @@ pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::Qos
         let fd = os::fd::AsFd::as_fd(file);
 
         rustix::io::pwrite(fd, &write_buf[..=len], 0).map_err(|e| {
-            log::warn!("Write via rustix::pwrite failed: {e}");
+            log::debug!("Write via rustix::pwrite failed: {e}");
             types::QosError::IoError(e.into())
         })?;
     } else {
         let fd = os::fd::AsFd::as_fd(file);
 
         rustix::io::pwrite(fd, bytes, 0).map_err(|e| {
-            log::warn!("Write via rustix::pwrite failed: {e}");
+            log::debug!("Write via rustix::pwrite failed: {e}");
             types::QosError::IoError(e.into())
         })?;
     }

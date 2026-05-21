@@ -1,4 +1,5 @@
 #include "daemon/parser.hpp"
+#include "daemon/logger.hpp"
 
 #include <fstream>
 
@@ -28,7 +29,10 @@ namespace qos::parser
         std::ifstream file{std::string(path)};
 
         if (!file.is_open())
+        {
+            LOGW("Failed to open config file: %s. Using default internal values.", std::string(path).c_str());
             return config;
+        }
 
         std::string line;
 

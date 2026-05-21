@@ -37,16 +37,16 @@ namespace qos::system
 
         if (features.cleaner_supported)
         {
-            LOGI("Detector: Cleaner prerequisites met.");
+            LOGD("Cleaner prerequisites met.");
         }
         else
         {
-            LOGE("Detector: Cleaner disabled.");
+            LOGW("Cleaner disabled.");
         }
 
         if (!can_access("/proc/pressure", R_OK | X_OK))
         {
-            LOGE("Detector: /proc/pressure is missing. All PSI metrics disabled.");
+            LOGE("/proc/pressure is missing. All PSI metrics disabled.");
             return features;
         }
 
@@ -54,22 +54,22 @@ namespace qos::system
 
         if (features.has_cpu_psi)
         {
-            LOGI("Detector: PSI CPU DETECTED.");
+            LOGD("PSI CPU DETECTED.");
         }
         else
         {
-            LOGE("Detector: WARNING - PSI CPU MISSING.");
+            LOGW("PSI CPU MISSING.");
         }
 
         features.has_io_psi = can_access("/proc/pressure/io");
 
         if (features.has_io_psi)
         {
-            LOGI("Detector: PSI I/O DETECTED.");
+            LOGD("PSI I/O DETECTED.");
         }
         else
         {
-            LOGE("Detector: WARNING - PSI I/O MISSING.");
+            LOGW("PSI I/O MISSING.");
         }
 
         return features;

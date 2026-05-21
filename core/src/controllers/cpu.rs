@@ -62,7 +62,7 @@ pub struct CpuController {
 
 impl CpuController {
     pub fn new() -> types::Result<Self> {
-        log::info!("Daemon CPU Control: Initializing...");
+        log::debug!("Initializing CPU Controller...");
 
         let config_limits = state::CPU_LIMITS_OVERRIDE
             .get()
@@ -92,7 +92,7 @@ impl CpuController {
             controller_config.psi_threshold_us,
             controller_config.psi_window_us,
         )
-        .map_err(|e| types::QosError::FfiError(format!("Daemon CPU PSI Trigger Error: {e}")))?;
+        .map_err(|e| types::QosError::FfiError(format!("CPU PSI Trigger Error: {e}")))?;
         let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
         let latency = sysfs::CachedFile::new_opt(
@@ -369,11 +369,7 @@ impl traits::EventHandler for CpuController {
     ) -> types::Result<traits::LoopAction> {
         let mut buffer = [0u8; 8];
         let _ = io::Read::read(&mut self.trigger_fd, &mut buffer);
-
-        if let Err(e) = self.update_cpu_logic(context) {
-            log::warn!("Daemon CPU Logic Error: {e}");
-        }
-
+        self.update_cpu_logic(context)?;
         Ok(traits::LoopAction::Continue)
     }
 
@@ -381,10 +377,7 @@ impl traits::EventHandler for CpuController {
         &mut self,
         context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
-        if let Err(e) = self.update_cpu_logic(context) {
-            log::warn!("Daemon CPU Timeout Error: {e}");
-        }
-
+        self.update_cpu_logic(context)?;
         Ok(traits::LoopAction::Continue)
     }
 

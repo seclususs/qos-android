@@ -10,7 +10,9 @@ pub fn property_exists(key: &str) -> bool {
     let Ok(c_key) = cstr::to_cstring(key) else {
         return false;
     };
+
     let mut buffer = [0u8; 1];
+
     let len = unsafe {
         sys::get_system_property(c_key.as_ptr(), buffer.as_mut_ptr().cast::<c_char>(), 1)
     };
@@ -26,14 +28,18 @@ pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError
             "Invalid characters in key: '{key}'"
         )));
     }
+
     if !cstr::validate_value(value) {
         return Err(types::QosError::InvalidInput(format!(
             "Invalid characters in value: '{value}'"
         )));
     }
+
     let c_key = cstr::to_cstring(key)?;
     let c_val = cstr::to_cstring(value)?;
+
     let res = unsafe { sys::set_system_property(c_key.as_ptr(), c_val.as_ptr()) };
+
     if res < 0 {
         Err(types::QosError::IoError(io::Error::last_os_error()))
     } else {
@@ -46,6 +52,7 @@ const PROP_VALUE_MAX: usize = 92;
 pub fn get_system_property(key: &str) -> Result<String, types::QosError> {
     let c_key = cstr::to_cstring(key)?;
     let mut buffer = vec![0u8; PROP_VALUE_MAX];
+
     let len = unsafe {
         sys::get_system_property(
             c_key.as_ptr(),
@@ -53,9 +60,11 @@ pub fn get_system_property(key: &str) -> Result<String, types::QosError> {
             PROP_VALUE_MAX,
         )
     };
+
     if len < 0 {
         return Ok(String::new());
     }
+
     let result = unsafe { ffi::CStr::from_ptr(buffer.as_ptr().cast::<c_char>()) };
     Ok(result.to_string_lossy().into_owned())
 }

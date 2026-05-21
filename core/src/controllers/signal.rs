@@ -30,12 +30,12 @@ impl traits::EventHandler for SignalController {
         &mut self,
         _context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
-        log::info!("Daemon Signal Control: Signal received from Kernel.");
+        log::debug!("Signal received from Kernel.");
         let mut buffer = [0u8; 128];
 
         match io::Read::read(&mut self.signal_file, &mut buffer) {
             Ok(bytes_read) if bytes_read > 0 => {
-                log::info!("Daemon Signal Control: Requesting shutdown...");
+                log::info!("Requesting shutdown...");
                 state::SHUTDOWN_REQUESTED.store(true, sync::atomic::Ordering::Release);
                 Ok(traits::LoopAction::Continue)
             }

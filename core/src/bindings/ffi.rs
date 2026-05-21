@@ -126,12 +126,12 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
         match MAIN_THREAD.lock() {
             Ok(guard) => {
                 if guard.is_some() {
-                    log::error!("Rust: Attempted to start services while already running!");
+                    log::error!("Attempted to start services while already running!");
                     return -1;
                 }
             }
             Err(e) => {
-                log::error!("Rust: MAIN_THREAD mutex poison detected: {e}. Resetting...");
+                log::error!("MAIN_THREAD mutex poison detected: {e}. Resetting...");
                 return -1;
             }
         }
@@ -141,14 +141,14 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
 
     let (tx, rx) = sync::mpsc::channel::<()>();
     let result = std::panic::catch_unwind(move || {
-        log::info!("Rust: Service entry point reached. Signal FD: {signal_fd}");
+        log::debug!("Service entry point reached. Signal FD: {signal_fd}");
 
         thread::Builder::new()
             .name("Tweaks".into())
             .stack_size(64 * 1024)
             .spawn(|| {
                 if !state::TWEAKS_ENABLED.load(sync::atomic::Ordering::Acquire) {
-                    log::info!("Rust: System Tweaks are DISABLED by config.");
+                    log::debug!("System Tweaks are DISABLED by config.");
                     return;
                 }
 
@@ -170,7 +170,7 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
             .stack_size(128 * 1024)
             .spawn(move || {
                 if let Err(e) = tx.send(()) {
-                    log::error!("Rust: Failed to send handshake: {e}.");
+                    log::error!("Failed to send handshake: {e}.");
                 }
 
                 runtime::wait_for_boot_completion("MainLoop");
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
                     return;
                 }
 
-                log::info!("Rust: Constructing Service Vector...");
+                log::debug!("Constructing Service Vector...");
                 let mut services = Vec::new();
 
                 services.push(runtime::RecoverableService::new("Signal", move || {
@@ -212,10 +212,8 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
                     }));
                 }
 
-                log::info!(
-                    "Rust: Initializing Event Loop with {} services...",
-                    services.len()
-                );
+                let svc_len = services.len();
+                log::debug!("Initializing Event Loop with {svc_len} services...");
 
                 if let Err(e) = runtime::run_event_loop(services) {
                     log::error!("Fatal error in event loop: {e}");
@@ -230,7 +228,7 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
     });
 
     if let Err(cause) = result {
-        log::error!("Rust: Critical Panic during startup: {cause:?}");
+        log::error!("Critical Panic during startup: {cause:?}");
         bridge::notify_service_death("Startup Panic");
         return -1;
     }
@@ -238,7 +236,7 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
     match rx.recv_timeout(time::Duration::from_secs(5)) {
         Ok(()) => 0,
         Err(e) => {
-            log::error!("Rust: Handshake failed: {e}");
+            log::error!("Handshake failed: {e}");
             -1
         }
     }
@@ -251,7 +249,7 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
 /// join the current thread will result in a deadlock or panic.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn join_threads() {
-    log::info!("Rust: C++ requested join threads.");
+    log::debug!("Requested join threads.");
     let handle_opt = match MAIN_THREAD.lock() {
         Ok(mut guard) => guard.take(),
         Err(poisoned) => poisoned.into_inner().take(),

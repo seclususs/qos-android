@@ -45,7 +45,7 @@ pub struct BlockerController {
 
 impl BlockerController {
     pub fn new() -> types::Result<Self> {
-        log::info!("BlockerController: Initializing...");
+        log::debug!("Initializing Blocker Controller...");
 
         let config = ControllerConfig::default();
 
@@ -70,6 +70,7 @@ impl BlockerController {
 
     fn execute_batch_disable() {
         for component in TARGET_COMPONENTS {
+            log::debug!("Disabling component: {component}");
             let _ = process::Command::new("cmd")
                 .args(["pm", "disable", component])
                 .status();
@@ -99,6 +100,7 @@ impl traits::EventHandler for BlockerController {
         let elapsed_ms = now.duration_since(self.last_run).as_millis();
 
         if elapsed_ms >= self.config.interval_ms as u128 {
+            log::debug!("Blocker interval ({elapsed_ms} ms) reached. Starting execution cycle...");
             self.trigger_block_cycle();
         }
 

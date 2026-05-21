@@ -45,7 +45,7 @@ namespace
 
 extern "C" void notify_service_death(const char* context)
 {
-    LOGE("!!! CRITICAL: %s !!!", context ? context : "Unknown Reason");
+    LOGE("Critical death notification: %s", context ? context : "Unknown Reason");
     LOGE("Requesting graceful shutdown...");
 }
 

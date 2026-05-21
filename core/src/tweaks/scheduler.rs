@@ -49,6 +49,7 @@ pub fn generate_scheduler_tweaks() -> Vec<FileTweak> {
             .iter()
             .any(|&prefix| name.starts_with(prefix))
         {
+            log::debug!("Skipping storage device: {name}");
             continue;
         }
 
@@ -74,6 +75,8 @@ pub fn generate_scheduler_tweaks() -> Vec<FileTweak> {
         let Some(selected) = select_scheduler_from_str(&content, priorities) else {
             continue;
         };
+
+        log::debug!("Applying scheduler '{selected}' to device '{name}'");
 
         tweaks.push(FileTweak::new_dynamic(sched_path, selected));
 

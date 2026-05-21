@@ -27,7 +27,7 @@ namespace qos::core
         ::mallopt(M_DECAY_TIME, 0);
         LOGI("=== Daemon Starting ===");
 
-        LOGI("Hardening Environment...");
+        LOGD("Hardening Environment...");
         qos::core::Handler::arm();
         qos::system::Tuner::harden_process();
         qos::system::Tuner::expand_resources();
@@ -37,10 +37,10 @@ namespace qos::core
         qos::system::Tuner::limit_cpu_utilization();
         qos::system::Tuner::set_high_io_priority();
 
-        LOGI("Checking Hardware Support...");
+        LOGD("Checking Hardware Support...");
         const auto features = qos::system::Detector::check_features();
 
-        LOGI("Loading Configuration...");
+        LOGD("Loading Configuration...");
         const auto cfg = config::Loader::load_from_file("/data/adb/modules/sys_qos/config.ini");
 
         const bool run_cpu = cfg.cpu && features.has_cpu_psi;
@@ -56,11 +56,11 @@ namespace qos::core
 
         if (!run_cpu && !run_io && !run_cleaner && !run_tweaks && !run_blocker)
         {
-            LOGE("Daemon shutting down (No services enabled).");
+            LOGE("Shutting down (No services enabled).");
             return EXIT_FAILURE;
         }
 
-        LOGI("Activating Services...");
+        LOGD("Activating Services...");
         ::set_cpu_service(run_cpu);
         ::set_storage_service(run_io);
         ::set_cleaner_service(run_cleaner);
@@ -94,11 +94,11 @@ namespace qos::core
 
         if (rust_status != 0)
         {
-            LOGE("Fatal: Core services failed to start (Error: %d).", rust_status);
+            LOGE("Core services failed to start (Error: %d).", rust_status);
             return EXIT_FAILURE;
         }
 
-        LOGI("Core services running. Main thread waiting...");
+        LOGD("Core services running. Main thread waiting...");
         ::join_threads();
 
         LOGI("=== Shutdown Cleanly ===");

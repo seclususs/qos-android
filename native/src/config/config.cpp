@@ -1,4 +1,5 @@
 #include "daemon/config.hpp"
+#include "daemon/logger.hpp"
 #include "daemon/parser.hpp"
 
 #include <charconv>
@@ -85,6 +86,26 @@ namespace qos::config
             state.storage_limits.max_read_ahead = fetch_u64("max_read_ahead", state.storage_limits.max_read_ahead);
             state.storage_limits.min_nr_requests = fetch_u64("min_nr_requests", state.storage_limits.min_nr_requests);
             state.storage_limits.max_nr_requests = fetch_u64("max_nr_requests", state.storage_limits.max_nr_requests);
+        }
+
+        LOGD("Config: cpu=%d io=%d cleaner=%d tweaks=%d blocker=%d", state.cpu, state.io, state.cleaner, state.tweaks,
+             state.blocker);
+
+        if (state.has_cpu_limits)
+        {
+            LOGD("CPU Limits: lat[%lu,%lu] gran[%lu,%lu] wake[%lu,%lu] mig[%lu,%lu] walt[%lu,%lu] uclamp[%lu,%lu]",
+                 state.cpu_limits.min_latency_ns, state.cpu_limits.max_latency_ns, state.cpu_limits.min_granularity_ns,
+                 state.cpu_limits.max_granularity_ns, state.cpu_limits.min_wakeup_ns, state.cpu_limits.max_wakeup_ns,
+                 state.cpu_limits.min_migration_cost, state.cpu_limits.max_migration_cost,
+                 state.cpu_limits.min_walt_init_pct, state.cpu_limits.max_walt_init_pct,
+                 state.cpu_limits.min_uclamp_min, state.cpu_limits.max_uclamp_min);
+        }
+
+        if (state.has_storage_limits)
+        {
+            LOGD("Storage Limits: read_ahead[%lu,%lu] nr_requests[%lu,%lu]", state.storage_limits.min_read_ahead,
+                 state.storage_limits.max_read_ahead, state.storage_limits.min_nr_requests,
+                 state.storage_limits.max_nr_requests);
         }
 
         return state;

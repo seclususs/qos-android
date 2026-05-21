@@ -45,7 +45,7 @@ pub struct StorageController {
 
 impl StorageController {
     pub fn new() -> types::Result<Self> {
-        log::info!("Daemon Storage I/O Control: Initializing...");
+        log::debug!("Initializing Storage Controller...");
 
         let config_limits = state::STORAGE_LIMITS_OVERRIDE
             .get()
@@ -67,9 +67,7 @@ impl StorageController {
             controller_config.psi_threshold_us,
             controller_config.psi_window_us,
         )
-        .map_err(|e| {
-            types::QosError::FfiError(format!("Daemon Storage I/O PSI trigger Error: {e}"))
-        })?;
+        .map_err(|e| types::QosError::FfiError(format!("Storage I/O PSI trigger Error: {e}")))?;
         let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
         let read_ahead_path = paths::get_read_ahead_path();
@@ -247,11 +245,7 @@ impl traits::EventHandler for StorageController {
     ) -> types::Result<traits::LoopAction> {
         let mut buffer = [0u8; 8];
         let _ = io::Read::read(&mut self.trigger_fd, &mut buffer);
-
-        if let Err(e) = self.update_io_logic(context) {
-            log::warn!("Daemon Storage I/O Logic Error: {e}");
-        }
-
+        self.update_io_logic(context)?;
         Ok(traits::LoopAction::Continue)
     }
 
@@ -259,10 +253,7 @@ impl traits::EventHandler for StorageController {
         &mut self,
         context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
-        if let Err(e) = self.update_io_logic(context) {
-            log::warn!("Daemon Storage I/O Timeout Error: {e}");
-        }
-
+        self.update_io_logic(context)?;
         Ok(traits::LoopAction::Continue)
     }
 

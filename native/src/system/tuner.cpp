@@ -137,7 +137,7 @@ namespace qos::system
 
             if (!has_topology || little_cores.empty())
             {
-                LOGE("Tuner: Topology detection failed. Binding to ALL cores.");
+                LOGW("Topology detection failed. Binding to ALL cores.");
 
                 for (int i = 0; i < num_cores; ++i)
                 {
@@ -146,7 +146,7 @@ namespace qos::system
             }
             else
             {
-                LOGI("Tuner: Topology detected. Found %zu Little cores.", little_cores.size());
+                LOGD("Topology detected. Found %zu Little cores.", little_cores.size());
 
                 for (int core_id : little_cores)
                 {
@@ -169,11 +169,11 @@ namespace qos::system
 
             if (::setrlimit(RLIMIT_NOFILE, &rl_fd) == 0)
             {
-                LOGD("Tuner: FD limit expanded to %lu", rl_fd.rlim_cur);
+                LOGD("FD limit expanded to %lu", rl_fd.rlim_cur);
             }
             else
             {
-                LOGE("Tuner: Failed to maximize FD limit.");
+                LOGW("Failed to maximize FD limit.");
             }
         }
 
@@ -192,11 +192,11 @@ namespace qos::system
 
             if (::setrlimit(RLIMIT_STACK, &rl_stack) == 0)
             {
-                LOGD("Tuner: Stack expanded to %lu bytes", rl_stack.rlim_cur);
+                LOGD("Stack expanded to %lu bytes", rl_stack.rlim_cur);
             }
             else
             {
-                LOGE("Tuner: Failed to expand Stack.");
+                LOGW("Failed to expand Stack.");
             }
         }
     }
@@ -205,19 +205,19 @@ namespace qos::system
     {
         if (::mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) == 0)
         {
-            LOGI("Tuner: Smart RAM Locking Active.");
+            LOGD("Smart RAM Locking Active.");
             return;
         }
 
-        LOGE("Tuner: MCL_ONFAULT failed. Retrying with MCL_CURRENT...");
+        LOGW("MCL_ONFAULT failed. Retrying with MCL_CURRENT...");
 
         if (::mlockall(MCL_CURRENT) == 0)
         {
-            LOGI("Tuner: RAM Locking Active.");
+            LOGD("RAM Locking Active.");
             return;
         }
 
-        LOGE("Tuner: Failed to lock pages. Errno: %d", errno);
+        LOGE("Failed to lock pages. Errno: %d", errno);
     }
 
     void Tuner::harden_process() noexcept
@@ -226,7 +226,7 @@ namespace qos::system
 
         if (!file.is_open())
         {
-            LOGE("Tuner: Cannot open OOM adjustment file.");
+            LOGE("Cannot open OOM adjustment file.");
             return;
         }
 
@@ -234,11 +234,11 @@ namespace qos::system
 
         if (file.fail())
         {
-            LOGE("Tuner: Failed to write OOM score.");
+            LOGE("Failed to write OOM score.");
             return;
         }
 
-        LOGI("Tuner: OOM Shield Activated.");
+        LOGD("OOM Shield Activated.");
     }
 
     void Tuner::set_high_io_priority() noexcept
@@ -249,11 +249,11 @@ namespace qos::system
 
         if (::syscall(__NR_ioprio_set, IOPRIO_WHO_PROCESS, 0, ioprio_val) == -1)
         {
-            LOGE("Tuner: Failed to set I/O priority.");
+            LOGE("Failed to set I/O priority.");
             return;
         }
 
-        LOGI("Tuner: I/O Priority boosted.");
+        LOGD("I/O Priority boosted.");
     }
 
     void Tuner::set_realtime_policy() noexcept
@@ -263,22 +263,22 @@ namespace qos::system
 
         if (::sched_setscheduler(0, SCHED_FIFO, &param) == -1)
         {
-            LOGE("Tuner: Failed to set SCHED_FIFO. Errno: %d", errno);
+            LOGE("Failed to set SCHED_FIFO. Errno: %d", errno);
             return;
         }
 
-        LOGI("Tuner: Real-Time Policy (SCHED_FIFO) Active.");
+        LOGD("Real-Time Policy (SCHED_FIFO) Active.");
     }
 
     void Tuner::enforce_efficiency_mode() noexcept
     {
         if (apply_little_core_affinity() == 0)
         {
-            LOGI("Tuner: Affinity mask locked to Little Cores.");
+            LOGD("Affinity mask locked to Little Cores.");
             return;
         }
 
-        LOGE("Tuner: Failed to bind to Little Cores (errno: %d).", errno);
+        LOGW("Failed to bind to Little Cores (errno: %d).", errno);
 
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
@@ -292,11 +292,11 @@ namespace qos::system
 
         if (::sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) == -1)
         {
-            LOGE("Tuner: CRITICAL - Failed to reset affinity.");
+            LOGE("CRITICAL - Failed to reset affinity.");
             return;
         }
 
-        LOGI("Tuner: Fallback successful. Affinity reset to default.");
+        LOGD("Fallback successful. Affinity reset to default.");
     }
 
     void Tuner::maximize_timer_slack() noexcept
@@ -305,11 +305,11 @@ namespace qos::system
 
         if (::prctl(PR_SET_TIMERSLACK, slack_ns) == -1)
         {
-            LOGE("Tuner: Failed to set Timer Slack. Errno: %d", errno);
+            LOGE("Failed to set Timer Slack. Errno: %d", errno);
             return;
         }
 
-        LOGI("Tuner: Wakeup Coalescing Active.");
+        LOGD("Wakeup Coalescing Active.");
     }
 
     void Tuner::limit_cpu_utilization() noexcept
@@ -321,11 +321,11 @@ namespace qos::system
 
         if (::syscall(__NR_sched_setattr, 0, &attr, 0) == -1)
         {
-            LOGE("Tuner: Failed to activate UClamp. Errno: %d", errno);
+            LOGE("Failed to activate UClamp. Errno: %d", errno);
             return;
         }
 
-        LOGI("Tuner: UClamp Active.");
+        LOGD("UClamp Active.");
     }
 
 } // namespace qos::system

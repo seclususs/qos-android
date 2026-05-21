@@ -1,17 +1,19 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use android_logger;
-use log;
+use android_logger::Config;
+use log::LevelFilter;
 
 pub fn init() {
     let level = if cfg!(debug_assertions) {
-        log::LevelFilter::Debug
+        LevelFilter::Debug
     } else {
-        log::LevelFilter::Error
+        LevelFilter::Info
     };
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_tag("QoS")
-            .with_max_level(level),
-    );
+
+    let config = Config::default()
+        .with_tag("QoS")
+        .with_max_level(level)
+        .format(|f, record| write!(f, "{}", record.args()));
+
+    android_logger::init_once(config);
 }

@@ -47,7 +47,7 @@ impl RecoverableService {
 
         match (self.factory)() {
             Ok(handler) => {
-                log::info!("Service '{}' initialized successfully.", self.name);
+                log::debug!("Service '{}' initialized successfully.", self.name);
                 self.handler = Some(handler);
                 self.cooldown_start = None;
                 self.last_tick = time::Instant::now();
@@ -60,9 +60,8 @@ impl RecoverableService {
                         if io_err.kind() == io::ErrorKind::NotFound =>
                     {
                         log::error!(
-                            "Service '{}' failed FATALLY: {}. Disabling permanently.",
-                            self.name,
-                            e
+                            "Service '{}' failed FATALLY: {e}. Disabling permanently.",
+                            self.name
                         );
                         self.is_permanently_disabled = true;
                     }
@@ -70,17 +69,15 @@ impl RecoverableService {
                     types::QosError::SystemCheckFailed(msg)
                     | types::QosError::PermissionDenied(msg) => {
                         log::error!(
-                            "Service '{}' failed: {}. Disabling permanently.",
-                            self.name,
-                            msg
+                            "Service '{}' failed: {msg}. Disabling permanently.",
+                            self.name
                         );
                         self.is_permanently_disabled = true;
                     }
                     _ => {
-                        log::error!(
-                            "Failed to initialize service '{}': {}. Retrying...",
-                            self.name,
-                            e
+                        log::warn!(
+                            "Failed to initialize service '{}': {e}. Retrying...",
+                            self.name
                         );
                         self.cooldown_start = Some(time::Instant::now());
                     }
@@ -153,14 +150,14 @@ fn is_fatal_runtime_error(e: &types::QosError) -> bool {
 }
 
 pub fn apply_prop_tweaks() {
-    log::info!("Daemon: Applying Prop tweaks...");
+    log::debug!("Applying Prop tweaks...");
     let prop_tweaks_list = props::get_prop_tweaks();
     let mut success_count = 0;
 
     for tweak in prop_tweaks_list {
         if properties::property_exists(tweak.key) {
             if let Err(e) = properties::set_system_property(tweak.key, tweak.value) {
-                log::warn!("Failed to set prop {}: {}", tweak.key, e);
+                log::warn!("Failed to set prop {}: {e}", tweak.key);
             } else {
                 success_count += 1;
             }
@@ -169,34 +166,32 @@ pub fn apply_prop_tweaks() {
         }
     }
 
-    log::info!(
-        "Daemon: Applied {}/{} prop tweaks.",
-        success_count,
+    log::debug!(
+        "Applied {success_count}/{} prop tweaks.",
         prop_tweaks_list.len()
     );
 }
 
 pub fn apply_file_tweaks() {
-    log::info!("Daemon: Applying File tweaks...");
+    log::debug!("Applying File tweaks...");
     let file_tweaks_list = system::generate_file_tweaks();
     let mut success_count = 0;
 
     for tweak in &file_tweaks_list {
         match sysfs::write_to_file(&tweak.path, tweak.value) {
             Ok(()) => success_count += 1,
-            Err(e) => log::debug!("Failed to apply tweak {}: {}", tweak.path, e),
+            Err(e) => log::debug!("Failed to apply tweak {}: {e}", tweak.path),
         }
     }
 
-    log::info!(
-        "Daemon: Applied {}/{} file tweaks.",
-        success_count,
+    log::debug!(
+        "Applied {success_count}/{} file tweaks.",
         file_tweaks_list.len()
     );
 }
 
 pub fn wait_for_boot_completion(tag: &str) {
-    log::info!("Daemon [{tag}]: Waiting for sys.boot_completed...");
+    log::debug!("Waiting for sys.boot_completed (Task: {tag})...");
     let mut retry_count = 0;
 
     loop {
@@ -212,7 +207,7 @@ pub fn wait_for_boot_completion(tag: &str) {
 
         retry_count += 1;
         if retry_count > runtime::BOOT_WAIT_RETRY_LIMIT {
-            log::warn!("Daemon [{tag}]: Boot property timeout.");
+            log::warn!("Boot property timeout (Task: {tag}).");
             break;
         }
 
@@ -220,8 +215,8 @@ pub fn wait_for_boot_completion(tag: &str) {
     }
 
     if !state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
-        log::info!(
-            "Daemon [{tag}]: Stabilizing for {}s...",
+        log::debug!(
+            "Stabilizing for {}s (Task: {tag})...",
             runtime::STABILIZATION_DELAY_SEC
         );
 
@@ -346,7 +341,7 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()
                     service.last_tick = time::Instant::now();
                 }
                 Err(e) => {
-                    log::error!("Service '{}' event error: {}", service.name, e);
+                    log::error!("Service '{}' event error: {e}", service.name);
                     service.unregister_if_active(os::fd::AsRawFd::as_raw_fd(&epoll_fd), id as u64);
                     service.handler = None;
                     service.cooldown_start = if is_fatal_runtime_error(&e) {
@@ -385,7 +380,7 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()
             match handler.on_timeout(&mut context) {
                 Ok(traits::LoopAction::Continue) => {}
                 Err(e) => {
-                    log::error!("Service '{}' timeout error: {}", service.name, e);
+                    log::error!("Service '{}' timeout error: {e}", service.name);
                     service.unregister_if_active(os::fd::AsRawFd::as_raw_fd(&epoll_fd), i as u64);
                     service.handler = None;
                     service.cooldown_start = if is_fatal_runtime_error(&e) {
