@@ -109,6 +109,7 @@ struct SmithPredictor {
     model_output_no_delay: f32,
     delay_buffer: [HistoryPoint; SMITH_BUFFER_SIZE],
     head: usize,
+    tail: usize,
     count: usize,
     capacity: usize,
 }
@@ -127,6 +128,7 @@ impl SmithPredictor {
             model_output_no_delay: 0.0,
             delay_buffer: [init_point; SMITH_BUFFER_SIZE],
             head: 0,
+            tail: 0,
             count: 0,
             capacity: safe_capacity,
         }
@@ -139,39 +141,46 @@ impl SmithPredictor {
         k_gain: f32,
         tau: f32,
         delay_sec: f32,
+        now: time::Instant,
     ) -> (f32, f32) {
         let alpha = dt / (tau + dt);
         let y_no_delay = alpha * (u_control * k_gain) + (1.0 - alpha) * self.model_output_no_delay;
 
         self.model_output_no_delay = y_no_delay;
 
-        let now = time::Instant::now();
+        if self.count == self.capacity {
+            self.tail = (self.tail + 1) % self.capacity;
+        } else {
+            self.count += 1;
+        }
 
         self.delay_buffer[self.head] = HistoryPoint {
             value: y_no_delay,
             timestamp: now,
         };
 
-        let current_head_idx = self.head;
         self.head = (self.head + 1) % self.capacity;
 
-        if self.count < self.capacity {
-            self.count += 1;
-        }
-
         let target_delay = time::Duration::from_secs_f32(delay_sec);
-        let mut y_delayed = y_no_delay;
 
-        for i in 0..self.count {
-            let idx = (current_head_idx + self.capacity - i) % self.capacity;
-            let point = &self.delay_buffer[idx];
-            let age = now.duration_since(point.timestamp);
+        loop {
+            let next_tail = (self.tail + 1) % self.capacity;
 
-            if age >= target_delay {
-                y_delayed = point.value;
+            if next_tail == self.head {
+                break;
+            }
+
+            let next_point = &self.delay_buffer[next_tail];
+            let next_age = now.duration_since(next_point.timestamp);
+
+            if next_age >= target_delay {
+                self.tail = next_tail;
+            } else {
                 break;
             }
         }
+
+        let y_delayed = self.delay_buffer[self.tail].value;
 
         (y_no_delay, y_delayed)
     }
@@ -212,8 +221,8 @@ impl ThermalManager {
         bat_temp: f32,
         psi_load: f32,
         tunables: &ThermalConfig,
+        now: time::Instant,
     ) -> f32 {
-        let now = time::Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f32();
         let dt_safe = dt.clamp(0.01, 1.0);
         self.last_tick = now;
@@ -251,6 +260,7 @@ impl ThermalManager {
             tunables.smith_gain,
             tunables.smith_tau,
             tunables.smith_delay_sec,
+            now,
         );
 
         let pred_error_term = y_pred_no_delay - y_pred_delayed;

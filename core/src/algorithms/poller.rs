@@ -69,8 +69,9 @@ impl AdaptivePoller {
             .wrapping_add(1);
 
         let limit = range * 2;
+        let limit_plus_one = limit + 1;
 
-        self.rng_state % (limit + 1)
+        ((self.rng_state as u128 * limit_plus_one as u128) >> 64) as u64
     }
 
     pub fn calculate_next_interval(
@@ -132,8 +133,9 @@ impl AdaptivePoller {
     }
 
     fn apply_discrete_math_mut(&mut self, interval: u64, min_limit: u64, max_limit: u64) -> u64 {
-        let step = self.tunables.quantization_step_ms as f32;
-        let quantized = ((interval as f32 / step).round() * step) as u64;
+        let step = self.tunables.quantization_step_ms;
+
+        let quantized = ((interval + (step / 2)) / step) * step;
 
         let clamped = quantized.clamp(min_limit, max_limit);
         let noise_amplitude = (clamped * self.tunables.noise_percent) / 100;

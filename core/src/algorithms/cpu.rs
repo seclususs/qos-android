@@ -139,7 +139,7 @@ pub fn update_integral_params(
     math_config: &CpuMathConfig,
 ) -> (f32, f32) {
     let depletion = (100.0 - bat_level).max(0.0) / 100.0;
-    let cost_heuristic = math_config.bat_level_weight * depletion.powi(3);
+    let cost_heuristic = math_config.bat_level_weight * (depletion * depletion * depletion);
     let total_integral = cost_heuristic;
 
     if state.first_run {

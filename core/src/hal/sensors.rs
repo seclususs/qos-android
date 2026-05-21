@@ -4,8 +4,8 @@ use crate::hal::sysfs;
 
 const TEMP_SCALE_MILLI_THRESHOLD: f32 = 10_000.0;
 const TEMP_SCALE_DECI_THRESHOLD: f32 = 100.0;
-const SCALE_DIVISOR_MILLI: f32 = 1000.0;
-const SCALE_DIVISOR_DECI: f32 = 10.0;
+const SCALE_MULTIPLIER_MILLI: f32 = 0.001;
+const SCALE_MULTIPLIER_DECI: f32 = 0.1;
 
 pub struct ThermalSensor {
     monitor: Option<sysfs::MonitoredFile<16>>,
@@ -62,9 +62,9 @@ impl ThermalSensor {
         let abs_temp = final_temp.abs();
 
         if abs_temp >= TEMP_SCALE_MILLI_THRESHOLD {
-            final_temp / SCALE_DIVISOR_MILLI
+            final_temp * SCALE_MULTIPLIER_MILLI
         } else if abs_temp >= TEMP_SCALE_DECI_THRESHOLD {
-            final_temp / SCALE_DIVISOR_DECI
+            final_temp * SCALE_MULTIPLIER_DECI
         } else {
             final_temp
         }
