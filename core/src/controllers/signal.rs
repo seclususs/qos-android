@@ -22,22 +22,26 @@ impl SignalController {
 }
 
 impl traits::EventHandler for SignalController {
-    fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.signal_file)
+    fn as_raw_fd(&self) -> Option<os::fd::RawFd> {
+        Some(os::fd::AsRawFd::as_raw_fd(&self.signal_file))
     }
+
     fn on_event(
         &mut self,
         _context: &mut state::DaemonContext,
     ) -> Result<traits::LoopAction, types::QosError> {
-        log::info!("SignalController: Signal received from Kernel.");
+        log::info!("Daemon Signal Control: Signal received from Kernel.");
         let mut buffer = [0u8; 128];
+
         match io::Read::read(&mut self.signal_file, &mut buffer) {
             Ok(bytes_read) if bytes_read > 0 => {
-                log::info!("SignalController: Requesting shutdown...");
+                log::info!("Daemon Signal Control: Requesting shutdown...");
                 state::SHUTDOWN_REQUESTED.store(true, sync::atomic::Ordering::Release);
                 Ok(traits::LoopAction::Continue)
             }
+
             Ok(_) => Ok(traits::LoopAction::Continue),
+
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(traits::LoopAction::Continue),
             Err(e) => Err(types::QosError::IoError(e)),
         }

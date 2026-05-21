@@ -10,7 +10,7 @@ pub enum LoopAction {
 }
 
 pub trait EventHandler {
-    fn as_raw_fd(&self) -> os::fd::RawFd;
+    fn as_raw_fd(&self) -> Option<os::fd::RawFd>;
 
     fn on_event(&mut self, context: &mut state::DaemonContext) -> types::Result<LoopAction>;
 

@@ -92,10 +92,12 @@ impl RecoverableService {
 
     fn unregister_if_active(&mut self, epoll_fd: os::fd::RawFd, id: u64) {
         if self.registered_in_epoll {
-            if let Some(ref h) = self.handler {
+            if let Some(ref h) = self.handler
+                && let Some(fd) = h.as_raw_fd()
+            {
                 epoll_mod(
                     epoll_fd,
-                    traits::EventHandler::as_raw_fd(h.as_ref()),
+                    fd,
                     id,
                     libc::EPOLL_CTL_DEL,
                     event::epoll::EventFlags::empty(),
@@ -151,7 +153,7 @@ fn is_fatal_runtime_error(e: &types::QosError) -> bool {
 }
 
 pub fn apply_prop_tweaks() {
-    log::info!("Rust: Applying Prop tweaks...");
+    log::info!("Daemon: Applying Prop tweaks...");
     let prop_tweaks_list = props::get_prop_tweaks();
     let mut success_count = 0;
 
@@ -168,14 +170,14 @@ pub fn apply_prop_tweaks() {
     }
 
     log::info!(
-        "Rust: Applied {}/{} prop tweaks.",
+        "Daemon: Applied {}/{} prop tweaks.",
         success_count,
         prop_tweaks_list.len()
     );
 }
 
 pub fn apply_file_tweaks() {
-    log::info!("Rust: Applying File tweaks...");
+    log::info!("Daemon: Applying File tweaks...");
     let file_tweaks_list = system::generate_file_tweaks();
     let mut success_count = 0;
 
@@ -187,14 +189,14 @@ pub fn apply_file_tweaks() {
     }
 
     log::info!(
-        "Rust: Applied {}/{} file tweaks.",
+        "Daemon: Applied {}/{} file tweaks.",
         success_count,
         file_tweaks_list.len()
     );
 }
 
 pub fn wait_for_boot_completion(tag: &str) {
-    log::info!("Rust [{tag}]: Waiting for sys.boot_completed...");
+    log::info!("Daemon [{tag}]: Waiting for sys.boot_completed...");
     let mut retry_count = 0;
 
     loop {
@@ -210,7 +212,7 @@ pub fn wait_for_boot_completion(tag: &str) {
 
         retry_count += 1;
         if retry_count > runtime::BOOT_WAIT_RETRY_LIMIT {
-            log::warn!("Rust [{tag}]: Boot property timeout.");
+            log::warn!("Daemon [{tag}]: Boot property timeout.");
             break;
         }
 
@@ -219,7 +221,7 @@ pub fn wait_for_boot_completion(tag: &str) {
 
     if !state::SHUTDOWN_REQUESTED.load(sync::atomic::Ordering::Acquire) {
         log::info!(
-            "Rust [{tag}]: Stabilizing for {}s...",
+            "Daemon [{tag}]: Stabilizing for {}s...",
             runtime::STABILIZATION_DELAY_SEC
         );
 
@@ -270,18 +272,23 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()
                     continue;
                 };
 
-                let flags = h.get_poll_flags();
-                if epoll_mod(
-                    os::fd::AsRawFd::as_raw_fd(&epoll_fd),
-                    traits::EventHandler::as_raw_fd(h.as_ref()),
-                    i as u64,
-                    libc::EPOLL_CTL_ADD,
-                    flags,
-                ) {
-                    service.registered_in_epoll = true;
+                if let Some(fd) = h.as_raw_fd() {
+                    let flags = h.get_poll_flags();
+
+                    if epoll_mod(
+                        os::fd::AsRawFd::as_raw_fd(&epoll_fd),
+                        fd,
+                        i as u64,
+                        libc::EPOLL_CTL_ADD,
+                        flags,
+                    ) {
+                        service.registered_in_epoll = true;
+                    } else {
+                        service.handler = None;
+                        service.cooldown_start = Some(now);
+                    }
                 } else {
-                    service.handler = None;
-                    service.cooldown_start = Some(now);
+                    service.registered_in_epoll = false;
                 }
 
                 continue;
@@ -335,7 +342,9 @@ pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()
             };
 
             match handler.on_event(&mut context) {
-                Ok(traits::LoopAction::Continue) => {}
+                Ok(traits::LoopAction::Continue) => {
+                    service.last_tick = time::Instant::now();
+                }
                 Err(e) => {
                     log::error!("Service '{}' event error: {}", service.name, e);
                     service.unregister_if_active(os::fd::AsRawFd::as_raw_fd(&epoll_fd), id as u64);

@@ -1,8 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::{helpers, poller, storage};
-use crate::config::paths;
-use crate::config::{limits, runtime};
+use crate::config::{limits, paths, runtime};
 use crate::daemon::{state, traits, types};
 use crate::hal::{kernel, monitors, sysfs};
 
@@ -46,7 +45,7 @@ pub struct StorageController {
 
 impl StorageController {
     pub fn new() -> types::Result<Self> {
-        log::info!("StorageController: Initializing...");
+        log::info!("Daemon Storage I/O Control: Initializing...");
 
         let config_limits = state::STORAGE_LIMITS_OVERRIDE
             .get()
@@ -68,7 +67,9 @@ impl StorageController {
             controller_config.psi_threshold_us,
             controller_config.psi_window_us,
         )
-        .map_err(|e| types::QosError::FfiError(format!("Storage PSI Error: {e}")))?;
+        .map_err(|e| {
+            types::QosError::FfiError(format!("Daemon Storage I/O PSI trigger Error: {e}"))
+        })?;
         let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
         let read_ahead_path = paths::get_read_ahead_path();
@@ -236,8 +237,8 @@ impl StorageController {
 }
 
 impl traits::EventHandler for StorageController {
-    fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.trigger_fd)
+    fn as_raw_fd(&self) -> Option<os::fd::RawFd> {
+        Some(os::fd::AsRawFd::as_raw_fd(&self.trigger_fd))
     }
 
     fn on_event(
@@ -246,9 +247,11 @@ impl traits::EventHandler for StorageController {
     ) -> types::Result<traits::LoopAction> {
         let mut buffer = [0u8; 8];
         let _ = io::Read::read(&mut self.trigger_fd, &mut buffer);
+
         if let Err(e) = self.update_io_logic(context) {
-            log::warn!("Storage Error: {e}");
+            log::warn!("Daemon Storage I/O Logic Error: {e}");
         }
+
         Ok(traits::LoopAction::Continue)
     }
 
@@ -257,8 +260,9 @@ impl traits::EventHandler for StorageController {
         context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
         if let Err(e) = self.update_io_logic(context) {
-            log::warn!("Storage Timeout Error: {e}");
+            log::warn!("Daemon Storage I/O Timeout Error: {e}");
         }
+
         Ok(traits::LoopAction::Continue)
     }
 

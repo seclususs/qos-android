@@ -1,8 +1,7 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
 use crate::algorithms::{cpu, helpers, poller, thermal};
-use crate::config::paths;
-use crate::config::{limits, runtime};
+use crate::config::{limits, paths, runtime};
 use crate::daemon::{state, traits, types};
 use crate::hal::{kernel, monitors, sensors, sysfs};
 
@@ -63,7 +62,7 @@ pub struct CpuController {
 
 impl CpuController {
     pub fn new() -> types::Result<Self> {
-        log::info!("CpuController: Initializing...");
+        log::info!("Daemon CPU Control: Initializing...");
 
         let config_limits = state::CPU_LIMITS_OVERRIDE
             .get()
@@ -93,7 +92,7 @@ impl CpuController {
             controller_config.psi_threshold_us,
             controller_config.psi_window_us,
         )
-        .map_err(|e| types::QosError::FfiError(format!("CPU Trigger Error: {e}")))?;
+        .map_err(|e| types::QosError::FfiError(format!("Daemon CPU PSI Trigger Error: {e}")))?;
         let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
         let latency = sysfs::CachedFile::new_opt(
@@ -202,9 +201,13 @@ impl CpuController {
         let battery_level = self.cached_battery_level;
         let battery_temp = self.cached_battery_temp;
 
-        let thermal_scale =
-            self.thermal_manager
-                .update(cpu_temp, battery_temp, target_psi, &self.thermal_config);
+        let thermal_scale = self.thermal_manager.update(
+            cpu_temp,
+            battery_temp,
+            target_psi,
+            &self.thermal_config,
+            now,
+        );
 
         let trend_factor = cpu::calculate_trend_gain(cpu_some_trend.velocity);
 
@@ -336,16 +339,13 @@ impl CpuController {
         );
 
         self.latency
-            .update(latency_u64, force, &sysfs::CheckStrategy::Relative(0.10));
+            .update(latency_u64, force, &sysfs::CheckStrategy::Relative(100));
 
-        self.min_granularity.update(
-            granularity_u64,
-            force,
-            &sysfs::CheckStrategy::Relative(0.10),
-        );
+        self.min_granularity
+            .update(granularity_u64, force, &sysfs::CheckStrategy::Relative(100));
 
         self.wakeup
-            .update(wakeup_u64, force, &sysfs::CheckStrategy::Relative(0.15));
+            .update(wakeup_u64, force, &sysfs::CheckStrategy::Relative(150));
 
         self.migration
             .update(migration_u64, force, &sysfs::CheckStrategy::Absolute(50000));
@@ -359,8 +359,8 @@ impl CpuController {
 }
 
 impl traits::EventHandler for CpuController {
-    fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.trigger_fd)
+    fn as_raw_fd(&self) -> Option<os::fd::RawFd> {
+        Some(os::fd::AsRawFd::as_raw_fd(&self.trigger_fd))
     }
 
     fn on_event(
@@ -369,9 +369,11 @@ impl traits::EventHandler for CpuController {
     ) -> types::Result<traits::LoopAction> {
         let mut buffer = [0u8; 8];
         let _ = io::Read::read(&mut self.trigger_fd, &mut buffer);
+
         if let Err(e) = self.update_cpu_logic(context) {
-            log::warn!("Cpu Logic Error: {e}");
+            log::warn!("Daemon CPU Logic Error: {e}");
         }
+
         Ok(traits::LoopAction::Continue)
     }
 
@@ -380,8 +382,9 @@ impl traits::EventHandler for CpuController {
         context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
         if let Err(e) = self.update_cpu_logic(context) {
-            log::warn!("Cpu Timeout Error: {e}");
+            log::warn!("Daemon CPU Timeout Error: {e}");
         }
+
         Ok(traits::LoopAction::Continue)
     }
 
