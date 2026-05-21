@@ -63,34 +63,22 @@ extern "C" int register_psi_trigger(const char* path, int threshold_us, int wind
     }
 
     char trigger_cmd[128];
+    int len_nl = std::snprintf(trigger_cmd, sizeof(trigger_cmd), "some %d %d\n", threshold_us, window_us);
 
-    int len = std::snprintf(trigger_cmd, sizeof(trigger_cmd), "some %d %d", threshold_us, window_us);
-
-    if (len < 0 || static_cast<size_t>(len) >= sizeof(trigger_cmd))
+    if (len_nl < 0 || static_cast<size_t>(len_nl) >= sizeof(trigger_cmd))
     {
         errno = EOVERFLOW;
         return -1;
     }
 
-    if (::write(fd.get(), trigger_cmd, len + 1) >= 0)
+    if (::write(fd.get(), trigger_cmd, len_nl) >= 0)
     {
         LOGD("Registered PSI trigger: %s on fd %d", trigger_cmd, fd.get());
         return fd.release();
     }
 
-    LOGE("Failed to write trigger: %s (errno: %d). Retrying with newline...", trigger_cmd, errno);
-
-    int len_nl = std::snprintf(trigger_cmd, sizeof(trigger_cmd), "some %d %d\n", threshold_us, window_us);
-
-    if (::write(fd.get(), trigger_cmd, len_nl) < 0)
-    {
-        LOGE("Fatal trigger write error: %s (errno: %d)", trigger_cmd, errno);
-        return -1;
-    }
-
-    LOGD("Registered PSI trigger (newline fallback): %s on fd %d", trigger_cmd, fd.get());
-
-    return fd.release();
+    LOGE("Fatal trigger write error: %s (errno: %d)", trigger_cmd, errno);
+    return -1;
 }
 
 extern "C" int set_system_property(const char* key, const char* value)
