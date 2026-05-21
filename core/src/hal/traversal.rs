@@ -37,9 +37,9 @@ pub fn get_tree_size_capped(path: &path::Path, limit: u64) -> u64 {
     size
 }
 
-pub fn walk_and_act<F>(dir: &path::Path, callback: &F, depth: usize) -> usize
+pub fn walk_and_act<F>(dir: &path::Path, callback: &mut F, depth: usize) -> usize
 where
-    F: Fn(&fs::DirEntry, usize) -> TraversalAction,
+    F: FnMut(&fs::DirEntry, usize) -> TraversalAction,
 {
     if depth > 20 {
         return 0;

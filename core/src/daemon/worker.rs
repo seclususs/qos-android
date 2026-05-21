@@ -24,7 +24,7 @@ impl CleanerWorker {
         while let Ok(is_emergency) = self.sweep_rx.recv() {
             let items = self.perform_cycle(is_emergency);
             if items > 0 {
-                log::info!("Cleaner: Cycle complete. Removed {items} items.");
+                log::info!("Cleaner Worker: Cycle complete. Removed {items} items.");
             }
             unsafe {
                 sys::mallopt(MALLOPT_TRIM, 0);
@@ -71,37 +71,6 @@ impl CleanerWorker {
         total_cleaned
     }
 
-    fn evaluate_entry(
-        &self,
-        entry: &fs::DirEntry,
-        now: time::SystemTime,
-        target_age: time::Duration,
-        is_storage_critical: bool,
-    ) -> traversal::TraversalAction {
-        if !is_storage_critical && Self::is_safe_name(&entry.file_name()) {
-            return traversal::TraversalAction::Keep;
-        }
-
-        let Ok(file_metadata) = entry.metadata() else {
-            return traversal::TraversalAction::Keep;
-        };
-
-        let threshold = if Self::is_trash_extension(&entry.file_name()) {
-            self.config.age_trash
-        } else {
-            target_age
-        };
-
-        if let Ok(modified) = file_metadata.modified()
-            && let Ok(time_since_modified) = now.duration_since(modified)
-            && time_since_modified > threshold
-        {
-            return traversal::TraversalAction::DeleteFile;
-        }
-
-        traversal::TraversalAction::Keep
-    }
-
     fn clean_system_paths(&self, now: time::SystemTime) -> usize {
         let mut cleaned = 0;
 
@@ -112,11 +81,32 @@ impl CleanerWorker {
                 continue;
             }
 
-            let policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-                self.evaluate_entry(entry, now, self.config.age_stale_media, false)
+            let mut policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
+                if Self::is_safe_name(&entry.file_name()) {
+                    return traversal::TraversalAction::Keep;
+                }
+
+                let Ok(file_metadata) = entry.metadata() else {
+                    return traversal::TraversalAction::Keep;
+                };
+
+                let threshold = if Self::is_trash_extension(&entry.file_name()) {
+                    self.config.age_trash
+                } else {
+                    self.config.age_stale_media
+                };
+
+                if let Ok(modified) = file_metadata.modified()
+                    && let Ok(time_since_modified) = now.duration_since(modified)
+                    && time_since_modified > threshold
+                {
+                    return traversal::TraversalAction::DeleteFile;
+                }
+
+                traversal::TraversalAction::Keep
             };
 
-            cleaned += traversal::walk_and_act(dir_path, &policy, 0);
+            cleaned += traversal::walk_and_act(dir_path, &mut policy, 0);
         }
         cleaned
     }
@@ -135,8 +125,20 @@ impl CleanerWorker {
                 continue;
             };
 
+            let mut path_buffer = root_path.to_path_buf();
+
             for entry in entries.flatten() {
-                cleaned += self.process_app_directory(&entry, is_storage_critical, now);
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+
+                if !file_type.is_dir() {
+                    continue;
+                }
+
+                path_buffer.push(entry.file_name());
+                cleaned += self.process_app_directory(&mut path_buffer, is_storage_critical, now);
+                path_buffer.pop();
             }
         }
         cleaned
@@ -144,35 +146,29 @@ impl CleanerWorker {
 
     fn process_app_directory(
         &self,
-        entry: &fs::DirEntry,
+        path_buffer: &mut path::PathBuf,
         is_storage_critical: bool,
         now: time::SystemTime,
     ) -> usize {
-        let Ok(file_type) = entry.file_type() else {
-            return 0;
-        };
-
-        if !file_type.is_dir() {
-            return 0;
-        }
-
-        let app_dir = entry.path();
         let mut cleaned = 0;
 
-        cleaned += self.process_cache_dir(&app_dir, is_storage_critical, now);
-        cleaned += self.process_code_cache_dir(&app_dir, is_storage_critical, now);
+        path_buffer.push("cache");
+        cleaned += self.process_cache_dir(path_buffer, is_storage_critical, now);
+        path_buffer.pop();
+
+        path_buffer.push("code_cache");
+        cleaned += self.process_code_cache_dir(path_buffer, is_storage_critical, now);
+        path_buffer.pop();
 
         cleaned
     }
 
     fn process_cache_dir(
         &self,
-        app_dir: &path::Path,
+        cache_dir: &path::Path,
         is_storage_critical: bool,
         now: time::SystemTime,
     ) -> usize {
-        let cache_dir = app_dir.join("cache");
-
         if !cache_dir.exists() {
             return 0;
         }
@@ -180,7 +176,7 @@ impl CleanerWorker {
         let cache_size_bytes = if is_storage_critical {
             0
         } else {
-            traversal::get_tree_size_capped(&cache_dir, self.config.bloat_limit_bytes + 1024)
+            traversal::get_tree_size_capped(cache_dir, self.config.bloat_limit_bytes + 1024)
         };
 
         let target_age = if is_storage_critical {
@@ -191,21 +187,40 @@ impl CleanerWorker {
             self.config.age_stale_media
         };
 
-        let policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-            self.evaluate_entry(entry, now, target_age, is_storage_critical)
+        let mut policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
+            if !is_storage_critical && Self::is_safe_name(&entry.file_name()) {
+                return traversal::TraversalAction::Keep;
+            }
+
+            let Ok(file_metadata) = entry.metadata() else {
+                return traversal::TraversalAction::Keep;
+            };
+
+            let threshold = if Self::is_trash_extension(&entry.file_name()) {
+                self.config.age_trash
+            } else {
+                target_age
+            };
+
+            if let Ok(modified) = file_metadata.modified()
+                && let Ok(time_since_modified) = now.duration_since(modified)
+                && time_since_modified > threshold
+            {
+                return traversal::TraversalAction::DeleteFile;
+            }
+
+            traversal::TraversalAction::Keep
         };
 
-        traversal::walk_and_act(&cache_dir, &policy, 0)
+        traversal::walk_and_act(cache_dir, &mut policy, 0)
     }
 
     fn process_code_cache_dir(
         &self,
-        app_dir: &path::Path,
+        code_dir: &path::Path,
         is_storage_critical: bool,
         now: time::SystemTime,
     ) -> usize {
-        let code_dir = app_dir.join("code_cache");
-
         if !code_dir.exists() {
             return 0;
         }
@@ -216,10 +231,31 @@ impl CleanerWorker {
             self.config.age_stale_code
         };
 
-        let policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-            self.evaluate_entry(entry, now, target_age, is_storage_critical)
+        let mut policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
+            if !is_storage_critical && Self::is_safe_name(&entry.file_name()) {
+                return traversal::TraversalAction::Keep;
+            }
+
+            let Ok(file_metadata) = entry.metadata() else {
+                return traversal::TraversalAction::Keep;
+            };
+
+            let threshold = if Self::is_trash_extension(&entry.file_name()) {
+                self.config.age_trash
+            } else {
+                target_age
+            };
+
+            if let Ok(modified) = file_metadata.modified()
+                && let Ok(time_since_modified) = now.duration_since(modified)
+                && time_since_modified > threshold
+            {
+                return traversal::TraversalAction::DeleteFile;
+            }
+
+            traversal::TraversalAction::Keep
         };
 
-        traversal::walk_and_act(&code_dir, &policy, 0)
+        traversal::walk_and_act(code_dir, &mut policy, 0)
     }
 }

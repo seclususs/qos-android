@@ -4,7 +4,7 @@ use crate::config::paths;
 use crate::daemon::{state, traits, types, worker};
 use crate::hal::{monitors, sensors};
 
-use std::{fs, io, os, sync, thread, time};
+use std::{os, sync, thread, time};
 
 const INITIAL_SWEEP_BACKDATE_SECS: u64 = 86400;
 
@@ -41,24 +41,12 @@ pub struct CleanerController {
     thermal_sensor: sensors::ThermalSensor,
     config: CleanerConfig,
     last_sweep: time::Instant,
-    event_fd: fs::File,
     sweep_tx: sync::mpsc::Sender<bool>,
 }
 
 impl CleanerController {
     pub fn new() -> types::Result<Self> {
-        log::info!("CleanerController: Initializing...");
-
-        let event_fd_raw = rustix::event::eventfd(
-            0,
-            rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK,
-        )
-        .map_err(|e| {
-            types::QosError::SystemCheckFailed(format!("Failed to create eventfd: {e}"))
-        })?;
-
-        let event_fd =
-            unsafe { os::fd::FromRawFd::from_raw_fd(os::fd::IntoRawFd::into_raw_fd(event_fd_raw)) };
+        log::info!("Daemon Cleaner Control: Initializing...");
 
         let config = CleanerConfig::default();
         let (sweep_tx, sweep_rx) = sync::mpsc::channel();
@@ -71,7 +59,9 @@ impl CleanerController {
                 worker.run();
             })
             .map_err(|e| {
-                types::QosError::SystemCheckFailed(format!("Failed to spawn cleaner thread: {e}"))
+                types::QosError::SystemCheckFailed(format!(
+                    "Failed to spawn daemon cleaner thread: {e}"
+                ))
             })?;
 
         Ok(Self {
@@ -82,7 +72,6 @@ impl CleanerController {
             last_sweep: time::Instant::now()
                 .checked_sub(time::Duration::from_secs(INITIAL_SWEEP_BACKDATE_SECS))
                 .unwrap_or_else(time::Instant::now),
-            event_fd,
             sweep_tx,
         })
     }
@@ -104,16 +93,14 @@ impl CleanerController {
 }
 
 impl traits::EventHandler for CleanerController {
-    fn as_raw_fd(&self) -> os::fd::RawFd {
-        os::fd::AsRawFd::as_raw_fd(&self.event_fd)
+    fn as_raw_fd(&self) -> Option<os::fd::RawFd> {
+        None
     }
 
     fn on_event(
         &mut self,
         _context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
-        let mut buffer = [0u8; 8];
-        let _ = io::Read::read(&mut self.event_fd, &mut buffer);
         Ok(traits::LoopAction::Continue)
     }
 
@@ -122,6 +109,7 @@ impl traits::EventHandler for CleanerController {
         _context: &mut state::DaemonContext,
     ) -> types::Result<traits::LoopAction> {
         let now = time::Instant::now();
+
         if now.duration_since(self.last_sweep).as_millis() < self.config.sweep_interval_ms as u128 {
             return Ok(traits::LoopAction::Continue);
         }
@@ -160,8 +148,9 @@ impl traits::EventHandler for CleanerController {
 
         match self.sweep_tx.send(is_emergency) {
             Ok(()) => self.last_sweep = now,
-            Err(e) => log::error!("CleanerController: Failed to signal: {e}"),
+            Err(e) => log::error!("Daemon Cleaner Control: Failed to signal: {e}"),
         }
+
         Ok(traits::LoopAction::Continue)
     }
 
