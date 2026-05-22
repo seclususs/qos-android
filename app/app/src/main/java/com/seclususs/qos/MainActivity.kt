@@ -12,6 +12,7 @@ import com.seclususs.qos.data.local.AppStore
 import com.seclususs.qos.data.local.AppTheme
 import com.seclususs.qos.ui.navigation.QosApp
 import com.seclususs.qos.ui.theme.QoSTheme
+import com.topjohnwu.superuser.Shell
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -24,6 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        Shell.getShell()
         enableEdgeToEdge()
         setContent {
             val appTheme by appStore.appThemeFlow.collectAsState(initial = AppTheme.SYSTEM)

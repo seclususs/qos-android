@@ -24,17 +24,20 @@ class DaemonRepositoryImpl @Inject constructor(
     }
 
     override suspend fun isDaemonRunning(): Boolean = withContext(ioDispatcher) {
-        val pid = rootShell.execute("pidof qos_daemon")
+        val pid = getDaemonPid()
         !pid.isNullOrBlank()
     }
 
     override suspend fun getDaemonPid(): String? = withContext(ioDispatcher) {
-        val pid = rootShell.execute("pidof qos_daemon")
+        var pid = rootShell.execute("pidof qos_daemon")
+        if (pid.isNullOrBlank()) {
+            pid = rootShell.execute("pgrep -f qos_daemon | head -n 1")
+        }
         if (pid.isNullOrBlank()) null else pid.trim()
     }
 
     override suspend fun startDaemon(): Boolean = withContext(ioDispatcher) {
-        rootShell.executeSilently("/data/adb/modules/sys_qos/system/bin/qos_daemon &")
+        rootShell.executeSilently("nohup sh /data/adb/modules/sys_qos/service.sh > /dev/null 2>&1 &")
     }
 
     override suspend fun stopDaemon(): Boolean = withContext(ioDispatcher) {
