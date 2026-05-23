@@ -1,52 +1,74 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use crate::bindings::cstr;
+use crate::bindings::{cstr, sys};
 use crate::daemon::types;
 
 use std::{fs, os};
 
-const ALLOWED_PREFIXES: [&str; 2] = ["/proc/", "/sys/"];
-
+#[inline]
 fn validate_fd_secure(fd: os::fd::RawFd) -> Result<(), types::QosError> {
-    let fd_path = format!("/proc/self/fd/{fd}");
+    let mut path_buf = [0u8; 32];
+    path_buf[0..14].copy_from_slice(b"/proc/self/fd/");
 
-    let canonical_target = fs::read_link(fd_path)
-        .map_err(|e| types::QosError::InvalidPath(format!("FD resolution failed: {e}")))?;
+    let mut itoa_buf = itoa::Buffer::new();
+    let fd_bytes = itoa_buf.format(fd).as_bytes();
+    let end = 14 + fd_bytes.len();
 
-    let canonical_str = canonical_target.to_string_lossy();
+    if end >= path_buf.len() {
+        return Err(types::QosError::InvalidPath("FD too large".into()));
+    }
 
-    if ALLOWED_PREFIXES
-        .iter()
-        .any(|&prefix| canonical_str.starts_with(prefix))
-    {
+    path_buf[14..end].copy_from_slice(fd_bytes);
+    path_buf[end] = b'\0';
+
+    let mut target_buf = [0u8; 256];
+    let res = unsafe {
+        sys::readlink(
+            path_buf.as_ptr().cast::<core::ffi::c_char>(),
+            target_buf.as_mut_ptr().cast::<core::ffi::c_char>(),
+            target_buf.len(),
+        )
+    };
+
+    if res < 0 {
+        return Err(types::QosError::InvalidPath("FD resolution failed".into()));
+    }
+
+    let target_slice = &target_buf[..res as usize];
+
+    if target_slice.starts_with(b"/proc/") || target_slice.starts_with(b"/sys/") {
         Ok(())
     } else {
-        Err(types::QosError::PermissionDenied(format!(
-            "Access denied: {canonical_str}"
-        )))
+        Err(types::QosError::PermissionDenied("Access denied".into()))
     }
 }
 
 pub fn open_file_for_write(path: &str) -> Result<fs::File, types::QosError> {
-    let file = fs::OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(types::QosError::IoError)?;
+    let fd = rustix::fs::openat(
+        rustix::fs::CWD,
+        path,
+        rustix::fs::OFlags::WRONLY | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|e| types::QosError::IoError(e.into()))?;
 
-    validate_fd_secure(os::fd::AsRawFd::as_raw_fd(&file))?;
+    validate_fd_secure(os::fd::AsRawFd::as_raw_fd(&fd))?;
 
-    Ok(file)
+    Ok(fd.into())
 }
 
 pub fn open_file_for_read(path: &str) -> Result<fs::File, types::QosError> {
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .open(path)
-        .map_err(types::QosError::IoError)?;
+    let fd = rustix::fs::openat(
+        rustix::fs::CWD,
+        path,
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|e| types::QosError::IoError(e.into()))?;
 
-    validate_fd_secure(os::fd::AsRawFd::as_raw_fd(&file))?;
+    validate_fd_secure(os::fd::AsRawFd::as_raw_fd(&fd))?;
 
-    Ok(file)
+    Ok(fd.into())
 }
 
 pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::QosError> {
