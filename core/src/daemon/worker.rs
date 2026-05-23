@@ -77,10 +77,6 @@ impl CleanerWorker {
         for system_path in SYSTEM_DUMP_PATHS {
             let dir_path = path::Path::new(system_path);
 
-            if !dir_path.exists() {
-                continue;
-            }
-
             let mut policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
                 if Self::is_safe_name(&entry.file_name()) {
                     return traversal::TraversalAction::Keep;
@@ -116,10 +112,6 @@ impl CleanerWorker {
 
         for root in APP_DATA_PATHS {
             let root_path = path::Path::new(root);
-
-            if !root_path.exists() {
-                continue;
-            }
 
             let Ok(entries) = fs::read_dir(root_path) else {
                 continue;
@@ -169,14 +161,10 @@ impl CleanerWorker {
         is_storage_critical: bool,
         now: time::SystemTime,
     ) -> usize {
-        if !cache_dir.exists() {
-            return 0;
-        }
-
         let cache_size_bytes = if is_storage_critical {
             0
         } else {
-            traversal::get_tree_size_capped(cache_dir, self.config.bloat_limit_bytes + 1024)
+            traversal::get_tree_size_capped(cache_dir, self.config.bloat_limit_bytes + 1024, 0)
         };
 
         let target_age = if is_storage_critical {
@@ -221,10 +209,6 @@ impl CleanerWorker {
         is_storage_critical: bool,
         now: time::SystemTime,
     ) -> usize {
-        if !code_dir.exists() {
-            return 0;
-        }
-
         let target_age = if is_storage_critical {
             self.config.age_emergency
         } else {
