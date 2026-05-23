@@ -3,20 +3,17 @@
 use crate::bindings::cstr;
 use crate::daemon::types;
 
-use std::{fs, os, path};
+use std::{fs, os};
 
 const ALLOWED_PREFIXES: [&str; 2] = ["/proc/", "/sys/"];
 
-fn validate_path_secure(path_str: &str) -> Result<(), types::QosError> {
-    let path = path::Path::new(path_str);
+fn validate_fd_secure(fd: os::fd::RawFd) -> Result<(), types::QosError> {
+    let fd_path = format!("/proc/self/fd/{fd}");
 
-    let canonical_path = fs::canonicalize(path).map_err(|e| {
-        types::QosError::InvalidPath(format!("Path resolution failed for {path_str}: {e}"))
-    })?;
+    let canonical_target = fs::read_link(fd_path)
+        .map_err(|e| types::QosError::InvalidPath(format!("FD resolution failed: {e}")))?;
 
-    let canonical_str = canonical_path
-        .to_str()
-        .ok_or_else(|| types::QosError::InvalidPath("Non-UTF8 path".to_string()))?;
+    let canonical_str = canonical_target.to_string_lossy();
 
     if ALLOWED_PREFIXES
         .iter()
@@ -31,19 +28,25 @@ fn validate_path_secure(path_str: &str) -> Result<(), types::QosError> {
 }
 
 pub fn open_file_for_write(path: &str) -> Result<fs::File, types::QosError> {
-    validate_path_secure(path)?;
-    fs::OpenOptions::new()
+    let file = fs::OpenOptions::new()
         .write(true)
         .open(path)
-        .map_err(types::QosError::IoError)
+        .map_err(types::QosError::IoError)?;
+
+    validate_fd_secure(os::fd::AsRawFd::as_raw_fd(&file))?;
+
+    Ok(file)
 }
 
 pub fn open_file_for_read(path: &str) -> Result<fs::File, types::QosError> {
-    validate_path_secure(path)?;
-    fs::OpenOptions::new()
+    let file = fs::OpenOptions::new()
         .read(true)
         .open(path)
-        .map_err(types::QosError::IoError)
+        .map_err(types::QosError::IoError)?;
+
+    validate_fd_secure(os::fd::AsRawFd::as_raw_fd(&file))?;
+
+    Ok(file)
 }
 
 pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::QosError> {
@@ -77,8 +80,6 @@ pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::Qos
 }
 
 pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
-    validate_path_secure(path)?;
-
     if !cstr::validate_value(value) {
         return Err(types::QosError::SystemCheckFailed(format!(
             "Invalid characters in value for {path}: '{value}'"
@@ -102,13 +103,15 @@ pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
     let fd = rustix::fs::openat(
         rustix::fs::CWD,
         path,
-        rustix::fs::OFlags::WRONLY | rustix::fs::OFlags::TRUNC | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::OFlags::WRONLY | rustix::fs::OFlags::CLOEXEC,
         rustix::fs::Mode::empty(),
     )
     .map_err(|e| {
         log::debug!("Openat failed for {path}: {e}");
         types::QosError::IoError(e.into())
     })?;
+
+    validate_fd_secure(os::fd::AsRawFd::as_raw_fd(&fd))?;
 
     rustix::io::write(&fd, final_slice).map_err(|e| {
         log::debug!("Write raw failed '{value}' -> {path}: {e}");
