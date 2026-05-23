@@ -9,14 +9,9 @@ pub struct SignalController {
 }
 
 impl SignalController {
-    /// # Safety
-    /// The caller must ensure that `signal_fd` is a valid, open file descriptor that
-    /// this process has ownership of. The `SignalController` will take ownership
-    /// of this FD and close it when dropped.
-    pub unsafe fn new(signal_fd: os::fd::RawFd) -> Self {
+    pub fn new(signal_fd: os::fd::OwnedFd) -> Self {
         Self {
-            // Safety: Inherits the safety requirements of FromRawFd::from_raw_fd
-            signal_file: unsafe { os::fd::FromRawFd::from_raw_fd(signal_fd) },
+            signal_file: signal_fd.into(),
         }
     }
 }

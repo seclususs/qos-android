@@ -2,9 +2,9 @@
 
 use crate::config::limits;
 use crate::controllers::{blocker, cleaner, cpu, signal, storage};
-use crate::daemon::{bridge, logging, runtime, state};
+use crate::daemon::{bridge, logging, runtime, state, types};
 
-use std::{sync, thread, time};
+use std::{os, sync, thread, time};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -139,6 +139,8 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
 
     logging::init();
 
+    let owned_signal_fd: os::fd::OwnedFd = unsafe { os::fd::FromRawFd::from_raw_fd(signal_fd) };
+
     let (tx, rx) = sync::mpsc::channel::<()>();
     let result = std::panic::catch_unwind(move || {
         log::debug!("Service entry point reached. Signal FD: {signal_fd}");
@@ -183,9 +185,11 @@ pub unsafe extern "C" fn start_services(signal_fd: i32) -> i32 {
                 let mut services = Vec::new();
 
                 services.push(runtime::RecoverableService::new("Signal", move || {
-                    Ok(Box::new(unsafe {
-                        signal::SignalController::new(signal_fd)
-                    }))
+                    let instance_fd = owned_signal_fd
+                        .try_clone()
+                        .map_err(types::QosError::IoError)?;
+
+                    Ok(Box::new(signal::SignalController::new(instance_fd)))
                 }));
 
                 if state::STORAGE_SERVICE_ENABLED.load(sync::atomic::Ordering::Acquire) {
