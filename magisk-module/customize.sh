@@ -1,231 +1,66 @@
 #!/system/bin/sh
+
 SKIPUNZIP=1
-
 MODID="sys_qos"
-ACTIVE_DIR="/data/adb/modules/$MODID"
 
-grep_prop() {
-  local REGEX="s/^$1=//p"
-  sed -n "$REGEX" "$2"
-}
+unzip -o "$ZIPFILE" 'module.prop' 'common/utils.sh' 'common/setup.sh' -d "$MODPATH" >&2
 
-get_prop() {
-  local prop=$(getprop "$1")
-  echo "$prop"
-}
-
-unzip -o "$ZIPFILE" 'module.prop' -d "$MODPATH" >&2
-
-ui_print_header() {
-  ui_print " "
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠤⣲⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡠⠖⠋⢀⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠜⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡰⠊⠀⠀⡠⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠊⡰⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡼⠁⠀⠀⡜⠁⠀⠀⠀⠀⠀⠀⠀⠀⣀⠤⠚⠁⡜⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⠀⠀⢸⠀⠀⠀⠀⢀⣀⣀⠤⠖⠈⠀⠀⢀⡜⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠔⠓⠲⢤⣸⠒⣊⣭⠛⠉⠀⠀⠀⠀⠀⢀⣠⢿⡶⠛⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠇⠀⠀⠀⠀⣹⠎⠀⠀⠑⡄⠀⢀⡠⠔⢊⡥⢺⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠎⠀⠀⠀⣠⠞⠁⠀⠀⠀⢀⣾⠋⠁⣠⠞⠁⠀⢸⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⠃⠀⡠⠊⡜⠁⠀⠀⠀⢀⡊⠁⠁⠀⢊⡀⠀⠀⠀⣀⣉⣓⣦⡤⠤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⡤⠊⠁⠸⠀⠀⠀⡠⡖⡝⠀⠀⠀⠀⠀⠈⢉⡩⠭⠒⢋⡟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡸⠁⠀⠀⠀⠑⠒⠛⠒⠋⠁⠀⠀⠀⠀⠀⠀⠘⠤⣀⡀⠈⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠜⠁⠀⠀⠀⠀⠀⠀⢀⣀⠤⠄⠀⠀⠀⡰⠚⢧⠉⠒⠒⠮⠽⣾⣦⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠋⠁⡠⣖⠂⠀⠀⠀⡠⠋⠉⠀⡀⠀⠀⢀⡴⠁⠀⠸⡄⠀⠀⠀⠀⡇⠙⢌⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠀⠘⠐⠁⣀⡠⠔⠋⣀⣀⡴⠚⠓⡶⣞⣉⣀⣀⡠⢤⠇⠀⠀⠀⢰⣃⡀⠈⢳⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢧⣀⣠⡊⠁⡀⣠⠞⠁⠀⠀⠀⡜⠁⠀⠀⠀⠀⠀⡜⠀⠀⠀⠀⣿⠀⠈⠑⢄⢳⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠰⣽⢻⡏⠁⠀⠀⠀⢀⠞⠑⠦⠤⠤⠤⠄⡸⠁⠀⠀⠀⢸⠉⣆⠀⠀⠘⡾⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⠀⠃⠀⠀⠀⢀⢏⠀⠀⠀⠀⠀⠀⡰⠁⠀⠀⠀⠀⢸⠀⠘⡄⠀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-  ui_print "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠀⠑⠦⠤⠤⠄⢲⠁⠀⠀⠀⠀⠀⠘⣆⣀⣹"
-  ui_print " "
-  ui_print "  QoS"
-  ui_print "  Version : v$(grep_prop version "$MODPATH/module.prop")"
-  ui_print "-----------------------------------"
-}
-
-ui_print_log() { ui_print "  ● $1"; }
-ui_print_info() { ui_print "    ➜ $1"; }
-ui_print_warn() { ui_print "    ! $1"; }
-ui_print_err() { ui_print "    X $1"; }
-
-# Original concept by Chainfire, modernized for new Android versions
-chooseport() {
-  sleep 0.5
-  timeout 0.2 /system/bin/getevent -l -c 1 > /dev/null 2>&1
-  while true; do
-    timeout 15 /system/bin/getevent -l -c 1 > "$TMPDIR/events" 2>/dev/null
-
-    if [ -s "$TMPDIR/events" ]; then
-      if grep -qE "KEY_VOLUMEUP| 0073 " "$TMPDIR/events"; then
-        return 0
-      fi
-      if grep -qE "KEY_VOLUMEDOWN| 0072 " "$TMPDIR/events"; then
-        return 1
-      fi
-    fi
-
-  done
-}
-
-backup_config() {
-  if [ -f "$ACTIVE_DIR/config.ini" ]; then
-    ui_print_log "Detecting previous installation..."
-    cp -f "$ACTIVE_DIR/config.ini" "$TMPDIR/config.ini.bak"
-    ui_print_info "Old config backed up."
-    return 0
-  fi
-  return 1
-}
-
-restore_config() {
-  local OLD_CFG="$TMPDIR/config.ini.bak"
-  local NEW_CFG="$MODPATH/config.ini"
-
-  if [ -f "$OLD_CFG" ]; then
-    ui_print_log "Restoring user configuration..."
-    
-    grep '^[a-zA-Z0-9_.]\+=' "$OLD_CFG" | while read -r line; do
-      local key=$(echo "$line" | cut -d'=' -f1)
-      local val=$(echo "$line" | cut -d'=' -f2-)
-      if grep -q "^$key=" "$NEW_CFG"; then
-        sed -i "s|^$key=.*|$key=$val|" "$NEW_CFG"
-      fi
-    done
-
-    ui_print_info "Config merged. User settings restored."
-  else
-    ui_print_log "Using default configuration."
-  fi
-}
-
-run_setup_wizard() {
-  ui_print_log "Starting Setup..."
-  ui_print " "
-  
-  FEATURES="Blocker:blocker_enabled Cleaner:cleaner_enabled CPU_Controller:cpu_enabled Storage_Controller:storage_enabled System_Tweaks:tweaks_enabled"
-  
-  for item in $FEATURES; do
-    local name=$(echo "$item" | cut -d':' -f1 | tr '_' ' ')
-    local key=$(echo "$item" | cut -d':' -f2)
-    local warning=""
-    
-    case "$key" in
-      "cpu_enabled")
-         [ ! -e "/proc/pressure/cpu" ] && warning="PSI CPU missing (/proc/pressure/cpu). Service might degrade."
-         ;;
-      "storage_enabled")
-         [ ! -e "/proc/pressure/io" ] && warning="PSI IO missing (/proc/pressure/io). Service will fail."
-         ;;
-      "cleaner_enabled")
-         if [ ! -d "/data/data" ] || [ ! -d "/proc" ]; then
-            warning="System paths inaccessible (/data/data or /proc)"
-         elif [ ! -e "/proc/pressure/cpu" ] || [ ! -e "/proc/pressure/io" ]; then
-            warning="PSI metrics missing. Cleaner safety checks will fail."
-         fi
-         ;;
-    esac
-
-    ui_print "  [?] Enable $name?"
-
-    if [ ! -z "$warning" ]; then
-       ui_print_warn "$warning"
-    fi
-
-    ui_print "    (+) Vol Up   = ENABLE"
-    ui_print "    (-) Vol Down = DISABLE"
-    
-    if chooseport; then
-      sed -i "s|^$key=.*|$key=true|" "$MODPATH/config.ini"
-      ui_print_info "$name -> ON"
-    else
-      sed -i "s|^$key=.*|$key=false|" "$MODPATH/config.ini"
-      ui_print_warn "$name -> OFF"
-    fi
-    ui_print " "
-    sleep 0.2
-  done
-
-  ui_print_info "Configuration Setup Complete."
-}
-
-REQUIRED_PROPS="
-ro.vendor.mtk.bt_sap_enable
-ro.vendor.mtk_wappush_support
-ro.vendor.mtk_c2k_support
-ro.vendor.mtk_c2k_lte_mode
-ro.vendor.mtk_embms_support
-ro.vendor.mtk_md_world_mode_support
-ro.vendor.connsys.dedicated.log
-ro.vendor.mtk_protocol1_rat_config
-ro.vendor.mtk_wapi_support
-"
-
-validate_system_props() {
-  local remove_system_prop=0
-
-  for prop in $REQUIRED_PROPS; do
-    key=$(echo "$prop" | cut -d'=' -f1)
-    value=$(echo "$prop" | cut -d'=' -f2-)
-
-    actual_value=$(get_prop "$key")
-    if [ -z "$actual_value" ]; then
-      ui_print_warn "Missing prop: $key"
-      remove_system_prop=1
-    fi
-  done
-
-  if [ $remove_system_prop -eq 1 ]; then
-    if [ -f "$MODPATH/system.prop" ]; then
-      ui_print_warn "Some required props missing, removing system.prop"
-      rm -f "$MODPATH/system.prop"
-    fi
-  fi
-}
+. "$MODPATH/common/utils.sh"
+. "$MODPATH/common/setup.sh"
 
 ui_print_header
 
+ui_print_log "[1/8] Verifying system environment..."
 if [ "$ARCH" != "arm64" ]; then
-  ui_print_warn "Architecture $ARCH might be incompatible (Daemon targets arm64)."
+    ui_print_warn "Incompatible architecture ($ARCH). Daemon targets arm64."
 fi
 
+ui_print_log "[2/8] Checking previous installation..."
 backup_config
 HAS_BACKUP=$?
 
-ui_print_log "Extracting module files..."
-unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' 'system.prop' -d "$MODPATH" >&2
+ui_print_log "[3/8] Extracting module files..."
+unzip -o "$ZIPFILE" 'service.sh' 'system/bin/qos_daemon' 'config.ini' 'system.prop' 'common/apk/*' 'uninstall.sh' -d "$MODPATH" >&2
 
+ui_print_log "[4/8] Validating system properties..."
 validate_system_props
 
-ui_print " "
+ui_print_log "[5/8] Configuring module settings..."
+
 if [ $HAS_BACKUP -eq 0 ]; then
-  ui_print_warn "Previous Configuration Found!"
-  ui_print "    (+) Vol Up   : MERGE (Keep settings)"
-  ui_print "    (-) Vol Down : RESET (Re-configure)"
-  
-  if chooseport; then
-    restore_config
-  else
-    ui_print_log "Old config discarded."
-    run_setup_wizard
-  fi
+    ui_print_warn "Existing configuration found."
+    ui_print "  (+) Vol Up   : MERGE (Keep old settings)"
+    ui_print "  (-) Vol Down : RESET (Start fresh)"
+    
+    if chooseport; then
+        restore_config
+    else
+        ui_print_info "Old configuration discarded."
+        run_setup_wizard
+    fi
 else
-  ui_print_log "Fresh Installation Detected."
-  ui_print "    (+) Vol Up   : CUSTOMIZE Features"
-  ui_print "    (-) Vol Down : USE DEFAULTS"
-  
-  if chooseport; then
-    run_setup_wizard
-  else
-    ui_print_info "Using default configuration."
-  fi
+    ui_print_info "Fresh installation detected."
+    ui_print "  (+) Vol Up   : CUSTOMIZE (Choose features)"
+    ui_print "  (-) Vol Down : DEFAULT                    "
+    
+    if chooseport; then
+        run_setup_wizard
+    else
+        ui_print_info "Applying default configuration."
+    fi
 fi
 
-ui_print_log "Setting permissions..."
+ui_print " "
+ui_print_log "[6/8] Setting up Application..."
+install_app_wizard
+
+ui_print_log "[7/8] Setting file permissions..."
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 set_perm "$MODPATH/service.sh" 0 0 0755
 set_perm "$MODPATH/system/bin/qos_daemon" 0 0 0755
 set_perm "$MODPATH/config.ini" 0 0 0644
 
-ui_print_log "Cleaning up..."
-rm -f "$MODPATH/customize.sh" 2>/dev/null
+ui_print_log "[8/8] Finalizing installation..."
+rm -f "$MODPATH/common/utils.sh" "$MODPATH/common/setup.sh" "$MODPATH/customize.sh" "$MODPATH/update.json" 2>/dev/null
 find "$MODPATH" -empty -type d -delete
 [ -e /data/system/package_cache ] && rm -rf /data/system/package_cache/*
