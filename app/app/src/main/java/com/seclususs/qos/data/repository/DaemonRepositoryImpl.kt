@@ -17,43 +17,43 @@ class DaemonRepositoryImpl @Inject constructor(
 ) : DaemonRepository {
 
     companion object {
-        private val SPACE_REGEX = Regex("\\s+")
+        private const val DAEMON_BIN = "/data/adb/modules/sys_qos/system/bin/qos_daemon"
         private const val PID_FILE = "/data/adb/modules/sys_qos/daemon.pid"
+        private const val SERVICE_SCRIPT = "/data/adb/modules/sys_qos/service.sh"
         private var hasAttemptedAutoFix = false
     }
 
     override suspend fun checkDaemonExists(): Boolean = withContext(ioDispatcher) {
-        rootShell.executeSilently("ls /data/adb/modules/sys_qos/system/bin/qos_daemon")
+        rootShell.executeSilently("test -f $DAEMON_BIN")
     }
 
     override suspend fun getDaemonPid(): String? = withContext(ioDispatcher) {
-        val pid = rootShell.readFile(PID_FILE)?.trim()
-
-        if (!pid.isNullOrBlank() && pid.all { it.isDigit() }) {
-            if (rootShell.executeSilently("kill -0 $pid")) {
-                return@withContext pid
-            } else {
-                rootShell.executeSilently("rm -f $PID_FILE")
-            }
-        }
-
-        return@withContext null
+        val script = """
+            if [ -f $PID_FILE ]; then
+                if kill -0 `cat $PID_FILE` 2>/dev/null; then
+                    cat $PID_FILE
+                else
+                    rm -f $PID_FILE
+                fi
+            fi
+        """.trimIndent()
+        return@withContext rootShell.execute(script)?.trim()
     }
 
     override suspend fun startDaemon(): Boolean = withContext(ioDispatcher) {
-        rootShell.executeSilently("nohup sh /data/adb/modules/sys_qos/service.sh > /dev/null 2>&1 &")
+        rootShell.executeSilently("sh $SERVICE_SCRIPT")
         return@withContext true
     }
 
     override suspend fun stopDaemon(): Boolean = withContext(ioDispatcher) {
-        val pid = getDaemonPid()
-
-        if (!pid.isNullOrBlank()) {
-            rootShell.executeSilently("kill -9 $pid")
-        }
-
-        rootShell.executeSilently("killall -9 qos_daemon")
-        rootShell.executeSilently("rm -f $PID_FILE")
+        val script = """
+            if [ -f $PID_FILE ]; then
+                kill -9 `cat $PID_FILE` 2>/dev/null
+            fi
+            killall -9 qos_daemon 2>/dev/null
+            rm -f $PID_FILE
+        """.trimIndent()
+        rootShell.executeSilently(script)
         return@withContext true
     }
 
@@ -79,7 +79,7 @@ class DaemonRepositoryImpl @Inject constructor(
         hasAttemptedAutoFix = false
 
         try {
-            val parts = result.trim().split(SPACE_REGEX)
+            val parts = result.trim().split(' ').filter { it.isNotEmpty() }
             if (parts.size >= 4) {
                 val cpu = "${parts[0]}%"
                 val ramKb = parts[1].toLongOrNull() ?: 0L

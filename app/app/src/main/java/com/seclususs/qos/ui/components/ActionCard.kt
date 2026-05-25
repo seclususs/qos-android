@@ -51,17 +51,16 @@ fun ActionCard(
         label = "buttonScale"
     )
 
-    QosCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clickable(
-                interactionSource = interactionSource, indication = null, onClick = onClick
-            ), alpha = 0.6f) {
+    QosCard(modifier = modifier
+        .fillMaxWidth()
+        .height(64.dp)
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clickable(
+            interactionSource = interactionSource, indication = null, onClick = onClick
+        )) {
         Row(
             modifier = Modifier
                 .fillMaxSize()

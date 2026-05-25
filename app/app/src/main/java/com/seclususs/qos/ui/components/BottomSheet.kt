@@ -35,7 +35,7 @@ fun BottomSheet(
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        scrimColor = Color.Black.copy(alpha = 0.4f),
+        scrimColor = Color.Transparent,
         dragHandle = { DragHandle() },
         modifier = modifier
     ) {
@@ -61,7 +61,7 @@ private fun DragHandle() {
                 .width(48.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(percent = 50))
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
         )
     }
 }

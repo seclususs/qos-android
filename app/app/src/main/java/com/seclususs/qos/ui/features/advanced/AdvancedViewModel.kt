@@ -5,11 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.R
 import com.seclususs.qos.domain.model.QosConfig
 import com.seclususs.qos.domain.repository.AppPreferencesRepository
-import com.seclususs.qos.domain.usecase.CheckConfigUseCase
-import com.seclususs.qos.domain.usecase.DaemonStatusUseCase
-import com.seclususs.qos.domain.usecase.GetConfigUseCase
-import com.seclususs.qos.domain.usecase.ToggleDaemonUseCase
-import com.seclususs.qos.domain.usecase.UpdateConfigUseCase
+import com.seclususs.qos.domain.usecase.ConfigUseCase
+import com.seclususs.qos.domain.usecase.DaemonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,11 +18,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AdvancedViewModel @Inject constructor(
-    private val getConfigUseCase: GetConfigUseCase,
-    private val updateConfigUseCase: UpdateConfigUseCase,
-    private val toggleDaemonUseCase: ToggleDaemonUseCase,
-    private val daemonStatusUseCase: DaemonStatusUseCase,
-    private val checkConfigExistsUseCase: CheckConfigUseCase,
+    private val configUseCase: ConfigUseCase,
+    private val daemonUseCase: DaemonUseCase,
     private val appPreferencesRepository: AppPreferencesRepository
 ) : ViewModel() {
 
@@ -69,7 +63,6 @@ class AdvancedViewModel @Inject constructor(
     private fun handleToggleCpu(enabled: Boolean) {
         viewModelScope.launch {
             _state.update { it.copy(isProcessingCpuToggle = true) }
-            delay(400)
 
             val currentConfig = _state.value.config
             val newConfig: QosConfig
@@ -131,15 +124,14 @@ class AdvancedViewModel @Inject constructor(
                         )
                     }
                 }
+                _state.update { it.copy(isProcessingCpuToggle = false) }
             }
-            _state.update { it.copy(isProcessingCpuToggle = false) }
         }
     }
 
     private fun handleToggleStorage(enabled: Boolean) {
         viewModelScope.launch {
             _state.update { it.copy(isProcessingStorageToggle = true) }
-            delay(400)
 
             val currentConfig = _state.value.config
             val newConfig: QosConfig
@@ -175,145 +167,114 @@ class AdvancedViewModel @Inject constructor(
                         )
                     }
                 }
+                _state.update { it.copy(isProcessingStorageToggle = false) }
             }
-            _state.update { it.copy(isProcessingStorageToggle = false) }
         }
     }
 
     private fun applyCpuConfig(cpuValues: Map<String, String>) {
-        viewModelScope.launch {
-            _state.update { it.copy(cpuApplyState = ApplyState.LOADING) }
-            val currentConfig = _state.value.config
+        _state.update { it.copy(cpuApplyState = ApplyState.LOADING) }
+        viewModelScope.launch { appPreferencesRepository.setCachedCpuLimits(cpuValues.encodeToString()) }
 
-            appPreferencesRepository.setCachedCpuLimits(cpuValues.encodeToString())
+        val newConfig = _state.value.config.copy(
+            minLatencyNs = cpuValues["latency_min"]?.toLongOrNull(),
+            maxLatencyNs = cpuValues["latency_max"]?.toLongOrNull(),
+            minGranularityNs = cpuValues["granularity_min"]?.toLongOrNull(),
+            maxGranularityNs = cpuValues["granularity_max"]?.toLongOrNull(),
+            minWakeupNs = cpuValues["wakeup_min"]?.toLongOrNull(),
+            maxWakeupNs = cpuValues["wakeup_max"]?.toLongOrNull(),
+            minMigrationCost = cpuValues["migration_cost_min"]?.toLongOrNull(),
+            maxMigrationCost = cpuValues["migration_cost_max"]?.toLongOrNull(),
+            minWaltInitPct = cpuValues["walt_init_min"]?.toLongOrNull(),
+            maxWaltInitPct = cpuValues["walt_init_max"]?.toLongOrNull(),
+            minUclampMin = cpuValues["uclamp_min_min"]?.toLongOrNull(),
+            maxUclampMin = cpuValues["uclamp_min_max"]?.toLongOrNull()
+        )
 
-            val newConfig = currentConfig.copy(
-                minLatencyNs = cpuValues["latency_min"]?.toLongOrNull(),
-                maxLatencyNs = cpuValues["latency_max"]?.toLongOrNull(),
-                minGranularityNs = cpuValues["granularity_min"]?.toLongOrNull(),
-                maxGranularityNs = cpuValues["granularity_max"]?.toLongOrNull(),
-                minWakeupNs = cpuValues["wakeup_min"]?.toLongOrNull(),
-                maxWakeupNs = cpuValues["wakeup_max"]?.toLongOrNull(),
-                minMigrationCost = cpuValues["migration_cost_min"]?.toLongOrNull(),
-                maxMigrationCost = cpuValues["migration_cost_max"]?.toLongOrNull(),
-                minWaltInitPct = cpuValues["walt_init_min"]?.toLongOrNull(),
-                maxWaltInitPct = cpuValues["walt_init_max"]?.toLongOrNull(),
-                minUclampMin = cpuValues["uclamp_min_min"]?.toLongOrNull(),
-                maxUclampMin = cpuValues["uclamp_min_max"]?.toLongOrNull()
-            )
-
-            val success = updateConfigUseCase(newConfig)
-            if (success) {
-                toggleDaemonUseCase.restart()
-                _state.update {
-                    it.copy(
-                        config = newConfig,
-                        cpuValues = cpuValues,
-                        cpuApplyState = ApplyState.SUCCESS,
-                        snackbarMessageResId = R.string.module_update_success,
-                        snackbarIsError = false,
-                        snackbarVisible = true
-                    )
-                }
-            } else {
-                _state.update {
-                    it.copy(
-                        cpuApplyState = ApplyState.IDLE,
-                        snackbarMessageResId = R.string.module_update_error,
-                        snackbarIsError = true,
-                        snackbarVisible = true
-                    )
-                }
+        applyConfigUpdates(newConfig, onSuccess = {
+            _state.update {
+                it.copy(
+                    config = newConfig, cpuValues = cpuValues, cpuApplyState = ApplyState.SUCCESS
+                )
             }
-
-            delay(2000)
-            _state.update { it.copy(snackbarVisible = false) }
-        }
+        }, onError = { _state.update { it.copy(cpuApplyState = ApplyState.IDLE) } })
     }
 
     private fun applyStorageConfig(storageValues: Map<String, String>) {
-        viewModelScope.launch {
-            _state.update { it.copy(storageApplyState = ApplyState.LOADING) }
-            val currentConfig = _state.value.config
+        _state.update { it.copy(storageApplyState = ApplyState.LOADING) }
+        viewModelScope.launch { appPreferencesRepository.setCachedStorageLimits(storageValues.encodeToString()) }
 
-            appPreferencesRepository.setCachedStorageLimits(storageValues.encodeToString())
+        val newConfig = _state.value.config.copy(
+            minReadAhead = storageValues["read_ahead_min"]?.toLongOrNull(),
+            maxReadAhead = storageValues["read_ahead_max"]?.toLongOrNull(),
+            minNrRequests = storageValues["nr_requests_min"]?.toLongOrNull(),
+            maxNrRequests = storageValues["nr_requests_max"]?.toLongOrNull()
+        )
 
-            val newConfig = currentConfig.copy(
-                minReadAhead = storageValues["read_ahead_min"]?.toLongOrNull(),
-                maxReadAhead = storageValues["read_ahead_max"]?.toLongOrNull(),
-                minNrRequests = storageValues["nr_requests_min"]?.toLongOrNull(),
-                maxNrRequests = storageValues["nr_requests_max"]?.toLongOrNull()
-            )
-
-            val success = updateConfigUseCase(newConfig)
-            if (success) {
-                toggleDaemonUseCase.restart()
-                _state.update {
-                    it.copy(
-                        config = newConfig,
-                        storageValues = storageValues,
-                        storageApplyState = ApplyState.SUCCESS,
-                        snackbarMessageResId = R.string.module_update_success,
-                        snackbarIsError = false,
-                        snackbarVisible = true
-                    )
-                }
-            } else {
-                _state.update {
-                    it.copy(
-                        storageApplyState = ApplyState.IDLE,
-                        snackbarMessageResId = R.string.module_update_error,
-                        snackbarIsError = true,
-                        snackbarVisible = true
-                    )
-                }
+        applyConfigUpdates(newConfig, onSuccess = {
+            _state.update {
+                it.copy(
+                    config = newConfig,
+                    storageValues = storageValues,
+                    storageApplyState = ApplyState.SUCCESS
+                )
             }
+        }, onError = { _state.update { it.copy(storageApplyState = ApplyState.IDLE) } })
+    }
 
+    private fun applyConfigUpdates(
+        newConfig: QosConfig, onSuccess: () -> Unit, onError: () -> Unit
+    ) {
+        viewModelScope.launch {
+            val success = configUseCase.update(newConfig)
+            if (success) {
+                daemonUseCase.restart()
+                onSuccess()
+                showSnackbar(R.string.module_update_success, false)
+            } else {
+                onError()
+                showSnackbar(R.string.module_update_error, true)
+            }
+        }
+    }
+
+    private suspend fun saveAndRestartDaemon(newConfig: QosConfig, onComplete: (Boolean) -> Unit) {
+        val success = configUseCase.update(newConfig)
+        if (success) {
+            daemonUseCase.restart()
+            onComplete(true)
+            showSnackbar(R.string.module_update_success, false)
+        } else {
+            onComplete(false)
+            showSnackbar(R.string.module_update_error, true)
+        }
+    }
+
+    private fun showSnackbar(messageRes: Int, isError: Boolean) {
+        _state.update {
+            it.copy(
+                snackbarMessageResId = messageRes, snackbarIsError = isError, snackbarVisible = true
+            )
+        }
+        viewModelScope.launch {
             delay(2000)
             _state.update { it.copy(snackbarVisible = false) }
         }
     }
 
-    private suspend fun saveAndRestartDaemon(newConfig: QosConfig, updateState: (Boolean) -> Unit) {
-        val success = updateConfigUseCase(newConfig)
-        if (success) {
-            toggleDaemonUseCase.restart()
-            updateState(true)
-            _state.update {
-                it.copy(
-                    snackbarMessageResId = R.string.module_update_success,
-                    snackbarIsError = false,
-                    snackbarVisible = true
-                )
-            }
-        } else {
-            updateState(false)
-            _state.update {
-                it.copy(
-                    snackbarMessageResId = R.string.module_update_error,
-                    snackbarIsError = true,
-                    snackbarVisible = true
-                )
-            }
-        }
-        delay(3000)
-        _state.update { it.copy(snackbarVisible = false) }
-    }
-
     private suspend fun refreshInternal() {
-        if (!daemonStatusUseCase.checkDaemonExists()) {
+        if (!daemonUseCase.checkExists()) {
             _state.update { it.copy(isDaemonMissing = true, isConfigMissing = false) }
             return
         }
-        if (!checkConfigExistsUseCase()) {
+        if (!configUseCase.checkExists()) {
             _state.update { it.copy(isDaemonMissing = false, isConfigMissing = true) }
             return
         }
 
-        val config = getConfigUseCase()
+        val config = configUseCase.get()
         val isCpuEnabled =
             config.minLatencyNs != null || config.maxLatencyNs != null || config.minGranularityNs != null || config.maxGranularityNs != null || config.minWakeupNs != null || config.maxWakeupNs != null || config.minMigrationCost != null || config.maxMigrationCost != null || config.minWaltInitPct != null || config.maxWaltInitPct != null || config.minUclampMin != null || config.maxUclampMin != null
-
         val isStorageEnabled =
             config.minReadAhead != null || config.maxReadAhead != null || config.minNrRequests != null || config.maxNrRequests != null
 
@@ -340,9 +301,9 @@ class AdvancedViewModel @Inject constructor(
 
     private fun String.decodeToMap(): Map<String, String> {
         if (this.isBlank()) return emptyMap()
-        return split(";").mapNotNull {
-            val parts = it.split("=")
-            if (parts.size == 2) parts[0] to parts[1] else null
+        return splitToSequence(';').mapNotNull { pair ->
+            val index = pair.indexOf('=')
+            if (index != -1) pair.substring(0, index) to pair.substring(index + 1) else null
         }.toMap()
     }
 

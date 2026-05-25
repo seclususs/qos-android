@@ -1,15 +1,5 @@
 package com.seclususs.qos.ui.features.modules
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -30,9 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CleaningServices
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
@@ -53,24 +41,18 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
+import com.seclususs.qos.domain.model.QosConfig
 import com.seclususs.qos.ui.components.AnimatedSwitch
 import com.seclususs.qos.ui.components.BottomSheet
-import com.seclususs.qos.ui.components.MissingConfigCard
-import com.seclususs.qos.ui.components.MissingDaemonCard
 import com.seclususs.qos.ui.components.QosCard
-import com.seclususs.qos.ui.components.TopSnackbar
+import com.seclususs.qos.ui.components.QosTopSnackbar
+import com.seclususs.qos.ui.components.StateAwareContent
 
 @Composable
 fun ModulesScreen(
     viewModel: ModulesViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-
-    val targetUiState = when {
-        state.isDaemonMissing -> 1
-        state.isConfigMissing -> 2
-        else -> 0
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -86,157 +68,17 @@ fun ModulesScreen(
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )
-
-            AnimatedContent(
-                targetState = targetUiState, transitionSpec = {
-                    (fadeIn(tween(300)) + scaleIn(
-                        tween(300), initialScale = 0.9f
-                    )) togetherWith (fadeOut(tween(200)) + scaleOut(
-                        tween(200), targetScale = 0.9f
-                    )) using SizeTransform(clip = false) { _, _ ->
-                        spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessLow
-                        )
-                    }
-                }, label = "modules_ui_state_transition", modifier = Modifier.fillMaxWidth()
-            ) { uiState ->
-                when (uiState) {
-                    1 -> {
-                        MissingDaemonCard(onRefresh = { viewModel.onEvent(ModulesEvent.RefreshStatus) })
-                    }
-
-                    2 -> {
-                        MissingConfigCard(onRefresh = { viewModel.onEvent(ModulesEvent.RefreshStatus) })
-                    }
-
-                    else -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            ModuleItem(
-                                title = stringResource(id = R.string.module_blocker_title),
-                                subtitle = stringResource(id = R.string.module_blocker_subtitle),
-                                icon = Icons.Filled.Security,
-                                isChecked = state.config.blockerEnabled,
-                                isProcessing = state.processingModules.contains(ModuleType.BLOCKER),
-                                onToggle = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ToggleModule(
-                                            ModuleType.BLOCKER, it
-                                        )
-                                    )
-                                },
-                                onLongPress = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ShowModuleDetails(
-                                            ModuleType.BLOCKER
-                                        )
-                                    )
-                                })
-
-                            ModuleItem(
-                                title = stringResource(id = R.string.module_cleaner_title),
-                                subtitle = stringResource(id = R.string.module_cleaner_subtitle),
-                                icon = Icons.Filled.CleaningServices,
-                                isChecked = state.config.cleanerEnabled,
-                                isProcessing = state.processingModules.contains(ModuleType.CLEANER),
-                                onToggle = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ToggleModule(
-                                            ModuleType.CLEANER, it
-                                        )
-                                    )
-                                },
-                                onLongPress = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ShowModuleDetails(
-                                            ModuleType.CLEANER
-                                        )
-                                    )
-                                })
-
-                            ModuleItem(
-                                title = stringResource(id = R.string.module_cpu_title),
-                                subtitle = stringResource(id = R.string.module_cpu_subtitle),
-                                icon = Icons.Filled.Memory,
-                                isChecked = state.config.cpuEnabled,
-                                isProcessing = state.processingModules.contains(ModuleType.CPU),
-                                onToggle = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ToggleModule(
-                                            ModuleType.CPU, it
-                                        )
-                                    )
-                                },
-                                onLongPress = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ShowModuleDetails(
-                                            ModuleType.CPU
-                                        )
-                                    )
-                                })
-
-                            ModuleItem(
-                                title = stringResource(id = R.string.module_storage_title),
-                                subtitle = stringResource(id = R.string.module_storage_subtitle),
-                                icon = Icons.Filled.Storage,
-                                isChecked = state.config.storageEnabled,
-                                isProcessing = state.processingModules.contains(ModuleType.STORAGE),
-                                onToggle = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ToggleModule(
-                                            ModuleType.STORAGE, it
-                                        )
-                                    )
-                                },
-                                onLongPress = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ShowModuleDetails(
-                                            ModuleType.STORAGE
-                                        )
-                                    )
-                                })
-
-                            ModuleItem(
-                                title = stringResource(id = R.string.module_tweaks_title),
-                                subtitle = stringResource(id = R.string.module_tweaks_subtitle),
-                                icon = Icons.Filled.Build,
-                                isChecked = state.config.tweaksEnabled,
-                                isProcessing = state.processingModules.contains(ModuleType.TWEAKS),
-                                onToggle = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ToggleModule(
-                                            ModuleType.TWEAKS, it
-                                        )
-                                    )
-                                },
-                                onLongPress = {
-                                    viewModel.onEvent(
-                                        ModulesEvent.ShowModuleDetails(
-                                            ModuleType.TWEAKS
-                                        )
-                                    )
-                                })
-
-                            Spacer(modifier = Modifier.height(80.dp))
-                        }
-                    }
-                }
+            StateAwareContent(
+                isDaemonMissing = state.isDaemonMissing, isConfigMissing = state.isConfigMissing
+            ) {
+                ModulesContent(state, viewModel)
             }
         }
 
-        val snackbarMessage = state.snackbarMessageResId?.let { stringResource(id = it) } ?: ""
-        val snackbarIcon =
-            if (state.snackbarIsError) Icons.Filled.Error else Icons.Filled.CheckCircle
-        TopSnackbar(
-            message = snackbarMessage,
-            isVisible = state.snackbarVisible,
+        QosTopSnackbar(
+            messageResId = state.snackbarMessageResId,
             isError = state.snackbarIsError,
-            icon = snackbarIcon,
+            isVisible = state.snackbarVisible,
             modifier = Modifier.align(Alignment.TopCenter)
         )
 
@@ -246,6 +88,52 @@ fun ModulesScreen(
                 onDismiss = { viewModel.onEvent(ModulesEvent.DismissModuleDetails) })
         }
     }
+}
+
+@Composable
+private fun ModulesContent(state: ModulesState, viewModel: ModulesViewModel) {
+    val modulesList = listOf(
+        Triple(ModuleType.BLOCKER, R.string.module_blocker_title, R.string.module_blocker_subtitle),
+        Triple(ModuleType.CLEANER, R.string.module_cleaner_title, R.string.module_cleaner_subtitle),
+        Triple(ModuleType.CPU, R.string.module_cpu_title, R.string.module_cpu_subtitle),
+        Triple(ModuleType.STORAGE, R.string.module_storage_title, R.string.module_storage_subtitle),
+        Triple(ModuleType.TWEAKS, R.string.module_tweaks_title, R.string.module_tweaks_subtitle)
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        modulesList.forEach { (type, titleRes, subtitleRes) ->
+            ModuleItem(
+                title = stringResource(id = titleRes),
+                subtitle = stringResource(id = subtitleRes),
+                icon = getIconForModule(type),
+                isChecked = isModuleEnabled(state.config, type),
+                isProcessing = state.processingModules.contains(type),
+                onToggle = { viewModel.onEvent(ModulesEvent.ToggleModule(type, it)) },
+                onLongPress = { viewModel.onEvent(ModulesEvent.ShowModuleDetails(type)) })
+        }
+        Spacer(modifier = Modifier.height(80.dp))
+    }
+}
+
+private fun getIconForModule(type: ModuleType): ImageVector = when (type) {
+    ModuleType.BLOCKER -> Icons.Filled.Security
+    ModuleType.CLEANER -> Icons.Filled.CleaningServices
+    ModuleType.CPU -> Icons.Filled.Memory
+    ModuleType.STORAGE -> Icons.Filled.Storage
+    ModuleType.TWEAKS -> Icons.Filled.Build
+}
+
+private fun isModuleEnabled(config: QosConfig, type: ModuleType): Boolean = when (type) {
+    ModuleType.BLOCKER -> config.blockerEnabled
+    ModuleType.CLEANER -> config.cleanerEnabled
+    ModuleType.CPU -> config.cpuEnabled
+    ModuleType.STORAGE -> config.storageEnabled
+    ModuleType.TWEAKS -> config.tweaksEnabled
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -282,12 +170,8 @@ private fun ModuleItem(
                     modifier = Modifier.size(24.dp)
                 )
             }
-
             Spacer(modifier = Modifier.width(16.dp))
-
-            Column(
-                modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center
-            ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -301,21 +185,15 @@ private fun ModuleItem(
                     maxLines = 2
                 )
             }
-
             Spacer(modifier = Modifier.width(16.dp))
-
-            AnimatedSwitch(
-                isChecked = isChecked, isProcessing = isProcessing
-            )
+            AnimatedSwitch(isChecked = isChecked, isProcessing = isProcessing)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModuleDetailsSheet(
-    moduleType: ModuleType, onDismiss: () -> Unit
-) {
+private fun ModuleDetailsSheet(moduleType: ModuleType, onDismiss: () -> Unit) {
     val (titleRes, descRes) = when (moduleType) {
         ModuleType.BLOCKER -> Pair(R.string.module_blocker_title, R.string.module_blocker_desc)
         ModuleType.CLEANER -> Pair(R.string.module_cleaner_title, R.string.module_cleaner_desc)
@@ -323,7 +201,6 @@ private fun ModuleDetailsSheet(
         ModuleType.STORAGE -> Pair(R.string.module_storage_title, R.string.module_storage_desc)
         ModuleType.TWEAKS -> Pair(R.string.module_tweaks_title, R.string.module_tweaks_desc)
     }
-
     BottomSheet(onDismissRequest = onDismiss) {
         Text(
             text = stringResource(id = titleRes),

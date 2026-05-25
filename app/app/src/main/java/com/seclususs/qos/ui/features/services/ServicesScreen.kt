@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -47,7 +48,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -60,7 +60,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
 import com.seclususs.qos.ui.components.ActionCard
-import com.seclususs.qos.ui.components.MissingDaemonCard
 import com.seclususs.qos.ui.components.TelemetryCard
 
 @Composable
@@ -81,7 +80,6 @@ fun ServicesScreen(
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground
         )
-
         Box(
             modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center
         ) {
@@ -95,71 +93,50 @@ fun ServicesScreen(
                 })
         }
 
-        AnimatedContent(
-            targetState = state.status == DaemonStatus.MISSING, transitionSpec = {
-                (fadeIn(tween(300)) + scaleIn(
-                    tween(300), initialScale = 0.9f
-                )) togetherWith (fadeOut(tween(200)) + scaleOut(
-                    tween(200), targetScale = 0.9f
-                )) using SizeTransform(
-                    clip = false
-                ) { _, _ ->
-                    spring(
-                        dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow
+        Column(
+            modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            ActionButtonsContainer(
+                status = state.status,
+                onRestart = { viewModel.onEvent(ServicesEvent.OnRestartClicked) })
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    TelemetryCard(
+                        title = stringResource(id = R.string.metric_cpu),
+                        value = state.cpuUsage,
+                        progress = state.cpuProgress,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TelemetryCard(
+                        title = stringResource(id = R.string.metric_ram),
+                        value = state.ramUsage,
+                        progress = state.ramProgress,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-            }, label = "missing_state_transition", modifier = Modifier.fillMaxWidth()
-        ) { isMissing ->
-            if (isMissing) {
-                MissingDaemonCard(onRefresh = { viewModel.onEvent(ServicesEvent.RefreshMetrics) })
-            } else {
-                Column(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    ActionButtonsContainer(
-                        status = state.status,
-                        onRestart = { viewModel.onEvent(ServicesEvent.OnRestartClicked) })
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            TelemetryCard(
-                                title = stringResource(id = R.string.metric_cpu),
-                                value = state.cpuUsage,
-                                progress = state.cpuProgress,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TelemetryCard(
-                                title = stringResource(id = R.string.metric_ram),
-                                value = state.ramUsage,
-                                progress = state.ramProgress,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            TelemetryCard(
-                                title = stringResource(id = R.string.metric_uptime),
-                                value = state.uptime,
-                                progress = null,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TelemetryCard(
-                                title = stringResource(id = R.string.metric_pid),
-                                value = state.pid,
-                                progress = null,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                    TelemetryCard(
+                        title = stringResource(id = R.string.metric_uptime),
+                        value = state.uptime,
+                        progress = null,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TelemetryCard(
+                        title = stringResource(id = R.string.metric_pid),
+                        value = state.pid,
+                        progress = null,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -192,7 +169,11 @@ private fun ActionButtonsContainer(
                 onClick = onRestart
             )
         } else {
-            Box(modifier = Modifier.fillMaxWidth())
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.dp)
+            )
         }
     }
 }
@@ -210,7 +191,7 @@ private fun ReactorCore(
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val errorColor = MaterialTheme.colorScheme.error
-    val warningColor = Color(0xFFF59E0B)
+    val warningColor = MaterialTheme.colorScheme.tertiary
     val dimColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
 
     val targetColor = when (status) {

@@ -86,7 +86,9 @@ fun AnimatedSwitch(
                     Icon(
                         imageVector = if (isChecked) Icons.Filled.Check else Icons.Filled.Close,
                         contentDescription = null,
-                        tint = if (isChecked) MaterialTheme.colorScheme.primary else Color.Gray,
+                        tint = if (isChecked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
+                            alpha = 0.4f
+                        ),
                         modifier = Modifier.size(14.dp)
                     )
                 }

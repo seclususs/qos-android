@@ -4,10 +4,18 @@ import com.seclususs.qos.domain.model.QosConfig
 import com.seclususs.qos.domain.repository.ConfigRepository
 import javax.inject.Inject
 
-class UpdateConfigUseCase @Inject constructor(
+class ConfigUseCase @Inject constructor(
     private val repository: ConfigRepository
 ) {
-    suspend operator fun invoke(newConfig: QosConfig): Boolean {
+    suspend fun checkExists(): Boolean {
+        return repository.checkConfigExists()
+    }
+
+    suspend fun get(): QosConfig {
+        return repository.getConfig()
+    }
+
+    suspend fun update(newConfig: QosConfig): Boolean {
         return repository.updateConfig(newConfig)
     }
 }

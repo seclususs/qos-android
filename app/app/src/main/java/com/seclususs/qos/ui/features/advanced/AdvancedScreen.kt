@@ -1,10 +1,7 @@
 package com.seclususs.qos.ui.features.advanced
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,8 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
@@ -49,9 +44,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,11 +58,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
 import com.seclususs.qos.ui.components.BottomSheet
 import com.seclususs.qos.ui.components.ExpandableSwitchCard
-import com.seclususs.qos.ui.components.MissingConfigCard
-import com.seclususs.qos.ui.components.MissingDaemonCard
 import com.seclususs.qos.ui.components.NumericInputField
 import com.seclususs.qos.ui.components.QosCard
-import com.seclususs.qos.ui.components.TopSnackbar
+import com.seclususs.qos.ui.components.QosTopSnackbar
+import com.seclususs.qos.ui.components.StateAwareContent
 import kotlinx.coroutines.delay
 
 @Composable
@@ -76,11 +69,6 @@ fun AdvancedScreen(
     viewModel: AdvancedViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val targetUiState = when {
-        state.isDaemonMissing -> 1
-        state.isConfigMissing -> 2
-        else -> 0
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -96,26 +84,10 @@ fun AdvancedScreen(
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )
-
-            AnimatedContent(
-                targetState = targetUiState, transitionSpec = {
-                    (fadeIn(tween(300)) + scaleIn(
-                        tween(300), initialScale = 0.9f
-                    )) togetherWith (fadeOut(tween(200)) + scaleOut(
-                        tween(200), targetScale = 0.9f
-                    )) using SizeTransform(clip = false) { _, _ ->
-                        spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessLow
-                        )
-                    }
-                }, label = "advanced_ui_state", modifier = Modifier.fillMaxWidth()
-            ) { uiState ->
-                when (uiState) {
-                    1 -> MissingDaemonCard(onRefresh = { viewModel.onEvent(AdvancedEvent.RefreshStatus) })
-                    2 -> MissingConfigCard(onRefresh = { viewModel.onEvent(AdvancedEvent.RefreshStatus) })
-                    else -> AdvancedContent(state, viewModel)
-                }
+            StateAwareContent(
+                isDaemonMissing = state.isDaemonMissing, isConfigMissing = state.isConfigMissing
+            ) {
+                AdvancedContent(state, viewModel)
             }
         }
 
@@ -123,14 +95,10 @@ fun AdvancedScreen(
             AdvancedBottomSheet(state = state, viewModel = viewModel)
         }
 
-        val snackbarMessage = state.snackbarMessageResId?.let { stringResource(id = it) } ?: ""
-        val snackbarIcon =
-            if (state.snackbarIsError) Icons.Filled.Error else Icons.Filled.CheckCircle
-        TopSnackbar(
-            message = snackbarMessage,
-            isVisible = state.snackbarVisible,
+        QosTopSnackbar(
+            messageResId = state.snackbarMessageResId,
             isError = state.snackbarIsError,
-            icon = snackbarIcon,
+            isVisible = state.snackbarVisible,
             modifier = Modifier.align(Alignment.TopCenter)
         )
     }
@@ -150,20 +118,16 @@ private fun AdvancedContent(state: AdvancedState, viewModel: AdvancedViewModel) 
             isExpanded = state.cpuLimitsEnabled,
             isProcessing = state.isProcessingCpuToggle,
             onToggle = { viewModel.onEvent(AdvancedEvent.ToggleCpu(it)) }) {
-            ModifyButtonCard(
-                onClick = { viewModel.onEvent(AdvancedEvent.ShowSheet(AdvancedSheetType.CPU)) })
+            ModifyButtonCard(onClick = { viewModel.onEvent(AdvancedEvent.ShowSheet(AdvancedSheetType.CPU)) })
         }
-
         ExpandableSwitchCard(
             title = stringResource(id = R.string.advanced_storage_title),
             icon = Icons.Filled.Storage,
             isExpanded = state.storageLimitsEnabled,
             isProcessing = state.isProcessingStorageToggle,
             onToggle = { viewModel.onEvent(AdvancedEvent.ToggleStorage(it)) }) {
-            ModifyButtonCard(
-                onClick = { viewModel.onEvent(AdvancedEvent.ShowSheet(AdvancedSheetType.STORAGE)) })
+            ModifyButtonCard(onClick = { viewModel.onEvent(AdvancedEvent.ShowSheet(AdvancedSheetType.STORAGE)) })
         }
-
         Spacer(modifier = Modifier.height(80.dp))
     }
 }
@@ -174,7 +138,6 @@ private fun ModifyButtonCard(onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        alpha = 0.2f,
         onClick = onClick
     ) {
         Row(
@@ -197,16 +160,12 @@ private fun ModifyButtonCard(onClick: () -> Unit) {
                     modifier = Modifier.size(20.dp)
                 )
             }
-
             Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(id = R.string.advanced_action_modify),
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
+            Text(
+                text = stringResource(id = R.string.advanced_action_modify),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -226,18 +185,34 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
         }
     }
 
-    var localCpuValues by remember(state.cpuValues) { mutableStateOf(state.cpuValues) }
-    var localStorageValues by remember(state.storageValues) { mutableStateOf(state.storageValues) }
+    val localCpuValues = remember(state.cpuValues) {
+        mutableStateMapOf<String, String>().apply { putAll(state.cpuValues) }
+    }
+    val localStorageValues = remember(state.storageValues) {
+        mutableStateMapOf<String, String>().apply { putAll(state.storageValues) }
+    }
+
+    val cpuConfigItems = listOf(
+        Triple("latency", R.string.advanced_label_latency, Pair("8000000", "20000000")),
+        Triple("granularity", R.string.advanced_label_granularity, Pair("2500000", "6500000")),
+        Triple("wakeup", R.string.advanced_label_wakeup, Pair("1500000", "6500000")),
+        Triple("migration_cost", R.string.advanced_label_migration_cost, Pair("200000", "600000")),
+        Triple("walt_init", R.string.advanced_label_walt_init, Pair("10", "40")),
+        Triple("uclamp_min", R.string.advanced_label_uclamp_min, Pair("0", "384"))
+    )
+
+    val storageConfigItems = listOf(
+        Triple("read_ahead", R.string.advanced_label_read_ahead, Pair("128", "1024")),
+        Triple("nr_requests", R.string.advanced_label_nr_requests, Pair("64", "256"))
+    )
 
     BottomSheet(
         onDismissRequest = { viewModel.onEvent(AdvancedEvent.HideSheet) }, sheetState = sheetState
     ) {
-        val title = if (state.activeSheet == AdvancedSheetType.CPU) {
-            stringResource(id = R.string.advanced_sheet_cpu_title)
-        } else {
-            stringResource(id = R.string.advanced_sheet_storage_title)
-        }
-
+        val title =
+            if (state.activeSheet == AdvancedSheetType.CPU) stringResource(id = R.string.advanced_sheet_cpu_title) else stringResource(
+                id = R.string.advanced_sheet_storage_title
+            )
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
@@ -254,148 +229,47 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (state.activeSheet == AdvancedSheetType.CPU) {
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_latency),
-                    minVal = localCpuValues["latency_min"] ?: "",
-                    maxVal = localCpuValues["latency_max"] ?: "",
-                    onMinChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("latency_min", it) }
-                    },
-                    onMaxChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("latency_max", it) }
-                    },
-                    placeholderMin = "8000000",
-                    placeholderMax = "20000000"
-                )
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_granularity),
-                    minVal = localCpuValues["granularity_min"] ?: "",
-                    maxVal = localCpuValues["granularity_max"] ?: "",
-                    onMinChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("granularity_min", it) }
-                    },
-                    onMaxChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("granularity_max", it) }
-                    },
-                    placeholderMin = "2500000",
-                    placeholderMax = "6500000"
-                )
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_wakeup),
-                    minVal = localCpuValues["wakeup_min"] ?: "",
-                    maxVal = localCpuValues["wakeup_max"] ?: "",
-                    onMinChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("wakeup_min", it) }
-                    },
-                    onMaxChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("wakeup_max", it) }
-                    },
-                    placeholderMin = "1500000",
-                    placeholderMax = "6500000"
-                )
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_migration_cost),
-                    minVal = localCpuValues["migration_cost_min"] ?: "",
-                    maxVal = localCpuValues["migration_cost_max"] ?: "",
-                    onMinChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("migration_cost_min", it) }
-                    },
-                    onMaxChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("migration_cost_max", it) }
-                    },
-                    placeholderMin = "200000",
-                    placeholderMax = "600000"
-                )
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_walt_init),
-                    minVal = localCpuValues["walt_init_min"] ?: "",
-                    maxVal = localCpuValues["walt_init_max"] ?: "",
-                    onMinChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("walt_init_min", it) }
-                    },
-                    onMaxChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("walt_init_max", it) }
-                    },
-                    placeholderMin = "10",
-                    placeholderMax = "40"
-                )
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_uclamp_min),
-                    minVal = localCpuValues["uclamp_min_min"] ?: "",
-                    maxVal = localCpuValues["uclamp_min_max"] ?: "",
-                    onMinChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("uclamp_min_min", it) }
-                    },
-                    onMaxChange = {
-                        localCpuValues =
-                            localCpuValues.toMutableMap().apply { put("uclamp_min_max", it) }
-                    },
-                    placeholderMin = "0",
-                    placeholderMax = "384"
-                )
+                cpuConfigItems.forEach { (key, titleRes, placeholders) ->
+                    AdvancedLimitRow(
+                        title = stringResource(id = titleRes),
+                        minVal = localCpuValues["${key}_min"] ?: "",
+                        maxVal = localCpuValues["${key}_max"] ?: "",
+                        onMinChange = { localCpuValues["${key}_min"] = it },
+                        onMaxChange = { localCpuValues["${key}_max"] = it },
+                        placeholderMin = placeholders.first,
+                        placeholderMax = placeholders.second
+                    )
+                }
             } else if (state.activeSheet == AdvancedSheetType.STORAGE) {
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_read_ahead),
-                    minVal = localStorageValues["read_ahead_min"] ?: "",
-                    maxVal = localStorageValues["read_ahead_max"] ?: "",
-                    onMinChange = {
-                        localStorageValues =
-                            localStorageValues.toMutableMap().apply { put("read_ahead_min", it) }
-                    },
-                    onMaxChange = {
-                        localStorageValues =
-                            localStorageValues.toMutableMap().apply { put("read_ahead_max", it) }
-                    },
-                    placeholderMin = "128",
-                    placeholderMax = "1024"
-                )
-                AdvancedLimitRow(
-                    title = stringResource(id = R.string.advanced_label_nr_requests),
-                    minVal = localStorageValues["nr_requests_min"] ?: "",
-                    maxVal = localStorageValues["nr_requests_max"] ?: "",
-                    onMinChange = {
-                        localStorageValues =
-                            localStorageValues.toMutableMap().apply { put("nr_requests_min", it) }
-                    },
-                    onMaxChange = {
-                        localStorageValues =
-                            localStorageValues.toMutableMap().apply { put("nr_requests_max", it) }
-                    },
-                    placeholderMin = "64",
-                    placeholderMax = "256"
-                )
+                storageConfigItems.forEach { (key, titleRes, placeholders) ->
+                    AdvancedLimitRow(
+                        title = stringResource(id = titleRes),
+                        minVal = localStorageValues["${key}_min"] ?: "",
+                        maxVal = localStorageValues["${key}_max"] ?: "",
+                        onMinChange = { localStorageValues["${key}_min"] = it },
+                        onMaxChange = { localStorageValues["${key}_max"] = it },
+                        placeholderMin = placeholders.first,
+                        placeholderMax = placeholders.second
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
         }
 
         ApplyConfigurationButton(
-            applyState = if (state.activeSheet == AdvancedSheetType.CPU) state.cpuApplyState else state.storageApplyState,
-            onClick = {
+            applyState = currentApplyState, onClick = {
                 if (state.activeSheet == AdvancedSheetType.CPU) viewModel.onEvent(
                     AdvancedEvent.ApplyCpuConfig(
-                        localCpuValues
+                        localCpuValues.toMap()
                     )
                 )
-                else viewModel.onEvent(AdvancedEvent.ApplyStorageConfig(localStorageValues))
+                else viewModel.onEvent(AdvancedEvent.ApplyStorageConfig(localStorageValues.toMap()))
             })
     }
 }
 
 @Composable
-private fun ApplyConfigurationButton(
-    applyState: ApplyState, onClick: () -> Unit
-) {
+private fun ApplyConfigurationButton(applyState: ApplyState, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
@@ -408,36 +282,30 @@ private fun ApplyConfigurationButton(
     ) {
         AnimatedContent(
             targetState = applyState, transitionSpec = {
-                (fadeIn(tween(200)) + scaleIn(tween(200))) togetherWith (fadeOut(
+                (fadeIn(tween(200)) + scaleIn(tween(200))) togetherWith (fadeOut(tween(200)) + scaleOut(
                     tween(200)
-                ) + scaleOut(tween(200)))
+                ))
             }, label = "apply_button_animation"
         ) { state ->
             when (state) {
-                ApplyState.LOADING -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
-                }
+                ApplyState.LOADING -> CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp
+                )
 
-                ApplyState.SUCCESS -> {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = "Success",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                ApplyState.SUCCESS -> Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Success",
+                    modifier = Modifier.size(20.dp)
+                )
 
-                ApplyState.IDLE -> {
-                    Text(
-                        text = stringResource(id = R.string.action_apply_config),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.SemiBold, fontSize = 16.sp
-                        )
+                ApplyState.IDLE -> Text(
+                    text = stringResource(id = R.string.action_apply_config),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.SemiBold, fontSize = 16.sp
                     )
-                }
+                )
             }
         }
     }

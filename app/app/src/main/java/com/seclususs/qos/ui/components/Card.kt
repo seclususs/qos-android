@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 fun QosCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    alpha: Float = 0.4f,
+    alpha: Float = 1.0f,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(24.dp)
@@ -26,9 +26,7 @@ fun QosCard(
     var currentModifier = modifier
         .shadow(
             elevation = 16.dp,
-            shape = shape,
-            ambientColor = Color.Black.copy(alpha = 0.04f),
-            spotColor = Color.Black.copy(alpha = 0.04f)
+            shape = shape
         )
         .border(
             width = 1.dp, color = Color.White.copy(alpha = 0.05f), shape = shape

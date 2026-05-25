@@ -20,7 +20,7 @@ data class ModulesState(
 sealed interface ModulesEvent {
     data class ToggleModule(val type: ModuleType, val enabled: Boolean) : ModulesEvent
     data class ShowModuleDetails(val type: ModuleType) : ModulesEvent
-    object DismissModuleDetails : ModulesEvent
-    object RefreshStatus : ModulesEvent
-    object DismissSnackbar : ModulesEvent
+    data object DismissModuleDetails : ModulesEvent
+    data object RefreshStatus : ModulesEvent
+    data object DismissSnackbar : ModulesEvent
 }

@@ -15,8 +15,8 @@ data class ServicesState(
 )
 
 sealed interface ServicesEvent {
-    object OnStartClicked : ServicesEvent
-    object OnStopClicked : ServicesEvent
-    object OnRestartClicked : ServicesEvent
-    object RefreshMetrics : ServicesEvent
+    data object OnStartClicked : ServicesEvent
+    data object OnStopClicked : ServicesEvent
+    data object OnRestartClicked : ServicesEvent
+    data object RefreshMetrics : ServicesEvent
 }

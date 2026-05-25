@@ -2,8 +2,8 @@ package com.seclususs.qos.ui.features.services
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.seclususs.qos.domain.usecase.DaemonStatusUseCase
-import com.seclususs.qos.domain.usecase.ToggleDaemonUseCase
+import com.seclususs.qos.core.utils.collectPolling
+import com.seclususs.qos.domain.usecase.DaemonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -16,13 +16,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ServicesViewModel @Inject constructor(
-    private val toggleDaemonUseCase: ToggleDaemonUseCase,
-    private val daemonStatusUseCase: DaemonStatusUseCase
+    private val daemonUseCase: DaemonUseCase
 ) : ViewModel() {
-
-    companion object {
-        private val RAM_PERCENT_REGEX = Regex("\\((.*?)%\\)")
-    }
 
     private val _state = MutableStateFlow(ServicesState())
     val state: StateFlow<ServicesState> = _state.asStateFlow()
@@ -31,15 +26,10 @@ class ServicesViewModel @Inject constructor(
     private var pollingJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            _state.subscriptionCount.collect { count ->
-                if (count > 0) {
-                    startPolling()
-                } else {
-                    stopPolling()
-                }
-            }
-        }
+        _state.collectPolling(
+            scope = viewModelScope,
+            onStart = { startPolling() },
+            onStop = { stopPolling() })
     }
 
     private fun startPolling() {
@@ -62,98 +52,68 @@ class ServicesViewModel @Inject constructor(
 
     fun onEvent(event: ServicesEvent) {
         when (event) {
-            is ServicesEvent.OnStartClicked -> {
-                if (isTransitioning) return
-                viewModelScope.launch {
-                    isTransitioning = true
-                    _state.update { it.copy(status = DaemonStatus.STARTING) }
-                    toggleDaemonUseCase.start()
-                    delay(1200)
-                    refreshInternal()
-                    isTransitioning = false
-                }
-            }
+            is ServicesEvent.OnStartClicked -> handleToggle(DaemonStatus.STARTING) { daemonUseCase.start() }
+            is ServicesEvent.OnStopClicked -> handleToggle(DaemonStatus.STOPPING) { daemonUseCase.stop() }
+            is ServicesEvent.OnRestartClicked -> handleToggle(DaemonStatus.RESTARTING) { daemonUseCase.restart() }
+            is ServicesEvent.RefreshMetrics -> if (!isTransitioning) viewModelScope.launch { refreshInternal() }
+        }
+    }
 
-            is ServicesEvent.OnStopClicked -> {
-                if (isTransitioning) return
-                viewModelScope.launch {
-                    isTransitioning = true
-                    _state.update { it.copy(status = DaemonStatus.STOPPING) }
-                    toggleDaemonUseCase.stop()
-                    delay(1200)
-                    refreshInternal()
-                    isTransitioning = false
-                }
-            }
-
-            is ServicesEvent.OnRestartClicked -> {
-                if (isTransitioning) return
-                viewModelScope.launch {
-                    isTransitioning = true
-                    _state.update { it.copy(status = DaemonStatus.RESTARTING) }
-                    toggleDaemonUseCase.restart()
-                    delay(1500)
-                    refreshInternal()
-                    isTransitioning = false
-                }
-            }
-
-            is ServicesEvent.RefreshMetrics -> {
-                if (!isTransitioning) {
-                    viewModelScope.launch {
-                        refreshInternal()
-                    }
-                }
-            }
+    private fun handleToggle(targetStatus: DaemonStatus, action: suspend () -> Unit) {
+        if (isTransitioning) return
+        viewModelScope.launch {
+            isTransitioning = true
+            _state.update { it.copy(status = targetStatus) }
+            action()
+            delay(1200)
+            refreshInternal()
+            isTransitioning = false
         }
     }
 
     private suspend fun refreshInternal() {
-        val exists = daemonStatusUseCase.checkDaemonExists()
+        val exists = daemonUseCase.checkExists()
         if (!exists) {
-            _state.update {
-                it.copy(
-                    status = DaemonStatus.MISSING,
-                    pid = "-",
-                    cpuUsage = "0%",
-                    ramUsage = "0 MB",
-                    uptime = "00:00:00",
-                    cpuProgress = 0f,
-                    ramProgress = 0f
-                )
-            }
+            resetStateTo(DaemonStatus.MISSING)
             return
         }
 
-        val pid = daemonStatusUseCase.getPid()
-        val isRunning = pid != "-"
-        val metrics = daemonStatusUseCase.getMetrics(pid)
-
-        val cpuRaw = metrics.cpuUsage.replace("%", "").trim().toFloatOrNull() ?: 0f
-        val cpuProg = (cpuRaw / 100f).coerceIn(0f, 1f)
-
-        val ramPercentMatch = RAM_PERCENT_REGEX.find(metrics.ramUsage)
-
-        val ramProg = if (ramPercentMatch != null) {
-            val percentValue = ramPercentMatch.groupValues[1].toFloatOrNull() ?: 0f
-            (percentValue / 100f).coerceIn(0f, 1f)
-        } else {
-            0f
+        val pid = daemonUseCase.getPid()
+        if (pid == "-") {
+            resetStateTo(DaemonStatus.INACTIVE)
+            return
         }
 
-        val displayRam = metrics.ramUsage.split("(")[0].trim()
-
-        val finalStatus = if (isRunning) DaemonStatus.ACTIVE else DaemonStatus.INACTIVE
+        val metrics = daemonUseCase.getMetrics(pid)
+        val cpuRaw = metrics.cpuUsage.replace("%", "").trim().toFloatOrNull() ?: 0f
+        val cpuProg = (cpuRaw / 100f).coerceIn(0f, 1f)
+        val percentStr = metrics.ramUsage.substringAfter("(", "").substringBefore("%", "").trim()
+        val ramProg = (percentStr.toFloatOrNull() ?: 0f) / 100f
+        val displayRam = metrics.ramUsage.substringBefore("(").trim()
 
         _state.update {
             it.copy(
-                status = finalStatus,
+                status = DaemonStatus.ACTIVE,
                 pid = pid,
                 cpuUsage = metrics.cpuUsage,
                 ramUsage = displayRam,
                 uptime = metrics.uptime,
                 cpuProgress = cpuProg,
                 ramProgress = ramProg
+            )
+        }
+    }
+
+    private fun resetStateTo(status: DaemonStatus) {
+        _state.update {
+            it.copy(
+                status = status,
+                pid = "-",
+                cpuUsage = "0%",
+                ramUsage = "0 MB",
+                uptime = "00:00:00",
+                cpuProgress = 0f,
+                ramProgress = 0f
             )
         }
     }

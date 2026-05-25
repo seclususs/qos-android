@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,4 +116,19 @@ fun TopSnackbar(
             }
         }
     }
+}
+
+@Composable
+fun QosTopSnackbar(
+    messageResId: Int?, isError: Boolean, isVisible: Boolean, modifier: Modifier = Modifier
+) {
+    val snackbarMessage = messageResId?.let { stringResource(id = it) } ?: ""
+    val snackbarIcon = if (isError) Icons.Filled.Error else Icons.Filled.CheckCircle
+    TopSnackbar(
+        message = snackbarMessage,
+        isVisible = isVisible,
+        isError = isError,
+        icon = snackbarIcon,
+        modifier = modifier
+    )
 }

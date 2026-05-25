@@ -25,9 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Palette
@@ -55,7 +53,7 @@ import com.seclususs.qos.R
 import com.seclususs.qos.data.local.AppTheme
 import com.seclususs.qos.ui.components.BottomSheet
 import com.seclususs.qos.ui.components.QosCard
-import com.seclususs.qos.ui.components.TopSnackbar
+import com.seclususs.qos.ui.components.QosTopSnackbar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,96 +82,26 @@ fun SettingsScreen(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            QosCard(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.onEvent(SettingsEvent.OnThemeCardClicked) }) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Palette,
-                            contentDescription = stringResource(id = R.string.settings_theme_title),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+            SettingsActionCard(
+                title = stringResource(id = R.string.settings_theme_title),
+                icon = Icons.Outlined.Palette,
+                onClick = { viewModel.onEvent(SettingsEvent.OnThemeCardClicked) })
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.settings_theme_title),
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-
-            QosCard(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.onEvent(SettingsEvent.OnDeveloperCardClicked) }) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Code,
-                            contentDescription = stringResource(id = R.string.settings_developer_title),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.settings_developer_title),
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
+            SettingsActionCard(
+                title = stringResource(id = R.string.settings_developer_title),
+                icon = Icons.Outlined.Code,
+                onClick = { viewModel.onEvent(SettingsEvent.OnDeveloperCardClicked) })
         }
 
-        val snackbarMessage = state.snackbarMessageResId?.let { stringResource(id = it) } ?: ""
-        val snackbarIcon =
-            if (state.snackbarIsError) Icons.Filled.Error else Icons.Filled.CheckCircle
-
-        TopSnackbar(
-            message = snackbarMessage,
-            isVisible = state.snackbarVisible,
+        QosTopSnackbar(
+            messageResId = state.snackbarMessageResId,
             isError = state.snackbarIsError,
-            icon = snackbarIcon,
+            isVisible = state.snackbarVisible,
             modifier = Modifier.align(Alignment.TopCenter)
         )
 
         if (state.showThemeSheet) {
-            BottomSheet(
-                onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissThemeSheet) }) {
+            BottomSheet(onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissThemeSheet) }) {
                 Text(
                     text = stringResource(id = R.string.settings_select_theme),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
@@ -181,29 +109,28 @@ fun SettingsScreen(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 ThemeSelectionItem(
-                    label = stringResource(id = R.string.theme_system),
-                    icon = Icons.Filled.BrightnessAuto,
-                    isSelected = state.appTheme == AppTheme.SYSTEM,
-                    isProcessing = state.processingTheme == AppTheme.SYSTEM,
-                    onClick = { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.SYSTEM)) })
+                    stringResource(id = R.string.theme_system),
+                    Icons.Filled.BrightnessAuto,
+                    state.appTheme == AppTheme.SYSTEM,
+                    state.processingTheme == AppTheme.SYSTEM
+                ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.SYSTEM)) }
                 ThemeSelectionItem(
-                    label = stringResource(id = R.string.theme_light),
-                    icon = Icons.Filled.LightMode,
-                    isSelected = state.appTheme == AppTheme.LIGHT,
-                    isProcessing = state.processingTheme == AppTheme.LIGHT,
-                    onClick = { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.LIGHT)) })
+                    stringResource(id = R.string.theme_light),
+                    Icons.Filled.LightMode,
+                    state.appTheme == AppTheme.LIGHT,
+                    state.processingTheme == AppTheme.LIGHT
+                ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.LIGHT)) }
                 ThemeSelectionItem(
-                    label = stringResource(id = R.string.theme_dark),
-                    icon = Icons.Filled.DarkMode,
-                    isSelected = state.appTheme == AppTheme.DARK,
-                    isProcessing = state.processingTheme == AppTheme.DARK,
-                    onClick = { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.DARK)) })
+                    stringResource(id = R.string.theme_dark),
+                    Icons.Filled.DarkMode,
+                    state.appTheme == AppTheme.DARK,
+                    state.processingTheme == AppTheme.DARK
+                ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.DARK)) }
             }
         }
 
         if (state.showDeveloperSheet) {
-            BottomSheet(
-                onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissDeveloperSheet) }) {
+            BottomSheet(onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissDeveloperSheet) }) {
                 Text(
                     text = stringResource(id = R.string.developer_sheet_title),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
@@ -211,14 +138,46 @@ fun SettingsScreen(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 DeveloperLinkCard(
-                    iconRes = R.drawable.ic_github,
-                    username = stringResource(id = R.string.developer_github),
-                    onClick = { uriHandler.openUri("https://github.com/seclususs") })
+                    R.drawable.ic_github, stringResource(id = R.string.developer_github)
+                ) { uriHandler.openUri("https://github.com/seclususs") }
                 Spacer(modifier = Modifier.height(12.dp))
                 DeveloperLinkCard(
-                    iconRes = R.drawable.ic_x,
-                    username = stringResource(id = R.string.developer_x),
-                    onClick = { uriHandler.openUri("https://x.com/greperror") })
+                    R.drawable.ic_x, stringResource(id = R.string.developer_x)
+                ) { uriHandler.openUri("https://x.com/greperror") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsActionCard(title: String, icon: ImageVector, onClick: () -> Unit) {
+    QosCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
         }
     }
@@ -262,7 +221,6 @@ private fun ThemeSelectionItem(
                 color = textColor
             )
         }
-
         Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
             AnimatedContent(
                 targetState = isProcessing, transitionSpec = {
@@ -291,12 +249,8 @@ private fun ThemeSelectionItem(
 }
 
 @Composable
-private fun DeveloperLinkCard(
-    iconRes: Int, username: String, onClick: () -> Unit
-) {
-    QosCard(
-        modifier = Modifier.fillMaxWidth(), onClick = onClick
-    ) {
+private fun DeveloperLinkCard(iconRes: Int, username: String, onClick: () -> Unit) {
+    QosCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

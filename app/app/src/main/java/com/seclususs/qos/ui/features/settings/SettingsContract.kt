@@ -12,11 +12,11 @@ data class SettingsState(
     val snackbarVisible: Boolean = false
 )
 
-sealed class SettingsEvent {
-    object OnThemeCardClicked : SettingsEvent()
-    object OnDismissThemeSheet : SettingsEvent()
-    data class OnThemeSelected(val theme: AppTheme) : SettingsEvent()
-    object OnDeveloperCardClicked : SettingsEvent()
-    object OnDismissDeveloperSheet : SettingsEvent()
-    object OnDismissSnackbar : SettingsEvent()
+sealed interface SettingsEvent {
+    data object OnThemeCardClicked : SettingsEvent
+    data object OnDismissThemeSheet : SettingsEvent
+    data class OnThemeSelected(val theme: AppTheme) : SettingsEvent
+    data object OnDeveloperCardClicked : SettingsEvent
+    data object OnDismissDeveloperSheet : SettingsEvent
+    data object OnDismissSnackbar : SettingsEvent
 }

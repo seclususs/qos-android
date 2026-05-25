@@ -4,10 +4,10 @@ import com.seclususs.qos.domain.model.DaemonMetrics
 import com.seclususs.qos.domain.repository.DaemonRepository
 import javax.inject.Inject
 
-class DaemonStatusUseCase @Inject constructor(
+class DaemonUseCase @Inject constructor(
     private val repository: DaemonRepository
 ) {
-    suspend fun checkDaemonExists(): Boolean {
+    suspend fun checkExists(): Boolean {
         return repository.checkDaemonExists()
     }
 
@@ -18,5 +18,17 @@ class DaemonStatusUseCase @Inject constructor(
     suspend fun getMetrics(pid: String): DaemonMetrics {
         if (pid == "-") return DaemonMetrics()
         return repository.getDaemonMetrics(pid)
+    }
+
+    suspend fun start(): Boolean {
+        return repository.startDaemon()
+    }
+
+    suspend fun stop(): Boolean {
+        return repository.stopDaemon()
+    }
+
+    suspend fun restart(): Boolean {
+        return repository.restartDaemon()
     }
 }

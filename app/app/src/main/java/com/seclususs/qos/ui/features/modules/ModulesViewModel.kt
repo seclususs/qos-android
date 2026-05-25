@@ -3,11 +3,9 @@ package com.seclususs.qos.ui.features.modules
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.R
-import com.seclususs.qos.domain.usecase.CheckConfigUseCase
-import com.seclususs.qos.domain.usecase.DaemonStatusUseCase
-import com.seclususs.qos.domain.usecase.GetConfigUseCase
-import com.seclususs.qos.domain.usecase.ToggleDaemonUseCase
-import com.seclususs.qos.domain.usecase.UpdateConfigUseCase
+import com.seclususs.qos.core.utils.collectPolling
+import com.seclususs.qos.domain.usecase.ConfigUseCase
+import com.seclususs.qos.domain.usecase.DaemonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,11 +18,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ModulesViewModel @Inject constructor(
-    private val getConfigUseCase: GetConfigUseCase,
-    private val updateConfigUseCase: UpdateConfigUseCase,
-    private val toggleDaemonUseCase: ToggleDaemonUseCase,
-    private val daemonStatusUseCase: DaemonStatusUseCase,
-    private val checkConfigExistsUseCase: CheckConfigUseCase
+    private val configUseCase: ConfigUseCase, private val daemonUseCase: DaemonUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ModulesState())
@@ -32,15 +26,10 @@ class ModulesViewModel @Inject constructor(
     private var pollingJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            _state.subscriptionCount.collect { count ->
-                if (count > 0) {
-                    startPolling()
-                } else {
-                    stopPolling()
-                }
-            }
-        }
+        _state.collectPolling(
+            scope = viewModelScope,
+            onStart = { startPolling() },
+            onStop = { stopPolling() })
     }
 
     private fun startPolling() {
@@ -65,11 +54,7 @@ class ModulesViewModel @Inject constructor(
         when (event) {
             is ModulesEvent.ToggleModule -> {
                 viewModelScope.launch {
-                    _state.update {
-                        it.copy(processingModules = it.processingModules + event.type)
-                    }
-
-                    delay(400)
+                    _state.update { it.copy(processingModules = it.processingModules + event.type) }
 
                     val currentConfig = _state.value.config
                     val newConfig = when (event.type) {
@@ -80,11 +65,9 @@ class ModulesViewModel @Inject constructor(
                         ModuleType.TWEAKS -> currentConfig.copy(tweaksEnabled = event.enabled)
                     }
 
-                    val success = updateConfigUseCase(newConfig)
-
+                    val success = configUseCase.update(newConfig)
                     if (success) {
-                        toggleDaemonUseCase.restart()
-
+                        daemonUseCase.restart()
                         _state.update {
                             it.copy(
                                 config = newConfig,
@@ -102,48 +85,31 @@ class ModulesViewModel @Inject constructor(
                             )
                         }
                     }
-
-                    _state.update {
-                        it.copy(processingModules = it.processingModules - event.type)
-                    }
-
+                    _state.update { it.copy(processingModules = it.processingModules - event.type) }
                     delay(3000)
                     _state.update { it.copy(snackbarVisible = false) }
                 }
             }
 
-            is ModulesEvent.ShowModuleDetails -> {
-                _state.update { it.copy(selectedModuleForDetails = event.type) }
-            }
-
-            is ModulesEvent.DismissModuleDetails -> {
-                _state.update { it.copy(selectedModuleForDetails = null) }
-            }
-
-            is ModulesEvent.RefreshStatus -> {
-                viewModelScope.launch { refreshInternal() }
-            }
-
-            is ModulesEvent.DismissSnackbar -> {
-                _state.update { it.copy(snackbarVisible = false) }
-            }
+            is ModulesEvent.ShowModuleDetails -> _state.update { it.copy(selectedModuleForDetails = event.type) }
+            is ModulesEvent.DismissModuleDetails -> _state.update { it.copy(selectedModuleForDetails = null) }
+            is ModulesEvent.RefreshStatus -> viewModelScope.launch { refreshInternal() }
+            is ModulesEvent.DismissSnackbar -> _state.update { it.copy(snackbarVisible = false) }
         }
     }
 
     private suspend fun refreshInternal() {
-        val daemonExists = daemonStatusUseCase.checkDaemonExists()
+        val daemonExists = daemonUseCase.checkExists()
         if (!daemonExists) {
             _state.update { it.copy(isDaemonMissing = true, isConfigMissing = false) }
             return
         }
-
-        val configExists = checkConfigExistsUseCase()
+        val configExists = configUseCase.checkExists()
         if (!configExists) {
             _state.update { it.copy(isDaemonMissing = false, isConfigMissing = true) }
             return
         }
-
-        val config = getConfigUseCase()
+        val config = configUseCase.get()
         _state.update {
             it.copy(isDaemonMissing = false, isConfigMissing = false, config = config)
         }

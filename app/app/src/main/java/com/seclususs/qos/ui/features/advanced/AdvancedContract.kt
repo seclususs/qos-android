@@ -30,9 +30,9 @@ sealed interface AdvancedEvent {
     data class ToggleCpu(val enabled: Boolean) : AdvancedEvent
     data class ToggleStorage(val enabled: Boolean) : AdvancedEvent
     data class ShowSheet(val type: AdvancedSheetType) : AdvancedEvent
-    object HideSheet : AdvancedEvent
+    data object HideSheet : AdvancedEvent
     data class ApplyCpuConfig(val cpuValues: Map<String, String>) : AdvancedEvent
     data class ApplyStorageConfig(val storageValues: Map<String, String>) : AdvancedEvent
-    object RefreshStatus : AdvancedEvent
-    object DismissSnackbar : AdvancedEvent
+    data object RefreshStatus : AdvancedEvent
+    data object DismissSnackbar : AdvancedEvent
 }

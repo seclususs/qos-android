@@ -17,23 +17,20 @@ class ConfigRepositoryImpl @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ConfigRepository {
 
-    private val configPath = "/data/adb/modules/sys_qos/config.ini"
+    companion object {
+        private const val CONFIG_PATH = "/data/adb/modules/sys_qos/config.ini"
+    }
 
     override suspend fun checkConfigExists(): Boolean = withContext(ioDispatcher) {
-        rootShell.executeSilently("ls $configPath")
+        rootShell.executeSilently("test -f $CONFIG_PATH")
     }
 
     override suspend fun getConfig(): QosConfig = withContext(ioDispatcher) {
-        val rawText = rootShell.readFile(configPath)
-        if (rawText.isNullOrBlank()) {
-            QosConfig()
-        } else {
-            configParser.parse(rawText)
-        }
+        val rawText = rootShell.readFile(CONFIG_PATH)
+        if (rawText.isNullOrBlank()) QosConfig() else configParser.parse(rawText)
     }
 
     override suspend fun updateConfig(config: QosConfig): Boolean = withContext(ioDispatcher) {
-        val newRawText = configParser.serialize(config)
-        rootShell.writeFile(configPath, newRawText)
+        rootShell.writeFile(CONFIG_PATH, configParser.serialize(config))
     }
 }
