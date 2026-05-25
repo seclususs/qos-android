@@ -13,13 +13,19 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 
 fun <S> defaultSharedTransition(): AnimatedContentTransitionScope<S>.() -> ContentTransform = {
-    (fadeIn(tween(300)) + scaleIn(
-        tween(300), initialScale = 0.9f
-    )) togetherWith (fadeOut(tween(200)) + scaleOut(
-        tween(200), targetScale = 0.9f
-    )) using SizeTransform(
-        clip = false
-    ) { _, _ ->
+    (fadeIn(animationSpec = tween(300)) + scaleIn(
+        initialScale = 0.9f, animationSpec = tween(300)
+    )) togetherWith (fadeOut(animationSpec = tween(200)) + scaleOut(
+        targetScale = 0.9f, animationSpec = tween(200)
+    )) using SizeTransform(clip = false) { _, _ ->
         spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
     }
+}
+
+fun <S> scaleFadeTransition(): AnimatedContentTransitionScope<S>.() -> ContentTransform = {
+    (fadeIn(animationSpec = tween(200)) + scaleIn(
+        initialScale = 0.8f, animationSpec = tween(200)
+    )) togetherWith (fadeOut(animationSpec = tween(200)) + scaleOut(
+        targetScale = 0.8f, animationSpec = tween(200)
+    ))
 }

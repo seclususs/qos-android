@@ -1,22 +1,11 @@
 package com.seclususs.qos.ui.features.modules
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -25,17 +14,13 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -44,49 +29,28 @@ import com.seclususs.qos.R
 import com.seclususs.qos.domain.model.QosConfig
 import com.seclususs.qos.ui.components.AnimatedSwitch
 import com.seclususs.qos.ui.components.BottomSheet
-import com.seclususs.qos.ui.components.QosCard
-import com.seclususs.qos.ui.components.QosTopSnackbar
-import com.seclususs.qos.ui.components.StateAwareContent
+import com.seclususs.qos.ui.components.QosIconTitleCard
+import com.seclususs.qos.ui.components.QosScreen
 
 @Composable
-fun ModulesScreen(
-    viewModel: ModulesViewModel = hiltViewModel()
-) {
+fun ModulesScreen(viewModel: ModulesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(horizontal = 24.dp)
-                .padding(top = 2.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Text(
-                text = stringResource(id = R.string.nav_modules),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            StateAwareContent(
-                isDaemonMissing = state.isDaemonMissing, isConfigMissing = state.isConfigMissing
-            ) {
-                ModulesContent(state, viewModel)
-            }
-        }
+    QosScreen(
+        title = stringResource(id = R.string.nav_modules),
+        snackbarMessageResId = state.snackbarMessageResId,
+        snackbarIsError = state.snackbarIsError,
+        snackbarVisible = state.snackbarVisible,
+        isDaemonMissing = state.isDaemonMissing,
+        isConfigMissing = state.isConfigMissing
+    ) {
+        ModulesContent(state, viewModel)
+    }
 
-        QosTopSnackbar(
-            messageResId = state.snackbarMessageResId,
-            isError = state.snackbarIsError,
-            isVisible = state.snackbarVisible,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
-
-        if (state.selectedModuleForDetails != null) {
-            ModuleDetailsSheet(
-                moduleType = state.selectedModuleForDetails!!,
-                onDismiss = { viewModel.onEvent(ModulesEvent.DismissModuleDetails) })
-        }
+    if (state.selectedModuleForDetails != null) {
+        ModuleDetailsSheet(
+            moduleType = state.selectedModuleForDetails!!,
+            onDismiss = { viewModel.onEvent(ModulesEvent.DismissModuleDetails) })
     }
 }
 
@@ -107,14 +71,25 @@ private fun ModulesContent(state: ModulesState, viewModel: ModulesViewModel) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         modulesList.forEach { (type, titleRes, subtitleRes) ->
-            ModuleItem(
+            val isChecked = isModuleEnabled(state.config, type)
+            val isProcessing = state.processingModules.contains(type)
+            QosIconTitleCard(
                 title = stringResource(id = titleRes),
                 subtitle = stringResource(id = subtitleRes),
                 icon = getIconForModule(type),
-                isChecked = isModuleEnabled(state.config, type),
-                isProcessing = state.processingModules.contains(type),
-                onToggle = { viewModel.onEvent(ModulesEvent.ToggleModule(type, it)) },
-                onLongPress = { viewModel.onEvent(ModulesEvent.ShowModuleDetails(type)) })
+                onClick = {
+                    if (!isProcessing) viewModel.onEvent(
+                        ModulesEvent.ToggleModule(
+                            type, !isChecked
+                        )
+                    )
+                },
+                onLongClick = { viewModel.onEvent(ModulesEvent.ShowModuleDetails(type)) },
+                trailingContent = {
+                    AnimatedSwitch(
+                        isChecked = isChecked, isProcessing = isProcessing
+                    )
+                })
         }
         Spacer(modifier = Modifier.height(80.dp))
     }
@@ -136,61 +111,6 @@ private fun isModuleEnabled(config: QosConfig, type: ModuleType): Boolean = when
     ModuleType.TWEAKS -> config.tweaksEnabled
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ModuleItem(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    isChecked: Boolean,
-    isProcessing: Boolean,
-    onToggle: (Boolean) -> Unit,
-    onLongPress: () -> Unit
-) {
-    QosCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = { if (!isProcessing) onToggle(!isChecked) }, onLongClick = onLongPress
-                )
-                .padding(16.dp), verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    maxLines = 2
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            AnimatedSwitch(isChecked = isChecked, isProcessing = isProcessing)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModuleDetailsSheet(moduleType: ModuleType, onDismiss: () -> Unit) {
@@ -201,13 +121,7 @@ private fun ModuleDetailsSheet(moduleType: ModuleType, onDismiss: () -> Unit) {
         ModuleType.STORAGE -> Pair(R.string.module_storage_title, R.string.module_storage_desc)
         ModuleType.TWEAKS -> Pair(R.string.module_tweaks_title, R.string.module_tweaks_desc)
     }
-    BottomSheet(onDismissRequest = onDismiss) {
-        Text(
-            text = stringResource(id = titleRes),
-            style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
+    BottomSheet(title = stringResource(id = titleRes), onDismissRequest = onDismiss) {
         Text(
             text = stringResource(id = descRes),
             style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp),

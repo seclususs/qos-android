@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,8 +66,7 @@ fun TopSnackbar(
         exit = exitTransition,
         modifier = modifier
             .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 8.dp)
     ) {
         val tintColor =
             if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary

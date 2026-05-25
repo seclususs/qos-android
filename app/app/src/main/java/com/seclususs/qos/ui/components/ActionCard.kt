@@ -1,14 +1,9 @@
 package com.seclususs.qos.ui.components
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,37 +38,23 @@ fun ActionCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "buttonScale"
-    )
-
-    QosCard(modifier = modifier
-        .fillMaxWidth()
-        .height(64.dp)
-        .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
-        .clickable(
-            interactionSource = interactionSource, indication = null, onClick = onClick
-        )) {
+    QosCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .bouncyClickable(onClick = onClick)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                 Crossfade(
                     targetState = if (isPressed) filledIcon else outlinedIcon,
-                    animationSpec = tween(durationMillis = 150),
-                    label = "iconCrossfade"
+                    animationSpec = tween(150),
+                    label = "icon"
                 ) { icon ->
                     Icon(
                         imageVector = icon,

@@ -2,7 +2,7 @@ package com.seclususs.qos.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val LightBackground = Color(0xFFF1F5F9)
+val LightBackground = Color(0xFFE9EEF5)
 val LightSurface = Color(0xFFFFFFFF)
 val LightPrimary = Color(0xFF0056D2)
 val LightError = Color(0xFFD32F2F)

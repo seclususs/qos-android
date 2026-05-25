@@ -10,7 +10,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
@@ -24,10 +23,6 @@ fun QosCard(
     val shape = RoundedCornerShape(24.dp)
 
     var currentModifier = modifier
-        .shadow(
-            elevation = 16.dp,
-            shape = shape
-        )
         .border(
             width = 1.dp, color = Color.White.copy(alpha = 0.05f), shape = shape
         )

@@ -1,5 +1,8 @@
 package com.seclususs.qos.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -41,36 +44,35 @@ fun QosApp() {
         else -> 0
     }
 
+    val enterAnim: AnimatedContentTransitionScope<androidx.navigation.NavBackStackEntry>.() -> EnterTransition =
+        {
+            fadeIn(animationSpec = tween(300)) + scaleIn(
+                initialScale = 0.80f, animationSpec = tween(400, easing = FastOutSlowInEasing)
+            )
+        }
+    val exitAnim: AnimatedContentTransitionScope<androidx.navigation.NavBackStackEntry>.() -> ExitTransition =
+        {
+            fadeOut(animationSpec = tween(300)) + scaleOut(
+                targetScale = 0.95f, animationSpec = tween(300, easing = FastOutSlowInEasing)
+            )
+        }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavBar(
-                selectedIndex = selectedIndex, onItemSelected = { index ->
-                    val route = when (index) {
-                        0 -> Services
-                        1 -> Modules
-                        2 -> Advanced
-                        3 -> Settings
-                        else -> Services
+            NavBar(selectedIndex = selectedIndex, onItemSelected = { index ->
+                val route = when (index) {
+                    0 -> Services; 1 -> Modules; 2 -> Advanced; else -> Settings
+                }
+                if (selectedIndex != index) {
+                    navController.navigate(route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
                     }
-                    val isSameRoute = when (index) {
-                        0 -> currentDestination?.hasRoute<Services>() == true
-                        1 -> currentDestination?.hasRoute<Modules>() == true
-                        2 -> currentDestination?.hasRoute<Advanced>() == true
-                        3 -> currentDestination?.hasRoute<Settings>() == true
-                        else -> false
-                    }
-                    if (!isSameRoute) {
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                })
+                }
+            })
         }) { innerPadding ->
         Box(
             modifier = Modifier
@@ -82,30 +84,11 @@ fun QosApp() {
                 navController = navController,
                 startDestination = Services,
                 modifier = Modifier.fillMaxSize(),
-                enterTransition = {
-                    fadeIn(animationSpec = tween(300)) + scaleIn(
-                        initialScale = 0.80f,
-                        animationSpec = tween(400, easing = FastOutSlowInEasing)
-                    )
-                },
-                exitTransition = {
-                    fadeOut(animationSpec = tween(300)) + scaleOut(
-                        targetScale = 0.95f,
-                        animationSpec = tween(300, easing = FastOutSlowInEasing)
-                    )
-                },
-                popEnterTransition = {
-                    fadeIn(animationSpec = tween(300)) + scaleIn(
-                        initialScale = 0.80f,
-                        animationSpec = tween(400, easing = FastOutSlowInEasing)
-                    )
-                },
-                popExitTransition = {
-                    fadeOut(animationSpec = tween(300)) + scaleOut(
-                        targetScale = 0.95f,
-                        animationSpec = tween(300, easing = FastOutSlowInEasing)
-                    )
-                }) {
+                enterTransition = enterAnim,
+                exitTransition = exitAnim,
+                popEnterTransition = enterAnim,
+                popExitTransition = exitAnim
+            ) {
                 composable<Services> { ServicesScreen() }
                 composable<Modules> { ModulesScreen() }
                 composable<Advanced> { AdvancedScreen() }

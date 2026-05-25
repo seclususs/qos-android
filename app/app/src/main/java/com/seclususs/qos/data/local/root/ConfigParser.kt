@@ -71,9 +71,9 @@ class ConfigParser @Inject constructor() {
 
     fun serialize(config: QosConfig): String {
         return """
-            ; ==============================================================================
+            ; ================================================
             ; Configuration
-            ; ==============================================================================
+            ; ================================================
             
             ; [Blocker Controller]
             blocker_enabled=${config.blockerEnabled}
@@ -90,9 +90,9 @@ class ConfigParser @Inject constructor() {
             ; [System Tweaks]
             tweaks_enabled=${config.tweaksEnabled}
             
-            ; ==============================================================================
+            ; ================================================
             ; Advanced Tuning
-            ; ==============================================================================
+            ; ================================================
             
             ; [CPU Kernel Limits]
             min_latency_ns=${config.minLatencyNs ?: ""}

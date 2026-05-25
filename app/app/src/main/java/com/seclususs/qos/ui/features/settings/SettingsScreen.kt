@@ -1,25 +1,16 @@
 package com.seclususs.qos.ui.features.settings
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,7 +24,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -44,141 +34,81 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
 import com.seclususs.qos.data.local.AppTheme
 import com.seclususs.qos.ui.components.BottomSheet
 import com.seclususs.qos.ui.components.QosCard
-import com.seclususs.qos.ui.components.QosTopSnackbar
+import com.seclususs.qos.ui.components.QosIconTitleCard
+import com.seclususs.qos.ui.components.QosScreen
+import com.seclususs.qos.ui.components.QosTitleText
+import com.seclususs.qos.ui.components.bouncyClickable
+import com.seclususs.qos.ui.theme.scaleFadeTransition
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    viewModel: SettingsViewModel = hiltViewModel()
-) {
+fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+    QosScreen(
+        title = stringResource(id = R.string.nav_settings),
+        snackbarMessageResId = state.snackbarMessageResId,
+        snackbarIsError = state.snackbarIsError,
+        snackbarVisible = state.snackbarVisible
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(id = R.string.nav_settings),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            SettingsActionCard(
+            QosIconTitleCard(
                 title = stringResource(id = R.string.settings_theme_title),
                 icon = Icons.Outlined.Palette,
                 onClick = { viewModel.onEvent(SettingsEvent.OnThemeCardClicked) })
-
-            SettingsActionCard(
+            QosIconTitleCard(
                 title = stringResource(id = R.string.settings_developer_title),
                 icon = Icons.Outlined.Code,
                 onClick = { viewModel.onEvent(SettingsEvent.OnDeveloperCardClicked) })
         }
+    }
 
-        QosTopSnackbar(
-            messageResId = state.snackbarMessageResId,
-            isError = state.snackbarIsError,
-            isVisible = state.snackbarVisible,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
-
-        if (state.showThemeSheet) {
-            BottomSheet(onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissThemeSheet) }) {
-                Text(
-                    text = stringResource(id = R.string.settings_select_theme),
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                ThemeSelectionItem(
-                    stringResource(id = R.string.theme_system),
-                    Icons.Filled.BrightnessAuto,
-                    state.appTheme == AppTheme.SYSTEM,
-                    state.processingTheme == AppTheme.SYSTEM
-                ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.SYSTEM)) }
-                ThemeSelectionItem(
-                    stringResource(id = R.string.theme_light),
-                    Icons.Filled.LightMode,
-                    state.appTheme == AppTheme.LIGHT,
-                    state.processingTheme == AppTheme.LIGHT
-                ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.LIGHT)) }
-                ThemeSelectionItem(
-                    stringResource(id = R.string.theme_dark),
-                    Icons.Filled.DarkMode,
-                    state.appTheme == AppTheme.DARK,
-                    state.processingTheme == AppTheme.DARK
-                ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.DARK)) }
-            }
-        }
-
-        if (state.showDeveloperSheet) {
-            BottomSheet(onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissDeveloperSheet) }) {
-                Text(
-                    text = stringResource(id = R.string.developer_sheet_title),
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                DeveloperLinkCard(
-                    R.drawable.ic_github, stringResource(id = R.string.developer_github)
-                ) { uriHandler.openUri("https://github.com/seclususs") }
-                Spacer(modifier = Modifier.height(12.dp))
-                DeveloperLinkCard(
-                    R.drawable.ic_x, stringResource(id = R.string.developer_x)
-                ) { uriHandler.openUri("https://x.com/greperror") }
-            }
+    if (state.showThemeSheet) {
+        BottomSheet(
+            title = stringResource(id = R.string.settings_select_theme),
+            onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissThemeSheet) }) {
+            ThemeSelectionItem(
+                stringResource(id = R.string.theme_system),
+                Icons.Filled.BrightnessAuto,
+                state.appTheme == AppTheme.SYSTEM,
+                state.processingTheme == AppTheme.SYSTEM
+            ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.SYSTEM)) }
+            ThemeSelectionItem(
+                stringResource(id = R.string.theme_light),
+                Icons.Filled.LightMode,
+                state.appTheme == AppTheme.LIGHT,
+                state.processingTheme == AppTheme.LIGHT
+            ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.LIGHT)) }
+            ThemeSelectionItem(
+                stringResource(id = R.string.theme_dark),
+                Icons.Filled.DarkMode,
+                state.appTheme == AppTheme.DARK,
+                state.processingTheme == AppTheme.DARK
+            ) { viewModel.onEvent(SettingsEvent.OnThemeSelected(AppTheme.DARK)) }
         }
     }
-}
 
-@Composable
-private fun SettingsActionCard(title: String, icon: ImageVector, onClick: () -> Unit) {
-    QosCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(percent = 50))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = title,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
+    if (state.showDeveloperSheet) {
+        BottomSheet(
+            title = stringResource(id = R.string.developer_sheet_title),
+            onDismissRequest = { viewModel.onEvent(SettingsEvent.OnDismissDeveloperSheet) }) {
+            DeveloperLinkCard(
+                R.drawable.ic_github, stringResource(id = R.string.developer_github)
+            ) { uriHandler.openUri("https://github.com/seclususs") }
+            Spacer(modifier = Modifier.height(12.dp))
+            DeveloperLinkCard(
+                R.drawable.ic_x, stringResource(id = R.string.developer_x)
+            ) { uriHandler.openUri("https://x.com/greperror") }
         }
     }
 }
@@ -202,7 +132,7 @@ private fun ThemeSelectionItem(
             .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(percent = 50))
             .background(bgColor)
-            .clickable(onClick = onClick, enabled = !isProcessing)
+            .bouncyClickable(enabled = !isProcessing, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -215,34 +145,23 @@ private fun ThemeSelectionItem(
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                color = textColor
-            )
+            QosTitleText(text = label)
         }
         Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
             AnimatedContent(
-                targetState = isProcessing, transitionSpec = {
-                    (fadeIn(tween(200)) + scaleIn(tween(200))) togetherWith (fadeOut(tween(200)) + scaleOut(
-                        tween(200)
-                    ))
-                }, label = "theme_icon_animation"
+                targetState = isProcessing, transitionSpec = scaleFadeTransition(), label = "theme"
             ) { processing ->
-                if (processing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 2.dp
-                    )
-                } else if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = "Selected",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                if (processing) CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 2.dp
+                )
+                else if (isSelected) Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }
@@ -250,7 +169,11 @@ private fun ThemeSelectionItem(
 
 @Composable
 private fun DeveloperLinkCard(iconRes: Int, username: String, onClick: () -> Unit) {
-    QosCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+    QosCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .bouncyClickable(onClick = onClick)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -264,11 +187,7 @@ private fun DeveloperLinkCard(iconRes: Int, username: String, onClick: () -> Uni
                 modifier = Modifier.size(28.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = username,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            QosTitleText(text = username)
         }
     }
 }
