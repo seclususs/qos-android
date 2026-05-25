@@ -14,10 +14,7 @@ class RootShell @Inject constructor() {
     fun execute(command: String): String? {
         if (!isRootAvailable()) return null
         val result = Shell.cmd(command).exec()
-        if (result.isSuccess) {
-            return result.out.joinToString("\n")
-        }
-        return null
+        return result.out.joinToString("\n").trim().ifEmpty { null }
     }
 
     fun executeSilently(command: String): Boolean {

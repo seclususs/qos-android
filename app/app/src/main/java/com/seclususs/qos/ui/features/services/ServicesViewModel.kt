@@ -125,8 +125,8 @@ class ServicesViewModel @Inject constructor(
             return
         }
 
-        val isRunning = daemonStatusUseCase.isRunning()
         val pid = daemonStatusUseCase.getPid()
+        val isRunning = pid != "-"
         val metrics = daemonStatusUseCase.getMetrics(pid)
 
         val cpuRaw = metrics.cpuUsage.replace("%", "").trim().toFloatOrNull() ?: 0f

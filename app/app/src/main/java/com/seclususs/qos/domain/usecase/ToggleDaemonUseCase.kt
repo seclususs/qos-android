@@ -15,8 +15,6 @@ class ToggleDaemonUseCase @Inject constructor(
     }
 
     suspend fun restart(): Boolean {
-        repository.stopDaemon()
-        kotlinx.coroutines.delay(500)
-        return repository.startDaemon()
+        return repository.restartDaemon()
     }
 }

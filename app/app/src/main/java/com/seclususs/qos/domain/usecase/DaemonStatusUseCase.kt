@@ -11,10 +11,6 @@ class DaemonStatusUseCase @Inject constructor(
         return repository.checkDaemonExists()
     }
 
-    suspend fun isRunning(): Boolean {
-        return repository.isDaemonRunning()
-    }
-
     suspend fun getPid(): String {
         return repository.getDaemonPid() ?: "-"
     }
