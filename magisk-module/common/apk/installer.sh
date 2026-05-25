@@ -4,13 +4,17 @@ while [ "$(getprop sys.boot_completed)" != "1" ]; do
     sleep 1
 done
 
-APK_PATH="/data/adb/modules/sys_qos/common/apk/com/seclususs/qos/com.seclususs.qos.apk"
+MOD_DIR="/data/adb/modules/sys_qos"
+APK_DIR="$MOD_DIR/common/apk"
+APK_PATH="$APK_DIR/com/seclususs/qos/com.seclususs.qos.apk"
 PKG="com.seclususs.qos"
 
 if [ -f "$APK_PATH" ]; then
-    if ! pm list packages | grep -q "$PKG"; then
-        pm install -g "$APK_PATH"
-    fi
+    pm install -r -d -g "$APK_PATH"
+fi
+
+if [ -d "$APK_DIR" ]; then
+    rm -rf "$APK_DIR"
 fi
 
 rm -f "$0"
