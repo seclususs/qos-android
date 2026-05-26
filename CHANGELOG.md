@@ -1,6 +1,25 @@
 # Changelog
 
-## v2.6 (Latest)
+## v2.7 (Latest)
+- **Event Loop:** Fixed a critical timing race condition in `runtime.rs` by correctly updating `service.last_tick` inside the successful event execution branch, preventing heavy controller algorithms from incorrectly double-firing during timeout cycles.
+- **Kernel I/O:** Eliminated dummy `eventfd` allocations in time-based controllers (Blocker, Cleaner) by changing the handler interface to `Option<RawFd>`. This drastically reduces kernel memory footprint and `epoll` tracking slot waste.
+- **Thermal Predictor:** Rewrote the Smith Predictor history lookup from an O(N) iterative backward scan to an O(1) sliding-window approach using a moving tail pointer, heavily reducing CPU cycles during delay compensation.
+- **Math Optimization:** Replaced expensive modulo (`%`) bounds checking in the PRNG Poller with *Lemire's Reduction* (multiplication and bitshift), transforming a heavy ARM UDIV instruction (10-40 cycles) into a lightning-fast UMULH (2-3 cycles).
+- **Sensors:** Optimized thermal sensor scaling logic by replacing floating-point division (`FDIV`) with multiplication (`FMUL`), saving up to 14 clock cycles per read on the ARM FPU.
+- **Micro-Optimization:** Unrolled battery depletion polynomial math (`.powi(3)`) into explicit sequential multiplication (`x * x * x`) to guarantee inline execution and prevent intrinsic function call overhead.
+- **Sysfs I/O:** Removed risky `f32` type casting for absolute micro-timing (like 20 million ns `sched_latency`) to prevent mantissa precision loss. Replaced percentage tolerance logic with 100% pure integer arithmetic.
+- **Syscall Handling:** Fixed a deliberate `-EINVAL` syscall failure in the C++ PSI registration bridge by removing the `null terminator` write attempt, directly using strict `\n` line endings.
+- **Syscall Optimization:** Consolidated redundant `Instant::now()` clock syscalls across nested logic (CPU, Thermal, and Predictor) by capturing time once per loop and passing the reference downward, ensuring zero temporal jitter and minimal vDSO overhead.
+- **Blocker:** Prevented ART/Dalvik "JVM Storms" when blocking GMS analytics by decoupling the 18-chain `cmd pm disable` sequence. Introduced a sequential execution loop with a 50ms cooldown sleep, eliminating massive CPU and RAM spikes. Fixed a critical scheduling bug where the Blocker service would permanently die after its first 24-hour cycle. Handed over timing control directly to the `epoll` event loop by returning a constant polling interval and streamlined its initialization flow.
+- **Memory Footprint:** Eradicated heap fragmentation and sporadic `malloc` calls in the `CleanerWorker` fast-loop by implementing a Zero-Allocation traversal pattern. Replaced repetitive `Path::join` with mutable `PathBuf` `push()` and `pop()` operations.
+- **Sysfs Security & I/O:** Eliminated a critical TOCTOU (Time-of-Check to Time-of-Use) vulnerability by shifting from a Check-Then-Act string validation to a secure Act-Then-Check File Descriptor validation via `/proc/self/fd/`. Removed the `O_TRUNC` flag to prevent destructive file wipeouts during symlink attacks. Simultaneously upgraded path resolution to O(1) performance and achieved pure Zero-Allocation by replacing `fs::read_link` and UTF-8 string overhead with a direct `sys::readlink` C FFI and raw byte-slice (`&[u8]`) matching.
+- **Traversal Engine:** Eradicated TOCTOU (Time-of-Check to Time-of-Use) vulnerabilities and symlink escalation in the `CleanerWorker` by replacing race-prone `Path::exists()` checks with secure, act-then-check file descriptor validation via `rustix::fs::openat` (`O_NOFOLLOW` | `O_CLOEXEC`) routed strictly through `/proc/self/fd/`. Fixed a critical File Descriptor (FD) exhaustion vulnerability (Local DoS) by enforcing a strict 20-level recursion depth limit in directory tree size calculations. Additionally, achieved pure Zero-Allocation I/O by dropping expensive `PathBuf` string concatenations in favor of direct `entry.metadata()` polling after explicit symlink rejection.
+- **Service Recovery:** Fixed a critical File Descriptor (FD) hijacking vulnerability and FD leaks during daemon self-healing. Replaced unsafe raw integer (`i32`) passing with strict `OwnedFd` type-state semantics. Implemented `.try_clone()` for atomic `O_CLOEXEC` duplication (`F_DUPFD_CLOEXEC`), guaranteeing that recovering services like `SignalController` receive isolated descriptors without silently stealing recycled FDs from active background threads.
+- **Companion App:** Introduced an optional, root-powered Android application (Jetpack Compose) for seamless daemon management. It provides a GUI for real-time telemetry (CPU/RAM/Uptime polling), instant daemon lifecycle control (Start/Stop/Restart via `libsu`), and dynamic visual tuning of core modules and advanced kernel limits, securely bridging user inputs directly to the Magisk module's `config.ini` without requiring manual CLI interventions.
+
+---
+
+### v2.6 
 - **Refactor(cleaner):** Removed the active package cache logic (`reusable_pkg_cache` and `refresh_active_packages_cache`) in `CleanerWorker` to simplify the cleaning evaluation process, and lowered the `age_stale_media` threshold from 7 days to 3 days.
 
 ---
