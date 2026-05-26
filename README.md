@@ -34,132 +34,141 @@ QoS is a low-overhead, daemon engineered to enforce Quality of Service across An
 
 ```mermaid
 %%{
-	init:{
-		'theme':'dark',
-		'themeVariables':{
-			'primaryColor':'#2a2a2a',
-			'primaryBorderColor':'#ffffff',
-			'primaryTextColor':'#ffffff',
-			'lineColor':'#cccccc',
-			'clusterBkg':'#1a1a1a',
-			'clusterBorder':'#ffffff',
-			'edgeLabelBackground':'#2a2a2a',
-			'fontSize':'11px',
-			'fontFamily':'monospace'
-		}
-	}
+    init:{
+        'theme':'dark',
+        'themeVariables':{
+            'primaryColor':'#2a2a2a',
+            'primaryBorderColor':'#ffffff',
+            'primaryTextColor':'#ffffff',
+            'lineColor':'#cccccc',
+            'clusterBkg':'#1a1a1a',
+            'clusterBorder':'#ffffff',
+            'edgeLabelBackground':'#2a2a2a',
+            'fontSize':'11px',
+            'fontFamily':'monospace'
+        }
+    }
 }%%
 
-graph TD
+flowchart RL
 
 subgraph SYSTEM["ANDROID OS & KERNEL ENVIRONMENT"]
-	direction TB
-	K_PSI_C["PSI Node (CPU)"]
-	K_PSI_I["PSI Node (I/O)"]
-	K_SYS["Sysfs & Hardware Nodes"]
-	K_VFS["Virtual File System (VFS)"]
-	K_FS["Data & Cache Filesystem"]
-	K_PROC["Process Descriptor (FD) Info"]
-	K_SIG["OS Signal Emitter"]
-	A_PROP["Android System Properties"]
-	A_PM["Package Manager Service"]
+    direction TB
+    K_PSI_C["PSI Node (CPU)"]
+    K_PSI_I["PSI Node (I/O)"]
+    K_SYS["Sysfs & Hardware Nodes"]
+    K_VFS["Virtual File System (VFS)"]
+    K_FS["Data & Cache Filesystem"]
+    K_PROC["Process Descriptor (FD) Info"]
+    K_SIG["OS Signal Emitter"]
+    A_PROP["Android System Properties"]
+    A_PM["Package Manager Service"]
 end
 
-subgraph DAEMON["DAEMON"]
+subgraph NATIVE["RUNTIME"]
+    direction TB
+    style NATIVE fill:#2d2d2d,stroke:#ffffff,stroke-width:2px,color:#ffffff
 
-	subgraph NATIVE["RUNTIME"]
-		style NATIVE fill:#2d2d2d,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    N_MAIN["Daemon Entry Point"]
+    N_CRASH["Crash & Signal Handler"]
+    N_TUNER["OOM & Hardener"]
+    N_DETECT["Kernel Feature Detector"]
+    N_CONF["Config Parser"]
+    N_BRIDGE["FFI Bridge"]
 
-		N_MAIN["Daemon Entry Point"] --> N_CRASH["Crash & Signal Handler"]
-		N_CRASH --> N_TUNER["OOM & Hardener"]
-		N_TUNER --> N_DETECT["Kernel Feature Detector"]
-		N_DETECT --> N_CONF["Config Parser"]
-		N_CONF --> N_BRIDGE["FFI Bridge"]
-	end
+    N_MAIN --> N_CRASH
+    N_MAIN --> N_TUNER
+    N_MAIN --> N_DETECT
+    N_MAIN --> N_CONF
+    
+    N_DETECT --> N_BRIDGE
+    N_CONF --> N_BRIDGE
+end
 
-	subgraph CORE["CORE ENGINE"]
-		style CORE fill:#1a1a1a,stroke:#ffffff,stroke-width:2px,color:#ffffff
+subgraph CORE["CORE ENGINE"]
+    direction TB
+    style CORE fill:#1a1a1a,stroke:#ffffff,stroke-width:2px,color:#ffffff
 
-		R_ENTRY["Entry Point"]
-		N_BRIDGE ==> R_ENTRY
+    R_ENTRY["Entry Point"]
+    N_BRIDGE ==> R_ENTRY
 
-		subgraph BOOT_WORKER["BOOTSTRAP WORKER"]
-			style BOOT_WORKER fill:#222222,stroke-dasharray:5 5,stroke:#ffffff,color:#ffffff
+    subgraph BOOT_WORKER["BOOTSTRAP WORKER"]
+        style BOOT_WORKER fill:#222222,stroke-dasharray:5 5,stroke:#ffffff,color:#ffffff
 
-			W_TWEAK["System Tweaker Thread<br/>(One-time execution)"]
-		end
+        W_TWEAK["System Tweaker Thread<br/>(One-time execution)"]
+    end
 
-		R_ENTRY -.-> W_TWEAK
-		W_TWEAK -->|Hardware Probing| K_SYS
-		W_TWEAK -->|Apply Tunables| H_PROP
+    R_ENTRY -.-> W_TWEAK
+    R_ENTRY ==> EPOLL
+    W_TWEAK -->|Hardware Probing| K_SYS
+    W_TWEAK -->|Apply Tunables| H_PROP
 
-		subgraph MAIN["MAIN EVENT LOOP"]
-			style MAIN fill:#252526,stroke:#ffffff,color:#ffffff
+    subgraph MAIN["MAIN EVENT LOOP"]
+        style MAIN fill:#252526,stroke:#ffffff,color:#ffffff
 
-			EPOLL["Epoll Multiplexer"]
+        EPOLL["Epoll Multiplexer"]
 
-			S_CTX{{"Shared Pressure Context"}}
-			S_SHUT{{"Thread-Safe Lifecycle State"}}
+        S_CTX{{"Shared Pressure Context"}}
+        S_SHUT{{"Thread-Safe Lifecycle State"}}
 
-			subgraph LIFECYCLE["RECOVERABLE SERVICE MANAGER"]
-				style LIFECYCLE fill:#2d2d2d,stroke:#ffffff,color:#ffffff
+        subgraph LIFECYCLE["RECOVERABLE SERVICE MANAGER"]
+            style LIFECYCLE fill:#2d2d2d,stroke:#ffffff,color:#ffffff
 
-				subgraph CTRL_INT["INTERRUPT-DRIVEN"]
-					C_CPU["CPU Control"]
-					C_IO["Storage Control"]
-					C_SIG["Signal Control"]
-				end
+            subgraph CTRL_INT["INTERRUPT-DRIVEN"]
+                C_CPU["CPU Control"]
+                C_IO["Storage Control"]
+                C_SIG["Signal Control"]
+            end
 
-				subgraph CTRL_TIME["TIMEOUT-DRIVEN"]
-					C_CLN["Cleaner Control"]
-					C_BLK["Blocker Control"]
-				end
-			end
+            subgraph CTRL_TIME["TIMEOUT-DRIVEN"]
+                C_CLN["Cleaner Control"]
+                C_BLK["Blocker Control"]
+            end
+        end
 
-			EPOLL <==>|OS Interrupts| CTRL_INT
-			EPOLL -.->|Scheduled Wakeups| CTRL_TIME
+        EPOLL <==>|OS Interrupts| CTRL_INT
+        EPOLL -.->|Scheduled Wakeups| CTRL_TIME
 
-			C_SIG -->|Flag Shutdown| S_SHUT
-			EPOLL -.->|Verify State| S_SHUT
+        C_SIG -->|Flag Shutdown| S_SHUT
+        EPOLL -.->|Verify State| S_SHUT
 
-			C_IO ===>|Sync I/O State| S_CTX
-			C_CPU ===>|Sync CPU State| S_CTX
-			S_CTX ===>|Read I/O State| C_CPU
+        C_IO ===>|Sync I/O State| S_CTX
+        C_CPU ===>|Sync CPU State| S_CTX
+        S_CTX ===>|Read I/O State| C_CPU
 
-			subgraph LOGIC["ALGORITHMS & MATH"]
-				M_KALMAN["Kalman Velocity Filter"]
-				M_PID["Thermal Math (PID/Smith)"]
-				M_MATH["Load & Queue Math"]
-				M_POLL["Adaptive Poller"]
-			end
+        subgraph LOGIC["ALGORITHMS & MATH"]
+            M_KALMAN["Kalman Velocity Filter"]
+            M_PID["Thermal Math (PID/Smith)"]
+            M_MATH["Load & Queue Math"]
+            M_POLL["Adaptive Poller"]
+        end
 
-			subgraph HAL["HARDWARE ABSTRACTION LAYER"]
-				H_PSI_C["CPU PSI Monitor"]
-				H_PSI_I["I/O PSI Monitor"]
-				H_DISK["Disk Status Monitor"]
-				H_T_CPU["CPU Thermal Sensor"]
-				H_T_BAT["Battery Thermal Sensor"]
-				H_SYSFS["Sysfs Writer/Cache"]
-				H_PROP["Properties Interface"]
-				H_TRAV["Secure Path Resolver"]
-			end
+        subgraph HAL["HARDWARE ABSTRACTION LAYER"]
+            H_PSI_C["CPU PSI Monitor"]
+            H_PSI_I["I/O PSI Monitor"]
+            H_DISK["Disk Status Monitor"]
+            H_T_CPU["CPU Thermal Sensor"]
+            H_T_BAT["Battery Thermal Sensor"]
+            H_SYSFS["Sysfs Writer/Cache"]
+            H_PROP["Properties Interface"]
+            H_TRAV["Secure Path Resolver"]
+        end
 
-			C_CPU --> H_PSI_C & H_T_CPU & H_T_BAT & M_PID & M_MATH & M_POLL & H_SYSFS
-			C_IO --> H_PSI_I & H_DISK & M_MATH & M_POLL & H_SYSFS
-			C_CLN --> H_PSI_C & H_PSI_I & H_T_BAT
-			C_CLN -.->|Direct OS Query| K_VFS
-		end
+        C_CPU --> H_PSI_C & H_T_CPU & H_T_BAT & M_PID & M_MATH & M_POLL & H_SYSFS
+        C_IO --> H_PSI_I & H_DISK & M_MATH & M_POLL & H_SYSFS
+        C_CLN --> H_PSI_C & H_PSI_I & H_T_BAT
+        C_CLN -.->|Direct OS Query| K_VFS
+    end
 
-		subgraph BACKGROUND["BACKGROUND WORKERS"]
-			style BACKGROUND fill:#222222,stroke-dasharray:5 5,stroke:#ffffff,color:#ffffff
+    subgraph BACKGROUND["BACKGROUND WORKERS"]
+        style BACKGROUND fill:#222222,stroke-dasharray:5 5,stroke:#ffffff,color:#ffffff
 
-			W_CLN["Cleaner Worker<br/>(Async Channel)"]
-			W_BLK["Blocker Worker<br/>(Ephemeral Thread)"]
-		end
+        W_CLN["Cleaner Worker<br/>(Async Channel)"]
+        W_BLK["Blocker Worker<br/>(Ephemeral Thread)"]
+    end
 
-		C_CLN -.->|Dispatch Event| W_CLN
-		C_BLK -.->|Spawn Task| W_BLK
-	end
+    C_CLN -.->|Dispatch Event| W_CLN
+    C_BLK -.->|Spawn Task| W_BLK
 end
 
 H_PSI_C & H_PSI_I --> M_KALMAN
