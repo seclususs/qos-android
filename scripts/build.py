@@ -2,6 +2,7 @@
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -10,9 +11,9 @@ from pathlib import Path
 
 DEFAULT_ANDROID_API = "33"
 DEFAULT_BUILD_TYPE = "Release"
-PROJECT_NAME = "QoS"
 ARCH_ABI = "arm64-v8a"
 RUST_TARGET = "aarch64-linux-android"
+KEY_ALIAS = "qos_release"
 
 
 class Style:
@@ -50,7 +51,7 @@ def find_ndk():
 
     if ndk_env and os.path.exists(ndk_env):
         return Path(ndk_env)
-    
+
     home = Path.home()
 
     if platform.system() == "Windows":
@@ -67,11 +68,14 @@ def find_ndk():
 
     for path in search_paths:
         if path.exists():
-
-            versions = sorted([d for d in path.iterdir() if d.is_dir()], reverse=True)
+            versions = sorted(
+                [d for d in path.iterdir() if d.is_dir()],
+                reverse=True,
+            )
 
             if versions:
                 return versions[0]
+
     return None
 
 
@@ -83,7 +87,6 @@ def check_tool(tool_name):
 def run_cmd(cmd, cwd=None, silent=False):
     try:
         if silent:
-
             process = subprocess.run(
                 cmd,
                 cwd=cwd,
@@ -97,43 +100,48 @@ def run_cmd(cmd, cwd=None, silent=False):
             if process.returncode != 0:
                 print(process.stdout)
                 raise subprocess.CalledProcessError(process.returncode, cmd)
-            
+
         else:
             subprocess.run(cmd, check=True, cwd=cwd)
 
     except subprocess.CalledProcessError as exc:
-        log_err(f"Command failed: {' '.join(cmd)}")
+        log_err(f"Command failed: {' '.join([str(c) for c in cmd])}")
         raise exc
 
 
-def clean_build(build_type=None):
-    if build_type:
-        targets = [Path("build") / build_type / ARCH_ABI]
-
-    else:
-        targets = [Path("build"), Path("target")]
+def clean_workspace(root_dir):
+    targets = [
+        root_dir / "build",
+        root_dir / "target",
+        root_dir / "app/app/build",
+        root_dir / "scripts/output",
+        root_dir / "magisk-module/system/bin/qos_daemon",
+        root_dir / "magisk-module/common/apk/com/seclususs/qos/com.seclususs.apk",
+    ]
 
     for path in targets:
         if path.exists():
-
             try:
-                shutil.rmtree(path)
-                log_sub(f"Removed: {path}")
+                if path.is_dir():
+                    shutil.rmtree(path)
+
+                else:
+                    path.unlink()
+
+                log_sub(f"Removed: {path.relative_to(root_dir)}")
 
             except OSError as exc:
                 log_warn(f"Failed to clean {path}: {exc}")
 
 
-def run_quality_checks(ndk_path, api_level, do_check, do_lint):
+def run_quality_checks(ndk_path, api_level, root_dir, do_check, do_lint):
     if not do_check and not do_lint:
         return
-    
-    log_info("Running code analysis...")
 
-    rust_path = Path("core")
+    log_info("Running quality checks...")
+    rust_path = root_dir / "core"
 
     if rust_path.exists():
-
         if do_check:
             run_cmd(
                 ["cargo", "check", "--target", RUST_TARGET, "--release"],
@@ -150,7 +158,7 @@ def run_quality_checks(ndk_path, api_level, do_check, do_lint):
             )
             log_ok("Rust lint")
 
-    build_dir = Path("build") / "Release" / ARCH_ABI
+    build_dir = root_dir / "build" / "Release" / ARCH_ABI
     build_dir.mkdir(parents=True, exist_ok=True)
 
     toolchain = ndk_path / "build/cmake/android.toolchain.cmake"
@@ -164,7 +172,7 @@ def run_quality_checks(ndk_path, api_level, do_check, do_lint):
         "-DCMAKE_BUILD_TYPE=Release",
         "-G",
         "Ninja",
-        "../../../native",
+        str(root_dir / "native"),
     ]
 
     try:
@@ -182,10 +190,10 @@ def run_quality_checks(ndk_path, api_level, do_check, do_lint):
         log_ok("C++ lint")
 
 
-def build_project(ndk_path, api_level, build_type):
-    log_info(f"Building [{build_type}] for {ARCH_ABI} (API {api_level})")
+def build_daemon(ndk_path, api_level, build_type, root_dir):
+    log_info(f"Building Daemon [{build_type}] for {ARCH_ABI} (API {api_level})")
 
-    build_dir = Path("build") / build_type / ARCH_ABI
+    build_dir = root_dir / "build" / build_type / ARCH_ABI
 
     if build_dir.exists():
         shutil.rmtree(build_dir)
@@ -197,8 +205,6 @@ def build_project(ndk_path, api_level, build_type):
 
     except subprocess.CalledProcessError:
         log_err(f"Failed to add Rust target: {RUST_TARGET}")
-
-    log_sub("Configuring project...")
 
     toolchain = ndk_path / "build/cmake/android.toolchain.cmake"
 
@@ -212,21 +218,140 @@ def build_project(ndk_path, api_level, build_type):
         f"-DCMAKE_BUILD_TYPE={build_type}",
         "-G",
         "Ninja",
-        "../../../native",
+        str(root_dir / "native"),
     ]
 
+    log_sub("Configuring CMake...")
     run_cmd(cmake_cmd, cwd=build_dir, silent=True)
 
-    log_sub("Compiling...")
-
+    log_sub("Compiling Daemon...")
     run_cmd(["ninja"], cwd=build_dir)
+
     binary = build_dir / "qos_daemon"
 
-    if binary.exists():
-        log_ok(f"Artifact: {Style.BOLD}{binary}{Style.RESET}")
+    if not binary.exists():
+        log_err("Daemon build failed: binary not found.")
+
+    log_ok("Daemon build successful")
+
+    return binary
+
+
+def build_apk(build_type, root_dir, keystore_path, password_file):
+    log_info(f"Building APK [{build_type}]")
+
+    app_dir = root_dir / "app"
+
+    gradle_exe = "gradlew.bat" if platform.system() == "Windows" else "gradlew"
+
+    gradle_cmd = [str(app_dir / gradle_exe)]
+
+    task = f"assemble{build_type}"
+    gradle_cmd.append(task)
+
+    if build_type == "Release":
+        if not keystore_path.exists():
+            log_err(f"Keystore not found at {keystore_path}")
+
+        if not password_file.exists():
+            log_err(f"Password file not found at {password_file}")
+
+        try:
+            password = password_file.read_text().strip()
+
+        except OSError as exc:
+            log_err(f"Failed to read password file: {exc}")
+
+        gradle_cmd.extend(
+            [
+                f"-Pandroid.injected.signing.store.file={keystore_path.resolve()}",
+                f"-Pandroid.injected.signing.store.password={password}",
+                f"-Pandroid.injected.signing.key.alias={KEY_ALIAS}",
+                f"-Pandroid.injected.signing.key.password={password}",
+            ]
+        )
+
+    log_sub("Running Gradle...")
+    run_cmd(gradle_cmd, cwd=app_dir)
+
+    apk_dir = app_dir / "app" / "build" / "outputs" / "apk" / build_type.lower()
+
+    apk_file = apk_dir / f"app-{build_type.lower()}.apk"
+
+    if not apk_file.exists():
+        log_err("APK build failed: apk not found.")
+
+    log_ok("APK build successful")
+
+    return apk_file
+
+
+def extract_version(root_dir):
+    prop_file = root_dir / "magisk-module" / "module.prop"
+
+    if not prop_file.exists():
+        log_err("module.prop not found.")
+
+    content = prop_file.read_text()
+
+    match = re.search(r"^version=(.+)$", content, re.MULTILINE)
+
+    if not match:
+        log_err("Could not parse version from module.prop.")
+
+    return match.group(1).strip()
+
+
+def package_module(root_dir, daemon_bin, apk_bin, version):
+    log_info("Packaging Magisk Module...")
+
+    magisk_dir = root_dir / "magisk-module"
+
+    daemon_dest = magisk_dir / "system" / "bin" / "qos_daemon"
+
+    apk_dest = (
+        magisk_dir
+        / "common"
+        / "apk"
+        / "com"
+        / "seclususs"
+        / "qos"
+        / "com.seclususs.apk"
+    )
+
+    daemon_dest.parent.mkdir(parents=True, exist_ok=True)
+    apk_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(daemon_bin, daemon_dest)
+    log_sub(f"Placed Daemon at {daemon_dest.relative_to(root_dir)}")
+
+    shutil.copy2(apk_bin, apk_dest)
+    log_sub(f"Placed APK at {apk_dest.relative_to(root_dir)}")
+
+    output_dir = root_dir / "scripts" / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_name = f"qos-v{version}"
+    zip_base_path = output_dir / zip_name
+
+    log_sub("Zipping module contents...")
+
+    shutil.make_archive(
+        base_name=str(zip_base_path),
+        format="zip",
+        root_dir=str(magisk_dir),
+    )
+
+    final_zip = output_dir / f"{zip_name}.zip"
+
+    if final_zip.exists():
+        log_ok(
+            f"Module packaged successfully: "
+            f"{Style.BOLD}{final_zip.relative_to(root_dir)}{Style.RESET}"
+        )
 
     else:
-        log_err("Build failed: binary not found.")
+        log_err("Packaging failed: zip not found.")
 
 
 def main():
@@ -234,66 +359,153 @@ def main():
     os.chdir(root_dir)
 
     parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        formatter_class=lambda prog: argparse.ArgumentDefaultsHelpFormatter(
+            prog,
+            max_help_position=45,
+            width=100,
+        )
     )
 
-    parser.add_argument("--api", default=DEFAULT_ANDROID_API, help="Android API level")
+    parser.add_argument(
+        "--target",
+        choices=["daemon", "apk", "module", "all", "none"],
+        default="all",
+        help="Build target",
+    )
+
+    parser.add_argument(
+        "--api",
+        default=DEFAULT_ANDROID_API,
+        help="Android API level",
+    )
+
     parser.add_argument(
         "--type",
-        choices=["Release", "Debug", "All"],
+        choices=["Release", "Debug"],
         default=DEFAULT_BUILD_TYPE,
         help="Build type",
     )
-    parser.add_argument("--clean", action="store_true", help="Clean workspace")
-    parser.add_argument("--check", action="store_true", help="Run syntax checks")
-    parser.add_argument("--lint", action="store_true", help="Run linter")
+
+    parser.add_argument(
+        "--skip-clean",
+        action="store_true",
+        help="Skip workspace cleaning",
+    )
+
+    parser.add_argument(
+        "--skip-check",
+        action="store_true",
+        help="Skip syntax checks",
+    )
+
+    parser.add_argument(
+        "--skip-lint",
+        action="store_true",
+        help="Skip linter",
+    )
+
+    parser.add_argument(
+        "--keystore",
+        default="scripts/keystore/qos.keystore",
+        help="Path to keystore relative to root",
+    )
+
+    parser.add_argument(
+        "--password-file",
+        default="scripts/keystore/keystore.properties",
+        help="Path to password file relative to root",
+    )
 
     args = parser.parse_args()
 
-    for tool in ["cmake", "ninja", "rustup", "cargo"]:
-        check_tool(tool)
-
-    ndk_path = find_ndk()
-
-    if not ndk_path:
-        log_err("Android NDK not found. Set ANDROID_NDK_HOME.")
-
-    if args.clean:
+    if not args.skip_clean:
         log_info("Cleaning workspace...")
-        clean_build()
+        clean_workspace(root_dir)
 
-        if not (args.check or args.lint):
-            return
-        
-    do_check = args.check or not (args.check or args.lint)
-    do_lint = args.lint or not (args.check or args.lint)
-
-    run_quality_checks(ndk_path, args.api, do_check, do_lint)
-
-    explicit_analysis = args.check or args.lint
-
-    explicit_build_args = any(x in sys.argv for x in ["--type", "--api"])
-
-    if explicit_analysis and not explicit_build_args:
-        return
-    
-    types = ["Release", "Debug"] if args.type == "All" else [args.type]
+    do_check = not args.skip_check
+    do_lint = not args.skip_lint
 
     start = time.time()
 
     try:
-        for b_type in types:
-            build_project(ndk_path, args.api, b_type)
+        needs_native_tools = (
+            do_check
+            or do_lint
+            or args.target in ["daemon", "module", "all"]
+        )
+
+        ndk_path = None
+
+        if needs_native_tools:
+            for tool in ["cmake", "ninja", "rustup", "cargo"]:
+                check_tool(tool)
+
+            ndk_path = find_ndk()
+
+            if not ndk_path:
+                log_err("Android NDK not found. Set ANDROID_NDK_HOME.")
+
+            run_quality_checks(
+                ndk_path,
+                args.api,
+                root_dir,
+                do_check,
+                do_lint,
+            )
+
+        daemon_bin = None
+
+        if args.target in ["daemon", "module", "all"]:
+            daemon_bin = build_daemon(
+                ndk_path,
+                args.api,
+                args.type,
+                root_dir,
+            )
+
+        apk_bin = None
+
+        if args.target in ["apk", "module", "all"]:
+            keystore_path = root_dir / args.keystore
+            password_file = root_dir / args.password_file
+
+            apk_bin = build_apk(
+                args.type,
+                root_dir,
+                keystore_path,
+                password_file,
+            )
+
+        if args.target in ["module", "all"]:
+            if not daemon_bin or not apk_bin:
+                log_err(
+                    "Cannot package module: "
+                    "Missing Daemon or APK artifact."
+                )
+
+            version = extract_version(root_dir)
+
+            package_module(
+                root_dir,
+                daemon_bin,
+                apk_bin,
+                version,
+            )
 
         elapsed = time.time() - start
-        print(f"\n{Style.GREEN}Done in {elapsed:.2f}s{Style.RESET}")
+
+        print(
+            f"\n{Style.GREEN}"
+            f"Process finished in {elapsed:.2f}s"
+            f"{Style.RESET}"
+        )
 
     except KeyboardInterrupt:
         print("\nCancelled.")
         sys.exit(0)
 
     except Exception as exc:
-        log_err(f"Error: {exc}")
+        log_err(f"Unexpected error: {exc}")
 
 
 if __name__ == "__main__":
