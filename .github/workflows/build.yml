@@ -49,7 +49,9 @@ jobs:
           echo "$KEYSTORE_PASSWORD" > scripts/keystore/keystore.properties
 
       - name: Make Script Executable
-        run: chmod +x scripts/build.py
+        run: |
+          chmod +x scripts/build.py
+          chmod +x app/gradlew
 
       - name: Compile Daemon and APK Only
         if: github.ref_type != 'tag'
