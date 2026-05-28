@@ -116,7 +116,7 @@ def clean_workspace(root_dir):
         root_dir / "app/app/build",
         root_dir / "scripts/output",
         root_dir / "magisk-module/system/bin/qos_daemon",
-        root_dir / "magisk-module/common/apk/com/seclususs/qos/com.seclususs.apk",
+        root_dir / "magisk-module/common/apk/com/seclususs/qos/com.seclususs.qos.apk",
     ]
 
     for path in targets:
@@ -316,7 +316,7 @@ def package_module(root_dir, daemon_bin, apk_bin, version):
         / "com"
         / "seclususs"
         / "qos"
-        / "com.seclususs.apk"
+        / "com.seclususs.qos.apk"
     )
 
     daemon_dest.parent.mkdir(parents=True, exist_ok=True)
