@@ -53,8 +53,32 @@ jobs:
           chmod +x scripts/build.py
           chmod +x app/gradlew
 
-      - name: Compile Daemon and APK Only
+      - name: Filter Changed Paths
         if: github.ref_type != 'tag'
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            daemon:
+              - 'core/**'
+              - 'native/**'
+              - 'Cargo.toml'
+            apk:
+              - 'app/**'
+              - '*.gradle.kts'
+              - 'gradle.properties'
+              - 'settings.gradle.kts'
+
+      - name: Compile Daemon Only
+        if: github.ref_type != 'tag' && steps.filter.outputs.daemon == 'true' && steps.filter.outputs.apk == 'false'
+        run: python scripts/build.py --target daemon --type Release
+
+      - name: Compile APK Only
+        if: github.ref_type != 'tag' && steps.filter.outputs.apk == 'true' && steps.filter.outputs.daemon == 'false'
+        run: python scripts/build.py --target apk --type Release --skip-check --skip-lint
+
+      - name: Compile Both Daemon and APK
+        if: github.ref_type != 'tag' && steps.filter.outputs.daemon == 'true' && steps.filter.outputs.apk == 'true'
         run: |
           python scripts/build.py --target daemon --type Release
           python scripts/build.py --target apk --type Release --skip-clean --skip-check --skip-lint
