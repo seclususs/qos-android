@@ -67,7 +67,9 @@ impl StorageController {
             controller_config.psi_threshold_us,
             controller_config.psi_window_us,
         )
-        .map_err(|e| types::QosError::FfiError(format!("Storage I/O PSI trigger Error: {e}")))?;
+        .map_err(|e| {
+            types::QosError::FfiError(format!("Storage I/O PSI trigger Error: {e}").into())
+        })?;
         let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
         let read_ahead_path = paths::get_read_ahead_path();
@@ -85,7 +87,7 @@ impl StorageController {
 
         if !read_ahead.is_active() && !nr_requests.is_active() {
             return Err(types::QosError::SystemCheckFailed(
-                "No storage block tunables found.".to_string(),
+                "No storage block tunables found.".into(),
             ));
         }
 

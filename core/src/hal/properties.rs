@@ -7,15 +7,13 @@ use libc::c_char;
 use std::{ffi, io};
 
 pub fn property_exists(key: &str) -> bool {
-    let Ok(c_key) = cstr::to_cstring(key) else {
-        return false;
-    };
-
     let mut buffer = [0u8; 1];
 
-    let len = unsafe {
-        sys::get_system_property(c_key.as_ptr(), buffer.as_mut_ptr().cast::<c_char>(), 1)
-    };
+    let len = cstr::with_cstr(key, |c_key| unsafe {
+        sys::get_system_property(c_key, buffer.as_mut_ptr().cast::<c_char>(), 1)
+    })
+    .unwrap_or(-1);
+
     len > 0
 }
 
@@ -24,44 +22,41 @@ pub fn set_system_property(key: &str, value: &str) -> Result<(), types::QosError
         .chars()
         .all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '-')
     {
-        return Err(types::QosError::InvalidInput(format!(
-            "Invalid characters in key: '{key}'"
-        )));
+        return Err(types::QosError::InvalidInput(
+            format!("Invalid characters in key: '{key}'").into(),
+        ));
     }
 
     if !cstr::validate_value(value) {
-        return Err(types::QosError::InvalidInput(format!(
-            "Invalid characters in value: '{value}'"
-        )));
+        return Err(types::QosError::InvalidInput(
+            format!("Invalid characters in value: '{value}'").into(),
+        ));
     }
 
-    let c_key = cstr::to_cstring(key)?;
-    let c_val = cstr::to_cstring(value)?;
-
-    let res = unsafe { sys::set_system_property(c_key.as_ptr(), c_val.as_ptr()) };
-
-    if res < 0 {
-        Err(types::QosError::IoError(io::Error::last_os_error()))
-    } else {
-        Ok(())
-    }
+    cstr::with_cstr(key, |c_key| {
+        cstr::with_cstr(value, |c_val| {
+            let res = unsafe { sys::set_system_property(c_key, c_val) };
+            if res < 0 {
+                Err(types::QosError::IoError(io::Error::last_os_error()))
+            } else {
+                Ok(())
+            }
+        })
+        .and_then(|r| r)
+    })
+    .and_then(|r| r)
 }
 
 const PROP_VALUE_MAX: usize = 92;
 
 pub fn get_system_property(key: &str) -> Result<String, types::QosError> {
-    let c_key = cstr::to_cstring(key)?;
-    let mut buffer = vec![0u8; PROP_VALUE_MAX];
+    let mut buffer = [0u8; PROP_VALUE_MAX];
 
-    let len = unsafe {
-        sys::get_system_property(
-            c_key.as_ptr(),
-            buffer.as_mut_ptr().cast::<c_char>(),
-            PROP_VALUE_MAX,
-        )
-    };
+    let len = cstr::with_cstr(key, |c_key| unsafe {
+        sys::get_system_property(c_key, buffer.as_mut_ptr().cast::<c_char>(), PROP_VALUE_MAX)
+    })?;
 
-    if len < 0 {
+    if len <= 0 {
         return Ok(String::new());
     }
 

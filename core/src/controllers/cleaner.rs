@@ -59,9 +59,9 @@ impl CleanerController {
                 worker.run();
             })
             .map_err(|e| {
-                types::QosError::SystemCheckFailed(format!(
-                    "Failed to spawn daemon cleaner thread: {e}"
-                ))
+                types::QosError::SystemCheckFailed(
+                    format!("Failed to spawn daemon cleaner thread: {e}").into(),
+                )
             })?;
 
         Ok(Self {

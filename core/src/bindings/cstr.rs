@@ -2,11 +2,22 @@
 
 use crate::daemon::types;
 
-use std::ffi;
+pub fn with_cstr<F, R>(s: &str, f: F) -> Result<R, types::QosError>
+where
+    F: FnOnce(*const core::ffi::c_char) -> R,
+{
+    let bytes = s.as_bytes();
+    if bytes.len() >= 256 {
+        return Err(types::QosError::InvalidInput(
+            "String too long for FFI boundary".into(),
+        ));
+    }
 
-pub fn to_cstring(s: &str) -> Result<ffi::CString, types::QosError> {
-    ffi::CString::new(s)
-        .map_err(|e| types::QosError::InvalidInput(format!("String contains null byte: {e}")))
+    let mut buffer = [0u8; 256];
+    buffer[..bytes.len()].copy_from_slice(bytes);
+    buffer[bytes.len()] = b'\0';
+
+    Ok(f(buffer.as_ptr().cast::<core::ffi::c_char>()))
 }
 
 #[inline]

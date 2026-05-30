@@ -10,11 +10,13 @@ pub fn register_psi_trigger(
     threshold_us: i32,
     window_us: i32,
 ) -> Result<i32, types::QosError> {
-    let c_path = cstr::to_cstring(path)?;
-    let fd = unsafe { sys::register_psi_trigger(c_path.as_ptr(), threshold_us, window_us) };
-    if fd < 0 {
-        Err(types::QosError::IoError(io::Error::last_os_error()))
-    } else {
-        Ok(fd)
-    }
+    cstr::with_cstr(path, |c_path| {
+        let fd = unsafe { sys::register_psi_trigger(c_path, threshold_us, window_us) };
+        if fd < 0 {
+            Err(types::QosError::IoError(io::Error::last_os_error()))
+        } else {
+            Ok(fd)
+        }
+    })
+    .and_then(|r| r)
 }

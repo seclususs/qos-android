@@ -1,18 +1,18 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::{ffi, fmt};
+use std::{borrow, ffi, fmt};
 
 pub type Result<T> = std::result::Result<T, QosError>;
 
 #[derive(Debug)]
 pub enum QosError {
     IoError(std::io::Error),
-    SystemCheckFailed(String),
-    PermissionDenied(String),
-    InvalidPath(String),
-    InvalidInput(String),
-    PsiParseError(String),
-    FfiError(String),
+    SystemCheckFailed(borrow::Cow<'static, str>),
+    PermissionDenied(borrow::Cow<'static, str>),
+    InvalidPath(borrow::Cow<'static, str>),
+    InvalidInput(borrow::Cow<'static, str>),
+    PsiParseError(borrow::Cow<'static, str>),
+    FfiError(borrow::Cow<'static, str>),
 }
 
 impl fmt::Display for QosError {
@@ -37,6 +37,6 @@ impl From<std::io::Error> for QosError {
 
 impl From<ffi::NulError> for QosError {
     fn from(err: ffi::NulError) -> Self {
-        QosError::InvalidInput(format!("String contains null byte: {err}"))
+        QosError::InvalidInput(format!("String contains null byte: {err}").into())
     }
 }

@@ -199,7 +199,7 @@ impl PsiMonitor {
     pub fn read_state(&mut self) -> types::Result<PsiData> {
         let buffer = self.monitor.read_bytes_raw()?;
         if buffer.is_empty() {
-            return Err(types::QosError::PsiParseError("Empty PSI file".to_string()));
+            return Err(types::QosError::PsiParseError("Empty PSI file".into()));
         }
 
         let now = time::Instant::now();

@@ -226,8 +226,9 @@ pub fn wait_for_boot_completion(tag: &str) {
 
 #[allow(clippy::too_many_lines, clippy::cast_possible_wrap)]
 pub fn run_event_loop(mut services: Vec<RecoverableService>) -> types::Result<()> {
-    let epoll_fd = event::epoll::create(event::epoll::CreateFlags::CLOEXEC)
-        .map_err(|e| types::QosError::SystemCheckFailed(format!("Failed to create epoll: {e}")))?;
+    let epoll_fd = event::epoll::create(event::epoll::CreateFlags::CLOEXEC).map_err(|e| {
+        types::QosError::SystemCheckFailed(format!("Failed to create epoll: {e}").into())
+    })?;
 
     let mut context = state::DaemonContext::new();
     let cooldown_dur = time::Duration::from_secs(runtime::COOLDOWN_DURATION_SEC);

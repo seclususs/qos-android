@@ -103,9 +103,9 @@ pub fn write_to_stream(file: &mut fs::File, value: u64) -> Result<(), types::Qos
 
 pub fn write_to_file(path: &str, value: &str) -> Result<(), types::QosError> {
     if !cstr::validate_value(value) {
-        return Err(types::QosError::SystemCheckFailed(format!(
-            "Invalid characters in value for {path}: '{value}'"
-        )));
+        return Err(types::QosError::SystemCheckFailed(
+            format!("Invalid characters in value for {path}: '{value}'").into(),
+        ));
     }
 
     let mut buffer = [0u8; 64];

@@ -92,7 +92,7 @@ impl CpuController {
             controller_config.psi_threshold_us,
             controller_config.psi_window_us,
         )
-        .map_err(|e| types::QosError::FfiError(format!("CPU PSI Trigger Error: {e}")))?;
+        .map_err(|e| types::QosError::FfiError(format!("CPU PSI Trigger Error: {e}").into()))?;
         let trigger_fd = unsafe { os::fd::FromRawFd::from_raw_fd(raw_trigger_fd) };
 
         let latency = sysfs::CachedFile::new_opt(
