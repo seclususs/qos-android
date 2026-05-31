@@ -1,6 +1,6 @@
 //! Author: [Seclususs](https://github.com/seclususs)
 
-use std::{fs, os, path};
+use std::{ffi, os, path};
 
 pub enum TraversalAction {
     Keep,
@@ -8,68 +8,101 @@ pub enum TraversalAction {
     Stop,
 }
 
-fn open_dir_secure(path: &path::Path) -> Result<std::os::fd::OwnedFd, std::io::Error> {
-    rustix::fs::openat(
-        rustix::fs::CWD,
-        path,
-        rustix::fs::OFlags::RDONLY
-            | rustix::fs::OFlags::DIRECTORY
-            | rustix::fs::OFlags::NOFOLLOW
-            | rustix::fs::OFlags::CLOEXEC,
-        rustix::fs::Mode::empty(),
-    )
-    .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-}
-
-#[inline]
-fn get_safe_fd_path(fd_raw: os::fd::RawFd, path_buf: &mut [u8; 32]) -> &str {
-    path_buf[0..14].copy_from_slice(b"/proc/self/fd/");
-
-    let mut itoa_buf = itoa::Buffer::new();
-    let fd_bytes = itoa_buf.format(fd_raw).as_bytes();
-    let end = 14 + fd_bytes.len();
-
-    path_buf[14..end].copy_from_slice(fd_bytes);
-
-    unsafe { std::str::from_utf8_unchecked(&path_buf[..end]) }
-}
-
 pub fn get_tree_size_capped(dir: &path::Path, limit: u64, depth: usize) -> u64 {
     if depth > 20 {
         return 0;
     }
 
-    let Ok(fd) = open_dir_secure(dir) else {
+    let Ok(fd) = rustix::fs::openat(
+        rustix::fs::CWD,
+        dir,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    ) else {
         return 0;
     };
 
-    let mut path_buf = [0u8; 32];
-    let safe_path = get_safe_fd_path(os::fd::AsRawFd::as_raw_fd(&fd), &mut path_buf);
+    get_tree_size_capped_raw(os::fd::AsFd::as_fd(&fd), limit, depth)
+}
 
-    let Ok(entries) = fs::read_dir(safe_path) else {
+fn get_tree_size_capped_raw(dir_fd: os::fd::BorrowedFd<'_>, limit: u64, depth: usize) -> u64 {
+    if depth > 20 {
+        return 0;
+    }
+
+    let Ok(dir_clone) = os::fd::BorrowedFd::try_clone_to_owned(&dir_fd) else {
+        return 0;
+    };
+
+    let Ok(mut dir_iter) = rustix::fs::Dir::read_from(dir_clone) else {
         return 0;
     };
 
     let mut size = 0;
 
-    for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else {
-            continue;
-        };
+    while let Some(Ok(entry)) = dir_iter.next() {
+        let name_c = entry.file_name();
 
-        if ft.is_symlink() {
+        let name_bytes = name_c.to_bytes();
+
+        if name_bytes == b"." || name_bytes == b".." {
             continue;
         }
 
-        if ft.is_dir() {
-            if size < limit {
-                size += get_tree_size_capped(&entry.path(), limit - size, depth + 1);
+        let ft = entry.file_type();
+
+        let mut is_dir = ft == rustix::fs::FileType::Directory;
+        let mut is_symlink = ft == rustix::fs::FileType::Symlink;
+        let mut known_size = None;
+
+        if ft == rustix::fs::FileType::Unknown
+            && let Ok(stat) = rustix::fs::statx(
+                dir_fd,
+                name_c,
+                rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+                rustix::fs::StatxFlags::TYPE | rustix::fs::StatxFlags::SIZE,
+            )
+        {
+            let mode = stat.stx_mode as u32 & 0o170_000;
+            is_dir = mode == 0o040_000;
+            is_symlink = mode == 0o120_000;
+
+            if !is_dir && !is_symlink {
+                known_size = Some(stat.stx_size);
             }
-        } else if ft.is_file() {
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            size += meta.len();
+        }
+
+        if is_symlink {
+            continue;
+        }
+
+        if is_dir {
+            if size < limit
+                && let Ok(sub_fd) = rustix::fs::openat(
+                    dir_fd,
+                    name_c,
+                    rustix::fs::OFlags::RDONLY
+                        | rustix::fs::OFlags::DIRECTORY
+                        | rustix::fs::OFlags::NOFOLLOW
+                        | rustix::fs::OFlags::CLOEXEC,
+                    rustix::fs::Mode::empty(),
+                )
+            {
+                size +=
+                    get_tree_size_capped_raw(os::fd::AsFd::as_fd(&sub_fd), limit - size, depth + 1);
+            }
+        } else if let Some(s) = known_size {
+            size += s;
+        } else if let Ok(stat) = rustix::fs::statx(
+            dir_fd,
+            name_c,
+            rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+            rustix::fs::StatxFlags::SIZE,
+        ) {
+            size += stat.stx_size;
         }
 
         if size > limit {
@@ -82,40 +115,92 @@ pub fn get_tree_size_capped(dir: &path::Path, limit: u64, depth: usize) -> u64 {
 
 pub fn walk_and_act<F>(dir: &path::Path, callback: &mut F, depth: usize) -> usize
 where
-    F: FnMut(&fs::DirEntry, usize) -> TraversalAction,
+    F: FnMut(os::fd::BorrowedFd<'_>, &ffi::CStr, rustix::fs::FileType, usize) -> TraversalAction,
 {
     if depth > 20 {
         return 0;
     }
 
-    let Ok(fd) = open_dir_secure(dir) else {
+    let Ok(fd) = rustix::fs::openat(
+        rustix::fs::CWD,
+        dir,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    ) else {
         return 0;
     };
 
-    let mut path_buf = [0u8; 32];
-    let safe_path = get_safe_fd_path(os::fd::AsRawFd::as_raw_fd(&fd), &mut path_buf);
+    walk_and_act_raw(os::fd::AsFd::as_fd(&fd), callback, depth)
+}
 
-    let Ok(entries) = fs::read_dir(safe_path) else {
+fn walk_and_act_raw<F>(dir_fd: os::fd::BorrowedFd<'_>, callback: &mut F, depth: usize) -> usize
+where
+    F: FnMut(os::fd::BorrowedFd<'_>, &ffi::CStr, rustix::fs::FileType, usize) -> TraversalAction,
+{
+    if depth > 20 {
+        return 0;
+    }
+
+    let Ok(dir_clone) = os::fd::BorrowedFd::try_clone_to_owned(&dir_fd) else {
+        return 0;
+    };
+
+    let Ok(mut dir_iter) = rustix::fs::Dir::read_from(dir_clone) else {
         return 0;
     };
 
     let mut count = 0;
 
-    for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else {
-            continue;
-        };
+    while let Some(Ok(entry)) = dir_iter.next() {
+        let name_c = entry.file_name();
 
-        if ft.is_symlink() {
+        let name_bytes = name_c.to_bytes();
+
+        if name_bytes == b"." || name_bytes == b".." {
             continue;
         }
 
-        if ft.is_dir() {
-            count += walk_and_act(&entry.path(), callback, depth + 1);
+        let ft = entry.file_type();
+
+        let mut is_dir = ft == rustix::fs::FileType::Directory;
+        let mut is_symlink = ft == rustix::fs::FileType::Symlink;
+
+        if ft == rustix::fs::FileType::Unknown
+            && let Ok(stat) = rustix::fs::statx(
+                dir_fd,
+                name_c,
+                rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+                rustix::fs::StatxFlags::TYPE,
+            )
+        {
+            let mode = stat.stx_mode as u32 & 0o170_000;
+            is_dir = mode == 0o040_000;
+            is_symlink = mode == 0o120_000;
+        }
+
+        if is_symlink {
+            continue;
+        }
+
+        if is_dir {
+            if let Ok(sub_fd) = rustix::fs::openat(
+                dir_fd,
+                name_c,
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::DIRECTORY
+                    | rustix::fs::OFlags::NOFOLLOW
+                    | rustix::fs::OFlags::CLOEXEC,
+                rustix::fs::Mode::empty(),
+            ) {
+                count += walk_and_act_raw(os::fd::AsFd::as_fd(&sub_fd), callback, depth + 1);
+            }
         } else {
-            match callback(&entry, depth) {
+            match callback(dir_fd, name_c, ft, depth) {
                 TraversalAction::DeleteFile => {
-                    if fs::remove_file(entry.path()).is_ok() {
+                    if rustix::fs::unlinkat(dir_fd, name_c, rustix::fs::AtFlags::empty()).is_ok() {
                         count += 1;
                     }
                 }

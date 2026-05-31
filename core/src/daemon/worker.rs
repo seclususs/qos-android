@@ -33,7 +33,7 @@ impl CleanerWorker {
     }
 
     #[inline]
-    fn is_safe_name(name: &ffi::OsStr) -> bool {
+    fn is_safe_name(name_bytes: &[u8]) -> bool {
         const SAFE_EXTS: &[&[u8]] = &[
             b".db",
             b".xml",
@@ -48,55 +48,71 @@ impl CleanerWorker {
             b"-wal",
             b"-shm",
         ];
-        let bytes = os::unix::ffi::OsStrExt::as_bytes(name);
-        SAFE_EXTS.iter().any(|ext| bytes.ends_with(ext))
+        SAFE_EXTS.iter().any(|ext| name_bytes.ends_with(ext))
     }
 
     #[inline]
-    fn is_trash_extension(name: &ffi::OsStr) -> bool {
+    fn is_trash_extension(name_bytes: &[u8]) -> bool {
         const TRASH_EXTS: &[&[u8]] = &[
             b".tmp", b".temp", b".log", b".bak", b".old", b".thumb", b".exo",
         ];
-        let bytes = os::unix::ffi::OsStrExt::as_bytes(name);
-        TRASH_EXTS.iter().any(|ext| bytes.ends_with(ext))
+        TRASH_EXTS.iter().any(|ext| name_bytes.ends_with(ext))
     }
 
     fn perform_cycle(&mut self, is_emergency: bool) -> usize {
         let now = time::SystemTime::now();
+
+        let current_sec = now
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            .cast_signed();
+
         let mut total_cleaned = 0;
 
-        total_cleaned += self.clean_system_paths(now);
-        total_cleaned += self.clean_app_caches(is_emergency, now);
+        total_cleaned += self.clean_system_paths(current_sec);
+        total_cleaned += self.clean_app_caches(is_emergency, current_sec);
 
         total_cleaned
     }
 
-    fn clean_system_paths(&self, now: time::SystemTime) -> usize {
+    fn clean_system_paths(&self, current_sec: i64) -> usize {
         let mut cleaned = 0;
+
+        let trash_age_sec = self.config.age_trash.as_secs().cast_signed();
+        let stale_media_sec = self.config.age_stale_media.as_secs().cast_signed();
 
         for system_path in SYSTEM_DUMP_PATHS {
             let dir_path = path::Path::new(system_path);
 
-            let mut policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-                if Self::is_safe_name(&entry.file_name()) {
+            let mut policy = |dir_fd: os::fd::BorrowedFd<'_>,
+                              name_c: &ffi::CStr,
+                              _ftype: rustix::fs::FileType,
+                              _depth: usize|
+             -> traversal::TraversalAction {
+                let name_bytes = name_c.to_bytes();
+
+                if Self::is_safe_name(name_bytes) {
                     return traversal::TraversalAction::Keep;
                 }
 
-                let Ok(file_metadata) = entry.metadata() else {
-                    return traversal::TraversalAction::Keep;
-                };
-
-                let threshold = if Self::is_trash_extension(&entry.file_name()) {
-                    self.config.age_trash
+                let threshold_sec = if Self::is_trash_extension(name_bytes) {
+                    trash_age_sec
                 } else {
-                    self.config.age_stale_media
+                    stale_media_sec
                 };
 
-                if let Ok(modified) = file_metadata.modified()
-                    && let Ok(time_since_modified) = now.duration_since(modified)
-                    && time_since_modified > threshold
-                {
-                    return traversal::TraversalAction::DeleteFile;
+                if let Ok(stat) = rustix::fs::statx(
+                    dir_fd,
+                    name_c,
+                    rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+                    rustix::fs::StatxFlags::MTIME,
+                ) {
+                    let age_sec = current_sec.saturating_sub(stat.stx_mtime.tv_sec);
+
+                    if age_sec > threshold_sec {
+                        return traversal::TraversalAction::DeleteFile;
+                    }
                 }
 
                 traversal::TraversalAction::Keep
@@ -107,7 +123,7 @@ impl CleanerWorker {
         cleaned
     }
 
-    fn clean_app_caches(&self, is_storage_critical: bool, now: time::SystemTime) -> usize {
+    fn clean_app_caches(&self, is_storage_critical: bool, current_sec: i64) -> usize {
         let mut cleaned = 0;
 
         for root in APP_DATA_PATHS {
@@ -129,7 +145,8 @@ impl CleanerWorker {
                 }
 
                 path_buffer.push(entry.file_name());
-                cleaned += self.process_app_directory(&mut path_buffer, is_storage_critical, now);
+                cleaned +=
+                    self.process_app_directory(&mut path_buffer, is_storage_critical, current_sec);
                 path_buffer.pop();
             }
         }
@@ -140,16 +157,16 @@ impl CleanerWorker {
         &self,
         path_buffer: &mut path::PathBuf,
         is_storage_critical: bool,
-        now: time::SystemTime,
+        current_sec: i64,
     ) -> usize {
         let mut cleaned = 0;
 
         path_buffer.push("cache");
-        cleaned += self.process_cache_dir(path_buffer, is_storage_critical, now);
+        cleaned += self.process_cache_dir(path_buffer, is_storage_critical, current_sec);
         path_buffer.pop();
 
         path_buffer.push("code_cache");
-        cleaned += self.process_code_cache_dir(path_buffer, is_storage_critical, now);
+        cleaned += self.process_code_cache_dir(path_buffer, is_storage_critical, current_sec);
         path_buffer.pop();
 
         cleaned
@@ -159,7 +176,7 @@ impl CleanerWorker {
         &self,
         cache_dir: &path::Path,
         is_storage_critical: bool,
-        now: time::SystemTime,
+        current_sec: i64,
     ) -> usize {
         let cache_size_bytes = if is_storage_critical {
             0
@@ -175,26 +192,37 @@ impl CleanerWorker {
             self.config.age_stale_media
         };
 
-        let mut policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-            if !is_storage_critical && Self::is_safe_name(&entry.file_name()) {
+        let target_age_sec = target_age.as_secs().cast_signed();
+        let trash_age_sec = self.config.age_trash.as_secs().cast_signed();
+
+        let mut policy = |dir_fd: os::fd::BorrowedFd<'_>,
+                          name_c: &ffi::CStr,
+                          _ftype: rustix::fs::FileType,
+                          _depth: usize|
+         -> traversal::TraversalAction {
+            let name_bytes = name_c.to_bytes();
+
+            if !is_storage_critical && Self::is_safe_name(name_bytes) {
                 return traversal::TraversalAction::Keep;
             }
 
-            let Ok(file_metadata) = entry.metadata() else {
-                return traversal::TraversalAction::Keep;
-            };
-
-            let threshold = if Self::is_trash_extension(&entry.file_name()) {
-                self.config.age_trash
+            let threshold_sec = if Self::is_trash_extension(name_bytes) {
+                trash_age_sec
             } else {
-                target_age
+                target_age_sec
             };
 
-            if let Ok(modified) = file_metadata.modified()
-                && let Ok(time_since_modified) = now.duration_since(modified)
-                && time_since_modified > threshold
-            {
-                return traversal::TraversalAction::DeleteFile;
+            if let Ok(stat) = rustix::fs::statx(
+                dir_fd,
+                name_c,
+                rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+                rustix::fs::StatxFlags::MTIME,
+            ) {
+                let age_sec = current_sec.saturating_sub(stat.stx_mtime.tv_sec);
+
+                if age_sec > threshold_sec {
+                    return traversal::TraversalAction::DeleteFile;
+                }
             }
 
             traversal::TraversalAction::Keep
@@ -207,7 +235,7 @@ impl CleanerWorker {
         &self,
         code_dir: &path::Path,
         is_storage_critical: bool,
-        now: time::SystemTime,
+        current_sec: i64,
     ) -> usize {
         let target_age = if is_storage_critical {
             self.config.age_emergency
@@ -215,26 +243,37 @@ impl CleanerWorker {
             self.config.age_stale_code
         };
 
-        let mut policy = |entry: &fs::DirEntry, _depth: usize| -> traversal::TraversalAction {
-            if !is_storage_critical && Self::is_safe_name(&entry.file_name()) {
+        let target_age_sec = target_age.as_secs().cast_signed();
+        let trash_age_sec = self.config.age_trash.as_secs().cast_signed();
+
+        let mut policy = |dir_fd: os::fd::BorrowedFd<'_>,
+                          name_c: &ffi::CStr,
+                          _ftype: rustix::fs::FileType,
+                          _depth: usize|
+         -> traversal::TraversalAction {
+            let name_bytes = name_c.to_bytes();
+
+            if !is_storage_critical && Self::is_safe_name(name_bytes) {
                 return traversal::TraversalAction::Keep;
             }
 
-            let Ok(file_metadata) = entry.metadata() else {
-                return traversal::TraversalAction::Keep;
-            };
-
-            let threshold = if Self::is_trash_extension(&entry.file_name()) {
-                self.config.age_trash
+            let threshold_sec = if Self::is_trash_extension(name_bytes) {
+                trash_age_sec
             } else {
-                target_age
+                target_age_sec
             };
 
-            if let Ok(modified) = file_metadata.modified()
-                && let Ok(time_since_modified) = now.duration_since(modified)
-                && time_since_modified > threshold
-            {
-                return traversal::TraversalAction::DeleteFile;
+            if let Ok(stat) = rustix::fs::statx(
+                dir_fd,
+                name_c,
+                rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+                rustix::fs::StatxFlags::MTIME,
+            ) {
+                let age_sec = current_sec.saturating_sub(stat.stx_mtime.tv_sec);
+
+                if age_sec > threshold_sec {
+                    return traversal::TraversalAction::DeleteFile;
+                }
             }
 
             traversal::TraversalAction::Keep
