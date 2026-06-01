@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.inputs
 
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape

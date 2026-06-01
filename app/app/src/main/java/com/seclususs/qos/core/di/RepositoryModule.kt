@@ -1,11 +1,11 @@
 package com.seclususs.qos.core.di
 
-import com.seclususs.qos.data.repository.AppPreferencesRepositoryImpl
+import com.seclususs.qos.data.local.datastore.AppStore
 import com.seclususs.qos.data.repository.ConfigRepositoryImpl
 import com.seclususs.qos.data.repository.DaemonRepositoryImpl
-import com.seclususs.qos.domain.repository.AppPreferencesRepository
 import com.seclususs.qos.domain.repository.ConfigRepository
 import com.seclususs.qos.domain.repository.DaemonRepository
+import com.seclususs.qos.domain.repository.PreferencesRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -32,6 +32,6 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindAppPreferencesRepository(
-        appPreferencesRepositoryImpl: AppPreferencesRepositoryImpl
-    ): AppPreferencesRepository
+        appStore: AppStore
+    ): PreferencesRepository
 }

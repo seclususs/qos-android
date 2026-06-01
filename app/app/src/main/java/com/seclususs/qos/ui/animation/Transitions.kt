@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.theme
+package com.seclususs.qos.ui.animation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform

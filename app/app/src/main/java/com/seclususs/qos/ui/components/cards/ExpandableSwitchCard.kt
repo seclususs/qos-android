@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.cards
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.seclususs.qos.ui.components.inputs.AnimatedSwitch
 
 @Composable
 fun ExpandableSwitchCard(
@@ -38,15 +39,12 @@ fun ExpandableSwitchCard(
     QosCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessLow))) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
+                modifier = Modifier.fillMaxWidth()
                     .clickable(onClick = { if (!isProcessing) onToggle(!isExpanded) })
                     .padding(16.dp), verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
+                    modifier = Modifier.size(48.dp).clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {

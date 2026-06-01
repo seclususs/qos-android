@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.cards
 
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -33,9 +33,7 @@ fun TelemetryCard(
         modifier = modifier.height(96.dp)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.Start
         ) {
@@ -50,7 +48,6 @@ fun TelemetryCard(
                 style = TechnicalTextStyle,
                 color = MaterialTheme.colorScheme.onSurface
             )
-
             if (progress != null) {
                 Spacer(modifier = Modifier.height(10.dp))
                 CustomProgressBar(
@@ -70,20 +67,13 @@ fun CustomProgressBar(
         animationSpec = tween(durationMillis = 800, easing = LinearOutSlowInEasing),
         label = "CustomProgressBar"
     )
-
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(8.dp)
-            .clip(RoundedCornerShape(percent = 50))
+        modifier = modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(percent = 50))
             .background(color.copy(alpha = 0.15f)), contentAlignment = Alignment.CenterStart
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth(fraction = animatedProgress.coerceIn(0.001f, 1f))
-                .height(8.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(color)
+            modifier = Modifier.fillMaxWidth(fraction = animatedProgress.coerceIn(0.001f, 1f))
+                .height(8.dp).clip(RoundedCornerShape(percent = 50)).background(color)
         )
     }
 }

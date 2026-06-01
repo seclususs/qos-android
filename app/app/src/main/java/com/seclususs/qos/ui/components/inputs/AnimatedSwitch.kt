@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.inputs
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -56,19 +56,14 @@ fun AnimatedSwitch(
     )
 
     Box(
-        modifier = Modifier
-            .width(switchWidth)
-            .height(switchHeight)
-            .clip(CircleShape)
+        modifier = Modifier.width(switchWidth).height(switchHeight).clip(CircleShape)
             .background(trackColor), contentAlignment = Alignment.CenterStart
     ) {
         Box(
-            modifier = Modifier
-                .offset { IntOffset(thumbOffset.roundToPx(), 0) }
-                .size(thumbSize)
-                .shadow(elevation = 2.dp, shape = CircleShape)
-                .clip(CircleShape)
-                .background(Color.White), contentAlignment = Alignment.Center) {
+            modifier = Modifier.offset { IntOffset(thumbOffset.roundToPx(), 0) }.size(thumbSize)
+                .shadow(elevation = 2.dp, shape = CircleShape).clip(CircleShape)
+                .background(Color.White), contentAlignment = Alignment.Center
+        ) {
             AnimatedContent(
                 targetState = isProcessing, transitionSpec = {
                     (fadeIn(tween(200)) + scaleIn(tween(200))) togetherWith (fadeOut(tween(200)) + scaleOut(

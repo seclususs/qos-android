@@ -1,9 +1,12 @@
 package com.seclususs.qos.data.repository
 
+import android.content.Context
+import com.seclususs.qos.R
 import com.seclususs.qos.core.di.IoDispatcher
 import com.seclususs.qos.data.local.root.RootShell
 import com.seclususs.qos.domain.model.DaemonMetrics
 import com.seclususs.qos.domain.repository.DaemonRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -13,6 +16,7 @@ import javax.inject.Singleton
 @Singleton
 class DaemonRepositoryImpl @Inject constructor(
     private val rootShell: RootShell,
+    @param:ApplicationContext private val context: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : DaemonRepository {
 
@@ -79,21 +83,36 @@ class DaemonRepositoryImpl @Inject constructor(
         hasAttemptedAutoFix = false
 
         try {
-            val parts = result.trim().split(' ').filter { it.isNotEmpty() }
+            val parts = result.trim().split(Regex("\\s+"))
             if (parts.size >= 4) {
                 val cpu = "${parts[0]}%"
                 val ramKb = parts[1].toLongOrNull() ?: 0L
                 val ramMb = ramKb / 1024
                 val ramPercent = parts[2]
                 val ram = "${ramMb}MB ($ramPercent%)"
-                val uptime = parts[3]
+                val rawUptime = parts[3]
                 return@withContext DaemonMetrics(
-                    cpuUsage = cpu, ramUsage = ram, uptime = uptime
+                    cpuUsage = cpu, ramUsage = ram, uptime = formatUptime(rawUptime)
                 )
             }
         } catch (_: Exception) {
         }
 
         return@withContext DaemonMetrics()
+    }
+
+    private fun formatUptime(raw: String): String {
+        return try {
+            if (raw.contains("-")) {
+                val parts = raw.split("-")
+                context.getString(R.string.metric_uptime_days, parts[0], parts[1])
+            } else if (raw.count { it == ':' } == 1) {
+                "00:$raw"
+            } else {
+                raw
+            }
+        } catch (_: Exception) {
+            raw
+        }
     }
 }

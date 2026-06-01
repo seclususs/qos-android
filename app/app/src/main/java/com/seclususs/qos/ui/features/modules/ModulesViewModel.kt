@@ -2,7 +2,6 @@ package com.seclususs.qos.ui.features.modules
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.seclususs.qos.R
 import com.seclususs.qos.core.utils.collectPolling
 import com.seclususs.qos.domain.usecase.ConfigUseCase
 import com.seclususs.qos.domain.usecase.DaemonUseCase
@@ -68,33 +67,15 @@ class ModulesViewModel @Inject constructor(
                     val success = configUseCase.update(newConfig)
                     if (success) {
                         daemonUseCase.restart()
-                        _state.update {
-                            it.copy(
-                                config = newConfig,
-                                snackbarMessageResId = R.string.module_update_success,
-                                snackbarIsError = false,
-                                snackbarVisible = true
-                            )
-                        }
-                    } else {
-                        _state.update {
-                            it.copy(
-                                snackbarMessageResId = R.string.module_update_error,
-                                snackbarIsError = true,
-                                snackbarVisible = true
-                            )
-                        }
+                        _state.update { it.copy(config = newConfig) }
                     }
                     _state.update { it.copy(processingModules = it.processingModules - event.type) }
-                    delay(3000)
-                    _state.update { it.copy(snackbarVisible = false) }
                 }
             }
 
             is ModulesEvent.ShowModuleDetails -> _state.update { it.copy(selectedModuleForDetails = event.type) }
             is ModulesEvent.DismissModuleDetails -> _state.update { it.copy(selectedModuleForDetails = null) }
             is ModulesEvent.RefreshStatus -> viewModelScope.launch { refreshInternal() }
-            is ModulesEvent.DismissSnackbar -> _state.update { it.copy(snackbarVisible = false) }
         }
     }
 

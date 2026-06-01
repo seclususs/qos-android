@@ -7,29 +7,25 @@ import javax.inject.Singleton
 @Singleton
 class RootShell @Inject constructor() {
 
-    fun isRootAvailable(): Boolean {
-        return Shell.getShell().isRoot
-    }
+    val isRootAvailable: Boolean
+        get() = Shell.getShell().isRoot
 
     fun execute(command: String): String? {
-        if (!isRootAvailable()) return null
+        if (!isRootAvailable) return null
         val result = Shell.cmd(command).exec()
         return result.out.joinToString("\n").trim().ifEmpty { null }
     }
 
     fun executeSilently(command: String): Boolean {
-        if (!isRootAvailable()) return false
+        if (!isRootAvailable) return false
         return Shell.cmd(command).exec().isSuccess
     }
 
-    fun readFile(path: String): String? {
-        return execute("cat $path")
-    }
+    fun readFile(path: String): String? = execute("cat $path")
 
     fun writeFile(path: String, content: String): Boolean {
-        if (!isRootAvailable()) return false
+        if (!isRootAvailable) return false
         val escapedContent = content.replace("'", "'\\''")
-        val command = "echo '$escapedContent' > $path"
-        return executeSilently(command)
+        return executeSilently("echo '$escapedContent' > $path")
     }
 }

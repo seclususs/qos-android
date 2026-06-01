@@ -2,16 +2,16 @@ package com.seclususs.qos.ui.features.advanced
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.seclususs.qos.R
 import com.seclususs.qos.domain.model.QosConfig
-import com.seclususs.qos.domain.repository.AppPreferencesRepository
+import com.seclususs.qos.domain.repository.PreferencesRepository
 import com.seclususs.qos.domain.usecase.ConfigUseCase
 import com.seclususs.qos.domain.usecase.DaemonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -20,23 +20,29 @@ import javax.inject.Inject
 class AdvancedViewModel @Inject constructor(
     private val configUseCase: ConfigUseCase,
     private val daemonUseCase: DaemonUseCase,
-    private val appPreferencesRepository: AppPreferencesRepository
+    private val appPreferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AdvancedState())
     val state: StateFlow<AdvancedState> = _state.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            appPreferencesRepository.cachedCpuLimitsFlow.collect { encoded ->
-                _state.update { it.copy(cachedCpuValues = encoded.decodeToMap()) }
+        appPreferencesRepository.cachedCpuLimitsFlow.onEach { encoded ->
+            _state.update {
+                it.copy(
+                    cachedCpuValues = encoded.decodeToMap()
+                )
             }
-        }
-        viewModelScope.launch {
-            appPreferencesRepository.cachedStorageLimitsFlow.collect { encoded ->
-                _state.update { it.copy(cachedStorageValues = encoded.decodeToMap()) }
+        }.launchIn(viewModelScope)
+
+        appPreferencesRepository.cachedStorageLimitsFlow.onEach { encoded ->
+            _state.update {
+                it.copy(
+                    cachedStorageValues = encoded.decodeToMap()
+                )
             }
-        }
+        }.launchIn(viewModelScope)
+
         viewModelScope.launch { refreshInternal() }
     }
 
@@ -56,7 +62,6 @@ class AdvancedViewModel @Inject constructor(
             is AdvancedEvent.ApplyCpuConfig -> applyCpuConfig(event.cpuValues)
             is AdvancedEvent.ApplyStorageConfig -> applyStorageConfig(event.storageValues)
             is AdvancedEvent.RefreshStatus -> viewModelScope.launch { refreshInternal() }
-            is AdvancedEvent.DismissSnackbar -> _state.update { it.copy(snackbarVisible = false) }
         }
     }
 
@@ -230,10 +235,8 @@ class AdvancedViewModel @Inject constructor(
             if (success) {
                 daemonUseCase.restart()
                 onSuccess()
-                showSnackbar(R.string.module_update_success, false)
             } else {
                 onError()
-                showSnackbar(R.string.module_update_error, true)
             }
         }
     }
@@ -243,22 +246,8 @@ class AdvancedViewModel @Inject constructor(
         if (success) {
             daemonUseCase.restart()
             onComplete(true)
-            showSnackbar(R.string.module_update_success, false)
         } else {
             onComplete(false)
-            showSnackbar(R.string.module_update_error, true)
-        }
-    }
-
-    private fun showSnackbar(messageRes: Int, isError: Boolean) {
-        _state.update {
-            it.copy(
-                snackbarMessageResId = messageRes, snackbarIsError = isError, snackbarVisible = true
-            )
-        }
-        viewModelScope.launch {
-            delay(2000)
-            _state.update { it.copy(snackbarVisible = false) }
         }
     }
 

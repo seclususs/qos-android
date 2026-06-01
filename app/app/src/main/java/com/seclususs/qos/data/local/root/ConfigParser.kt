@@ -8,21 +8,18 @@ import javax.inject.Singleton
 class ConfigParser @Inject constructor() {
 
     fun parse(rawIniText: String): QosConfig {
-        var config = QosConfig()
-        rawIniText.lineSequence().map { it.trim() }
+        return rawIniText.lineSequence().map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith(";") && !it.startsWith("#") }
-            .forEach { line ->
+            .fold(QosConfig()) { currentConfig, line ->
                 val index = line.indexOf('=')
                 if (index != -1) {
                     val key = line.substring(0, index).trim()
                     val value = line.substring(index + 1).trim()
-                    config = updateConfigValue(config, key, value)
-                }
+                    updateConfigValue(currentConfig, key, value)
+                } else currentConfig
             }
-        return config
     }
 
-    private fun String.toOptLong(): Long? = if (this.isBlank()) null else this.toLongOrNull()
     private fun updateConfigValue(currentConfig: QosConfig, key: String, value: String): QosConfig {
         return try {
             when (key) {
@@ -46,22 +43,22 @@ class ConfigParser @Inject constructor() {
                     tweaksEnabled = value.toBooleanStrictOrNull() ?: currentConfig.tweaksEnabled
                 )
 
-                "min_latency_ns" -> currentConfig.copy(minLatencyNs = value.toOptLong())
-                "max_latency_ns" -> currentConfig.copy(maxLatencyNs = value.toOptLong())
-                "min_granularity_ns" -> currentConfig.copy(minGranularityNs = value.toOptLong())
-                "max_granularity_ns" -> currentConfig.copy(maxGranularityNs = value.toOptLong())
-                "min_wakeup_ns" -> currentConfig.copy(minWakeupNs = value.toOptLong())
-                "max_wakeup_ns" -> currentConfig.copy(maxWakeupNs = value.toOptLong())
-                "min_migration_cost" -> currentConfig.copy(minMigrationCost = value.toOptLong())
-                "max_migration_cost" -> currentConfig.copy(maxMigrationCost = value.toOptLong())
-                "min_walt_init_pct" -> currentConfig.copy(minWaltInitPct = value.toOptLong())
-                "max_walt_init_pct" -> currentConfig.copy(maxWaltInitPct = value.toOptLong())
-                "min_uclamp_min" -> currentConfig.copy(minUclampMin = value.toOptLong())
-                "max_uclamp_min" -> currentConfig.copy(maxUclampMin = value.toOptLong())
-                "min_read_ahead" -> currentConfig.copy(minReadAhead = value.toOptLong())
-                "max_read_ahead" -> currentConfig.copy(maxReadAhead = value.toOptLong())
-                "min_nr_requests" -> currentConfig.copy(minNrRequests = value.toOptLong())
-                "max_nr_requests" -> currentConfig.copy(maxNrRequests = value.toOptLong())
+                "min_latency_ns" -> currentConfig.copy(minLatencyNs = value.toLongOrNull())
+                "max_latency_ns" -> currentConfig.copy(maxLatencyNs = value.toLongOrNull())
+                "min_granularity_ns" -> currentConfig.copy(minGranularityNs = value.toLongOrNull())
+                "max_granularity_ns" -> currentConfig.copy(maxGranularityNs = value.toLongOrNull())
+                "min_wakeup_ns" -> currentConfig.copy(minWakeupNs = value.toLongOrNull())
+                "max_wakeup_ns" -> currentConfig.copy(maxWakeupNs = value.toLongOrNull())
+                "min_migration_cost" -> currentConfig.copy(minMigrationCost = value.toLongOrNull())
+                "max_migration_cost" -> currentConfig.copy(maxMigrationCost = value.toLongOrNull())
+                "min_walt_init_pct" -> currentConfig.copy(minWaltInitPct = value.toLongOrNull())
+                "max_walt_init_pct" -> currentConfig.copy(maxWaltInitPct = value.toLongOrNull())
+                "min_uclamp_min" -> currentConfig.copy(minUclampMin = value.toLongOrNull())
+                "max_uclamp_min" -> currentConfig.copy(maxUclampMin = value.toLongOrNull())
+                "min_read_ahead" -> currentConfig.copy(minReadAhead = value.toLongOrNull())
+                "max_read_ahead" -> currentConfig.copy(maxReadAhead = value.toLongOrNull())
+                "min_nr_requests" -> currentConfig.copy(minNrRequests = value.toLongOrNull())
+                "max_nr_requests" -> currentConfig.copy(maxNrRequests = value.toLongOrNull())
                 else -> currentConfig
             }
         } catch (_: Exception) {

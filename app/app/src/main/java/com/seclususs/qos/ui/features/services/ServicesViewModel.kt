@@ -85,7 +85,7 @@ class ServicesViewModel @Inject constructor(
         }
 
         val metrics = daemonUseCase.getMetrics(pid)
-        val cpuRaw = metrics.cpuUsage.replace("%", "").trim().toFloatOrNull() ?: 0f
+        val cpuRaw = metrics.cpuUsage.removeSuffix("%").trim().toFloatOrNull() ?: 0f
         val cpuProg = (cpuRaw / 100f).coerceIn(0f, 1f)
         val percentStr = metrics.ramUsage.substringAfter("(", "").substringBefore("%", "").trim()
         val ramProg = (percentStr.toFloatOrNull() ?: 0f) / 100f
@@ -105,16 +105,6 @@ class ServicesViewModel @Inject constructor(
     }
 
     private fun resetStateTo(status: DaemonStatus) {
-        _state.update {
-            it.copy(
-                status = status,
-                pid = "-",
-                cpuUsage = "0%",
-                ramUsage = "0 MB",
-                uptime = "00:00:00",
-                cpuProgress = 0f,
-                ramProgress = 0f
-            )
-        }
+        _state.update { ServicesState(status = status) }
     }
 }

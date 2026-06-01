@@ -46,15 +46,15 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
-import com.seclususs.qos.ui.components.BottomSheet
-import com.seclususs.qos.ui.components.ExpandableSwitchCard
-import com.seclususs.qos.ui.components.NumericInputField
-import com.seclususs.qos.ui.components.QosScreen
-import com.seclususs.qos.ui.components.QosSubtitleText
-import com.seclususs.qos.ui.components.QosTitleText
-import com.seclususs.qos.ui.components.bouncyClickable
-import com.seclususs.qos.ui.components.iconBackground
-import com.seclususs.qos.ui.theme.scaleFadeTransition
+import com.seclususs.qos.ui.animation.scaleFadeTransition
+import com.seclususs.qos.ui.components.cards.ExpandableSwitchCard
+import com.seclususs.qos.ui.components.inputs.NumericInputField
+import com.seclususs.qos.ui.components.layout.BottomSheet
+import com.seclususs.qos.ui.components.layout.QosScreen
+import com.seclususs.qos.ui.components.modifiers.bouncyClickable
+import com.seclususs.qos.ui.components.modifiers.iconBackground
+import com.seclususs.qos.ui.components.typography.QosSubtitleText
+import com.seclususs.qos.ui.components.typography.QosTitleText
 import kotlinx.coroutines.delay
 
 @Composable
@@ -63,16 +63,11 @@ fun AdvancedScreen(viewModel: AdvancedViewModel = hiltViewModel()) {
 
     QosScreen(
         title = stringResource(id = R.string.nav_advanced),
-        snackbarMessageResId = state.snackbarMessageResId,
-        snackbarIsError = state.snackbarIsError,
-        snackbarVisible = state.snackbarVisible,
         isDaemonMissing = state.isDaemonMissing,
         isConfigMissing = state.isConfigMissing
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             ExpandableSwitchCard(
@@ -113,9 +108,7 @@ fun AdvancedScreen(viewModel: AdvancedViewModel = hiltViewModel()) {
 @Composable
 private fun FlatModifyAction(onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bouncyClickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().bouncyClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -173,11 +166,8 @@ private fun AdvancedBottomSheet(state: AdvancedState, viewModel: AdvancedViewMod
         sheetState = sheetState
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false)
-                .windowInsetsPadding(WindowInsets.ime)
-                .verticalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                .windowInsetsPadding(WindowInsets.ime).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (state.activeSheet == AdvancedSheetType.CPU) {
@@ -225,9 +215,7 @@ private fun ApplyConfigurationButton(applyState: ApplyState, onClick: () -> Unit
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
         enabled = applyState != ApplyState.LOADING,
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize()
+        modifier = Modifier.fillMaxWidth().animateContentSize()
     ) {
         AnimatedContent(
             targetState = applyState, transitionSpec = scaleFadeTransition(), label = "apply"
@@ -267,9 +255,7 @@ private fun AdvancedLimitRow(
     phMax: String
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
         QosSubtitleText(text = title, alpha = 0.8f, modifier = Modifier.padding(bottom = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

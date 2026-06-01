@@ -20,10 +20,7 @@ data class AdvancedState(
     val isProcessingStorageToggle: Boolean = false,
     val cpuApplyState: ApplyState = ApplyState.IDLE,
     val storageApplyState: ApplyState = ApplyState.IDLE,
-    val activeSheet: AdvancedSheetType? = null,
-    val snackbarMessageResId: Int? = null,
-    val snackbarIsError: Boolean = false,
-    val snackbarVisible: Boolean = false
+    val activeSheet: AdvancedSheetType? = null
 )
 
 sealed interface AdvancedEvent {
@@ -34,5 +31,4 @@ sealed interface AdvancedEvent {
     data class ApplyCpuConfig(val cpuValues: Map<String, String>) : AdvancedEvent
     data class ApplyStorageConfig(val storageValues: Map<String, String>) : AdvancedEvent
     data object RefreshStatus : AdvancedEvent
-    data object DismissSnackbar : AdvancedEvent
 }

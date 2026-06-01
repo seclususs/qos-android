@@ -24,11 +24,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.seclususs.qos.ui.components.NavBar
 import com.seclususs.qos.ui.features.advanced.AdvancedScreen
 import com.seclususs.qos.ui.features.modules.ModulesScreen
 import com.seclususs.qos.ui.features.services.ServicesScreen
-import com.seclususs.qos.ui.features.settings.SettingsScreen
 
 @Composable
 fun QosApp() {
@@ -40,7 +38,6 @@ fun QosApp() {
         currentDestination?.hasRoute<Services>() == true -> 0
         currentDestination?.hasRoute<Modules>() == true -> 1
         currentDestination?.hasRoute<Advanced>() == true -> 2
-        currentDestination?.hasRoute<Settings>() == true -> 3
         else -> 0
     }
 
@@ -63,7 +60,7 @@ fun QosApp() {
         bottomBar = {
             NavBar(selectedIndex = selectedIndex, onItemSelected = { index ->
                 val route = when (index) {
-                    0 -> Services; 1 -> Modules; 2 -> Advanced; else -> Settings
+                    0 -> Services; 1 -> Modules; else -> Advanced
                 }
                 if (selectedIndex != index) {
                     navController.navigate(route) {
@@ -75,9 +72,7 @@ fun QosApp() {
             })
         }) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+            modifier = Modifier.fillMaxSize().padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
             NavHost(
@@ -92,7 +87,6 @@ fun QosApp() {
                 composable<Services> { ServicesScreen() }
                 composable<Modules> { ModulesScreen() }
                 composable<Advanced> { AdvancedScreen() }
-                composable<Settings> { SettingsScreen() }
             }
         }
     }

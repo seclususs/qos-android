@@ -27,10 +27,10 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
 import com.seclususs.qos.domain.model.QosConfig
-import com.seclususs.qos.ui.components.AnimatedSwitch
-import com.seclususs.qos.ui.components.BottomSheet
-import com.seclususs.qos.ui.components.QosIconTitleCard
-import com.seclususs.qos.ui.components.QosScreen
+import com.seclususs.qos.ui.components.cards.QosIconTitleCard
+import com.seclususs.qos.ui.components.inputs.AnimatedSwitch
+import com.seclususs.qos.ui.components.layout.BottomSheet
+import com.seclususs.qos.ui.components.layout.QosScreen
 
 @Composable
 fun ModulesScreen(viewModel: ModulesViewModel = hiltViewModel()) {
@@ -38,9 +38,6 @@ fun ModulesScreen(viewModel: ModulesViewModel = hiltViewModel()) {
 
     QosScreen(
         title = stringResource(id = R.string.nav_modules),
-        snackbarMessageResId = state.snackbarMessageResId,
-        snackbarIsError = state.snackbarIsError,
-        snackbarVisible = state.snackbarVisible,
         isDaemonMissing = state.isDaemonMissing,
         isConfigMissing = state.isConfigMissing
     ) {
@@ -65,9 +62,7 @@ private fun ModulesContent(state: ModulesState, viewModel: ModulesViewModel) {
     )
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         modulesList.forEach { (type, titleRes, subtitleRes) ->

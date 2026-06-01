@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.layout
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -43,9 +43,7 @@ fun BottomSheet(
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)
                 .padding(bottom = 24.dp)
         ) {
             if (title != null) {
@@ -64,16 +62,11 @@ fun BottomSheet(
 @Composable
 private fun DragHandle() {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
-            modifier = Modifier
-                .width(48.dp)
-                .height(4.dp)
-                .clip(RoundedCornerShape(percent = 50))
+            modifier = Modifier.width(48.dp).height(4.dp).clip(RoundedCornerShape(percent = 50))
                 .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
         )
     }

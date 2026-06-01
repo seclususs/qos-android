@@ -4,20 +4,6 @@
     <string name="nav_services">Services</string>
     <string name="nav_modules">Modules</string>
     <string name="nav_advanced">Advanced</string>
-    <string name="nav_settings">Settings</string>
-
-    <string name="settings_theme_title">App Theme</string>
-    <string name="settings_select_theme">Select Theme</string>
-    <string name="theme_system">System Default</string>
-    <string name="theme_light">Light Mode</string>
-    <string name="theme_dark">Dark Mode</string>
-    <string name="theme_change_success">Theme successfully changed!</string>
-    <string name="theme_change_error">Failed to change theme.</string>
-
-    <string name="settings_developer_title">Developer</string>
-    <string name="developer_sheet_title">Connect with Developer</string>
-    <string name="developer_github">\@seclususs</string>
-    <string name="developer_x">\@greperror</string>
 
     <string name="services_title">Services</string>
     <string name="action_start">Start</string>
@@ -26,6 +12,7 @@
     <string name="metric_cpu">CPU Usage</string>
     <string name="metric_ram">RAM Usage</string>
     <string name="metric_uptime">Uptime</string>
+    <string name="metric_uptime_days">%1$s Days, %2$s</string>
     <string name="metric_pid">PID</string>
     <string name="status_starting">STARTING...</string>
     <string name="status_stopping">STOPPING...</string>
@@ -33,10 +20,6 @@
     <string name="status_missing">NOT FOUND</string>
     <string name="error_daemon_missing_title">Daemon Not Found</string>
     <string name="error_daemon_missing_desc">The core system binary file was not found. Make sure the Magisk QoS module is installed and enabled, then restart your device.</string>
-    <string name="action_check_again">Check Again</string>
-
-    <string name="module_update_success">Configuration updated!</string>
-    <string name="module_update_error">Failed to apply configuration.</string>
 
     <string name="module_blocker_title">Blocker Controller</string>
     <string name="module_blocker_subtitle">Disable heavy background services.</string>

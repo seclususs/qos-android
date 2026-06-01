@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.cards
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.seclususs.qos.ui.components.modifiers.bouncyClickable
 
 @Composable
 fun ActionCard(
@@ -39,15 +40,10 @@ fun ActionCard(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     QosCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .bouncyClickable(onClick = onClick)
+        modifier = modifier.fillMaxWidth().height(64.dp).bouncyClickable(onClick = onClick)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {

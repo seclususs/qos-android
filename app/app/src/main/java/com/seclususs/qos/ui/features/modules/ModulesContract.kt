@@ -11,10 +11,7 @@ data class ModulesState(
     val isConfigMissing: Boolean = false,
     val config: QosConfig = QosConfig(),
     val processingModules: Set<ModuleType> = emptySet(),
-    val selectedModuleForDetails: ModuleType? = null,
-    val snackbarMessageResId: Int? = null,
-    val snackbarIsError: Boolean = false,
-    val snackbarVisible: Boolean = false
+    val selectedModuleForDetails: ModuleType? = null
 )
 
 sealed interface ModulesEvent {
@@ -22,5 +19,4 @@ sealed interface ModulesEvent {
     data class ShowModuleDetails(val type: ModuleType) : ModulesEvent
     data object DismissModuleDetails : ModulesEvent
     data object RefreshStatus : ModulesEvent
-    data object DismissSnackbar : ModulesEvent
 }

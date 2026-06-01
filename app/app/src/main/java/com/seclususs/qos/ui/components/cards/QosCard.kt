@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.cards
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,17 +21,12 @@ fun QosCard(
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(24.dp)
-
-    var currentModifier = modifier
-        .border(
-            width = 1.dp, color = Color.White.copy(alpha = 0.05f), shape = shape
-        )
-        .clip(shape)
-
+    var currentModifier = modifier.border(
+        width = 1.dp, color = Color.White.copy(alpha = 0.05f), shape = shape
+    ).clip(shape)
     if (onClick != null) {
         currentModifier = currentModifier.clickable(onClick = onClick)
     }
-
     Surface(
         modifier = currentModifier,
         shape = shape,

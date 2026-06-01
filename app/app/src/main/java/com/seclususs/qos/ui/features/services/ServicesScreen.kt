@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +48,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,24 +57,37 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.seclususs.qos.R
-import com.seclususs.qos.ui.components.ActionCard
-import com.seclususs.qos.ui.components.TelemetryCard
-import com.seclususs.qos.ui.components.bouncyClickable
-import com.seclususs.qos.ui.components.defaultScreenPadding
+import com.seclususs.qos.ui.components.cards.ActionCard
+import com.seclususs.qos.ui.components.cards.TelemetryCard
+import com.seclususs.qos.ui.components.modifiers.bouncyClickable
+import com.seclususs.qos.ui.components.modifiers.defaultScreenPadding
 
 @Composable
 fun ServicesScreen(viewModel: ServicesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
 
     Column(
         modifier = Modifier.defaultScreenPadding(),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Text(
-            text = stringResource(id = R.string.services_title),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(id = R.string.services_title),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Icon(
+                painter = painterResource(id = R.drawable.ic_github),
+                contentDescription = "Open GitHub",
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(26.dp)
+                    .bouncyClickable { uriHandler.openUri("https://github.com/seclususs") })
+        }
 
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             ReactorCore(status = state.status, onToggle = {
@@ -153,9 +169,7 @@ private fun ActionButtonsContainer(status: DaemonStatus, onRestart: () -> Unit) 
             onClick = onRestart
         )
         else Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(0.dp)
+            modifier = Modifier.fillMaxWidth().height(0.dp)
         )
     }
 }
@@ -214,30 +228,22 @@ private fun ReactorCore(status: DaemonStatus, onToggle: () -> Unit) {
     val strokeWidthPx = remember(density) { with(density) { 6.dp.toPx() } }
 
     Box(
-        modifier = Modifier
-            .size(180.dp)
-            .padding(8.dp)
-            .clip(CircleShape)
+        modifier = Modifier.size(180.dp).padding(8.dp).clip(CircleShape)
             .bouncyClickable(enabled = isClickable, onClick = onToggle),
         contentAlignment = Alignment.Center
     ) {
         Box(
-            modifier = Modifier
-                .size(120.dp)
-                .graphicsLayer { scaleX = currentScale; scaleY = currentScale }
-                .shadow(
+            modifier = Modifier.size(120.dp)
+                .graphicsLayer { scaleX = currentScale; scaleY = currentScale }.shadow(
                     elevation = if (isActiveOrTransitioning) 24.dp else 0.dp,
                     shape = CircleShape,
                     ambientColor = animatedColor,
                     spotColor = animatedColor
-                )
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface))
+                ).clip(CircleShape).background(MaterialTheme.colorScheme.surface)
+        )
 
         Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { rotationZ = currentRotation }) {
+            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = currentRotation }) {
             val sizeValue = size.minDimension - strokeWidthPx
             val offset = strokeWidthPx / 2f
             drawArc(

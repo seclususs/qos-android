@@ -7,15 +7,7 @@ import javax.inject.Inject
 class ConfigUseCase @Inject constructor(
     private val repository: ConfigRepository
 ) {
-    suspend fun checkExists(): Boolean {
-        return repository.checkConfigExists()
-    }
-
-    suspend fun get(): QosConfig {
-        return repository.getConfig()
-    }
-
-    suspend fun update(newConfig: QosConfig): Boolean {
-        return repository.updateConfig(newConfig)
-    }
+    suspend fun checkExists(): Boolean = repository.checkConfigExists()
+    suspend fun get(): QosConfig = repository.getConfig()
+    suspend fun update(newConfig: QosConfig): Boolean = repository.updateConfig(newConfig)
 }

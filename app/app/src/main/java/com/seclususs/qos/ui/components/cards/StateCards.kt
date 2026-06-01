@@ -1,6 +1,5 @@
-package com.seclususs.qos.ui.components
+package com.seclususs.qos.ui.components.cards
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,10 +19,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.seclususs.qos.R
-import com.seclususs.qos.ui.theme.defaultSharedTransition
 
 @Composable
-private fun MissingStateCard(
+fun ErrorStateCard(
     titleResId: Int, descResId: Int, icon: ImageVector
 ) {
     QosCard(modifier = Modifier.fillMaxWidth()) {
@@ -56,7 +54,7 @@ private fun MissingStateCard(
 
 @Composable
 fun MissingDaemonCard() {
-    MissingStateCard(
+    ErrorStateCard(
         titleResId = R.string.error_daemon_missing_title,
         descResId = R.string.error_daemon_missing_desc,
         icon = Icons.Filled.Warning
@@ -65,35 +63,9 @@ fun MissingDaemonCard() {
 
 @Composable
 fun MissingConfigCard() {
-    MissingStateCard(
+    ErrorStateCard(
         titleResId = R.string.error_config_missing_title,
         descResId = R.string.error_config_missing_desc,
         icon = Icons.Filled.Error
     )
-}
-
-@Composable
-fun StateAwareContent(
-    isDaemonMissing: Boolean,
-    isConfigMissing: Boolean,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    val targetUiState = when {
-        isDaemonMissing -> 1
-        isConfigMissing -> 2
-        else -> 0
-    }
-    AnimatedContent(
-        targetState = targetUiState,
-        transitionSpec = defaultSharedTransition(),
-        label = "state_aware_transition",
-        modifier = modifier.fillMaxWidth()
-    ) { uiState ->
-        when (uiState) {
-            1 -> MissingDaemonCard()
-            2 -> MissingConfigCard()
-            else -> content()
-        }
-    }
 }
