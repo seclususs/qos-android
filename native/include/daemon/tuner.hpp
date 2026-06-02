@@ -1,33 +1,67 @@
+/**
+ * @file tuner.hpp
+ *
+ * @brief System environment and process tuning utilities.
+ */
+
 #pragma once
 
 namespace qos::system
 {
 
+    /**
+     * @brief Utility class for applying system-level process configurations.
+     */
     class Tuner
     {
         public:
-        // Expands process resource limits.
+        /**
+         * @brief Optimizes critical process resource limits for background execution.
+         *
+         * @note Execution: This function maximizes File Descriptor limits to prevent I/O
+         *                  bottlenecks, while strictly constraining the process Stack Size
+         *                  (reducing it below OS defaults) to minimize the daemon's
+         *                  memory footprint.
+         */
         static void expand_resources() noexcept;
 
-        // Locks process memory into RAM to prevent swapping.
+        /**
+         * @brief Locks process memory into RAM to prevent swapping.
+         */
         static void lock_memory() noexcept;
 
-        // Applies OOM shield to exempt process from LMK kills.
+        /**
+         * @brief Exempts the process from system-level low memory termination.
+         */
         static void harden_process() noexcept;
 
-        // Sets process I/O priority to Best Effort.
+        /**
+         * @brief Elevates process I/O scheduling to the highest Best-Effort priority class.
+         */
         static void set_high_io_priority() noexcept;
 
-        // Sets CPU scheduling policy to Real-Time.
+        /**
+         * @brief Enforces real-time CPU scheduling policies.
+         */
         static void set_realtime_policy() noexcept;
 
-        // Binds process execution strictly to Efficiency (Little) Cores.
+        /**
+         * @brief Attempts to restrict process execution to efficiency-focused CPU cores.
+         *
+         * @note Fallback: If the underlying hardware topology cannot be safely determined,
+         *                 this function falls back to allowing execution on all available
+         *                 cores to prevent thread starvation.
+         */
         static void enforce_efficiency_mode() noexcept;
 
-        // Maximizes timer slack for better wakeup coalescing and efficiency.
+        /**
+         * @brief Adjusts timer slack to improve power efficiency via wakeup coalescing.
+         */
         static void maximize_timer_slack() noexcept;
 
-        // Clamps CPU utilization to prevent frequency ramping.
+        /**
+         * @brief Constrains CPU performance states to prevent aggressive frequency ramping.
+         */
         static void limit_cpu_utilization() noexcept;
     };
 

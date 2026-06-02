@@ -1,21 +1,35 @@
+/**
+ * @file detector.hpp
+ *
+ * @brief System environment and kernel capability detection.
+ */
+
 #pragma once
 
 namespace qos::system
 {
 
-    // System capability support flags.
+    /**
+     * @brief Availability status of required kernel features.
+     */
     struct KernelFeatures
     {
-        bool has_cpu_psi{false};
-        bool has_io_psi{false};
-        bool cleaner_supported{false};
+        bool has_cpu_psi{false};       ///< Indicates CPU Pressure Stall Information support.
+        bool has_io_psi{false};        ///< Indicates I/O Pressure Stall Information support.
+        bool cleaner_supported{false}; ///< Indicates environment support for cleanup utilities.
     };
 
-    // System environment.
+    /**
+     * @brief Utility for probing system capabilities.
+     */
     class Detector
     {
         public:
-        // Scans filesystem to determine available kernel capabilities.
+        /**
+         * @brief Scans the environment to determine kernel feature availability.
+         *
+         * @return A structure representing detected capabilities.
+         */
         [[nodiscard]] static KernelFeatures check_features() noexcept;
     };
 
