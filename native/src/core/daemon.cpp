@@ -8,8 +8,11 @@
 
 #include <csignal>
 #include <cstdlib>
+#include <fcntl.h>
 #include <malloc.h>
+#include <sys/file.h>
 #include <sys/signalfd.h>
+#include <unistd.h>
 
 #ifndef M_DECAY_TIME
 #define M_DECAY_TIME -100
@@ -24,6 +27,24 @@ namespace qos::core
 
     int App::bootstrap() noexcept
     {
+        if (::getuid() != 0)
+        {
+            LOGE("Shutting down (Root privileges required).");
+            return EXIT_FAILURE;
+        }
+
+        int lock_fd = ::open("/data/local/tmp/qos_daemon.lock", O_CREAT | O_RDWR | O_CLOEXEC, 0666);
+
+        if (lock_fd < 0 || ::flock(lock_fd, LOCK_EX | LOCK_NB) == -1)
+        {
+            if (lock_fd >= 0)
+            {
+                ::close(lock_fd);
+            }
+
+            return EXIT_FAILURE;
+        }
+
         ::mallopt(M_DECAY_TIME, 0);
         LOGI("=== Daemon Starting ===");
 
