@@ -48,6 +48,9 @@ namespace qos::config
 
             if (it != raw_config.end())
             {
+                if (it->second.empty())
+                    return EMPTY_U64;
+
                 return parse_u64(it->second, def);
             }
 
@@ -63,7 +66,10 @@ namespace qos::config
         state.tweaks = fetch_bool("tweaks_enabled");
         state.blocker = fetch_bool("blocker_enabled");
 
-        if (has_key("min_latency_ns") || has_key("max_latency_ns") || has_key("min_walt_init_pct"))
+        if (has_key("min_latency_ns") || has_key("max_latency_ns") || has_key("min_granularity_ns") ||
+            has_key("max_granularity_ns") || has_key("min_wakeup_ns") || has_key("max_wakeup_ns") ||
+            has_key("min_migration_cost") || has_key("max_migration_cost") || has_key("min_walt_init_pct") ||
+            has_key("max_walt_init_pct") || has_key("min_uclamp_min") || has_key("max_uclamp_min"))
         {
             state.has_cpu_limits = true;
             state.cpu_limits.min_latency_ns = fetch_u64("min_latency_ns", state.cpu_limits.min_latency_ns);
@@ -80,7 +86,8 @@ namespace qos::config
             state.cpu_limits.max_uclamp_min = fetch_u64("max_uclamp_min", state.cpu_limits.max_uclamp_min);
         }
 
-        if (has_key("min_read_ahead") || has_key("max_read_ahead") || has_key("min_nr_requests"))
+        if (has_key("min_read_ahead") || has_key("max_read_ahead") || has_key("min_nr_requests") ||
+            has_key("max_nr_requests"))
         {
             state.has_storage_limits = true;
             state.storage_limits.min_read_ahead = fetch_u64("min_read_ahead", state.storage_limits.min_read_ahead);
@@ -93,58 +100,62 @@ namespace qos::config
         {
             auto& cpu = state.cpu_limits;
 
-            if (cpu.min_latency_ns > cpu.max_latency_ns)
-                std::swap(cpu.min_latency_ns, cpu.max_latency_ns);
+            auto safe_swap = [](uint64_t& a, uint64_t& b)
+            {
+                if (a != EMPTY_U64 && b != EMPTY_U64 && a > b)
+                    std::swap(a, b);
+            };
 
-            if (cpu.min_granularity_ns > cpu.max_granularity_ns)
-                std::swap(cpu.min_granularity_ns, cpu.max_granularity_ns);
+            safe_swap(cpu.min_latency_ns, cpu.max_latency_ns);
+            safe_swap(cpu.min_granularity_ns, cpu.max_granularity_ns);
+            safe_swap(cpu.min_wakeup_ns, cpu.max_wakeup_ns);
+            safe_swap(cpu.min_migration_cost, cpu.max_migration_cost);
+            safe_swap(cpu.min_walt_init_pct, cpu.max_walt_init_pct);
+            safe_swap(cpu.min_uclamp_min, cpu.max_uclamp_min);
 
-            if (cpu.min_wakeup_ns > cpu.max_wakeup_ns)
-                std::swap(cpu.min_wakeup_ns, cpu.max_wakeup_ns);
+            auto safe_clamp = [](uint64_t& val, uint64_t min_limit, uint64_t max_limit)
+            {
+                if (val != EMPTY_U64)
+                    val = std::clamp(val, min_limit, max_limit);
+            };
 
-            if (cpu.min_migration_cost > cpu.max_migration_cost)
-                std::swap(cpu.min_migration_cost, cpu.max_migration_cost);
-
-            if (cpu.min_walt_init_pct > cpu.max_walt_init_pct)
-                std::swap(cpu.min_walt_init_pct, cpu.max_walt_init_pct);
-
-            if (cpu.min_uclamp_min > cpu.max_uclamp_min)
-                std::swap(cpu.min_uclamp_min, cpu.max_uclamp_min);
-
-            cpu.min_latency_ns = std::clamp(cpu.min_latency_ns, 1000000UL, 100000000UL);
-            cpu.max_latency_ns = std::clamp(cpu.max_latency_ns, 1000000UL, 100000000UL);
-
-            cpu.min_granularity_ns = std::clamp(cpu.min_granularity_ns, 500000UL, 50000000UL);
-            cpu.max_granularity_ns = std::clamp(cpu.max_granularity_ns, 500000UL, 50000000UL);
-
-            cpu.min_wakeup_ns = std::clamp(cpu.min_wakeup_ns, 500000UL, 50000000UL);
-            cpu.max_wakeup_ns = std::clamp(cpu.max_wakeup_ns, 500000UL, 50000000UL);
-
-            cpu.min_migration_cost = std::clamp(cpu.min_migration_cost, 50000UL, 5000000UL);
-            cpu.max_migration_cost = std::clamp(cpu.max_migration_cost, 50000UL, 5000000UL);
-
-            cpu.min_walt_init_pct = std::clamp(cpu.min_walt_init_pct, 1UL, 100UL);
-            cpu.max_walt_init_pct = std::clamp(cpu.max_walt_init_pct, 1UL, 100UL);
-
-            cpu.min_uclamp_min = std::clamp(cpu.min_uclamp_min, 0UL, 1024UL);
-            cpu.max_uclamp_min = std::clamp(cpu.max_uclamp_min, 0UL, 1024UL);
+            safe_clamp(cpu.min_latency_ns, 1000000UL, 100000000UL);
+            safe_clamp(cpu.max_latency_ns, 1000000UL, 100000000UL);
+            safe_clamp(cpu.min_granularity_ns, 500000UL, 50000000UL);
+            safe_clamp(cpu.max_granularity_ns, 500000UL, 50000000UL);
+            safe_clamp(cpu.min_wakeup_ns, 500000UL, 50000000UL);
+            safe_clamp(cpu.max_wakeup_ns, 500000UL, 50000000UL);
+            safe_clamp(cpu.min_migration_cost, 50000UL, 5000000UL);
+            safe_clamp(cpu.max_migration_cost, 50000UL, 5000000UL);
+            safe_clamp(cpu.min_walt_init_pct, 1UL, 100UL);
+            safe_clamp(cpu.max_walt_init_pct, 1UL, 100UL);
+            safe_clamp(cpu.min_uclamp_min, 0UL, 1024UL);
+            safe_clamp(cpu.max_uclamp_min, 0UL, 1024UL);
         }
 
         if (state.has_storage_limits)
         {
             auto& io = state.storage_limits;
 
-            if (io.min_read_ahead > io.max_read_ahead)
-                std::swap(io.min_read_ahead, io.max_read_ahead);
+            auto safe_swap = [](uint64_t& a, uint64_t& b)
+            {
+                if (a != EMPTY_U64 && b != EMPTY_U64 && a > b)
+                    std::swap(a, b);
+            };
 
-            if (io.min_nr_requests > io.max_nr_requests)
-                std::swap(io.min_nr_requests, io.max_nr_requests);
+            safe_swap(io.min_read_ahead, io.max_read_ahead);
+            safe_swap(io.min_nr_requests, io.max_nr_requests);
 
-            io.min_read_ahead = std::clamp(io.min_read_ahead, 16UL, 4096UL);
-            io.max_read_ahead = std::clamp(io.max_read_ahead, 16UL, 4096UL);
+            auto safe_clamp = [](uint64_t& val, uint64_t min_limit, uint64_t max_limit)
+            {
+                if (val != EMPTY_U64)
+                    val = std::clamp(val, min_limit, max_limit);
+            };
 
-            io.min_nr_requests = std::clamp(io.min_nr_requests, 8UL, 1024UL);
-            io.max_nr_requests = std::clamp(io.max_nr_requests, 8UL, 1024UL);
+            safe_clamp(io.min_read_ahead, 16UL, 4096UL);
+            safe_clamp(io.max_read_ahead, 16UL, 4096UL);
+            safe_clamp(io.min_nr_requests, 8UL, 1024UL);
+            safe_clamp(io.max_nr_requests, 8UL, 1024UL);
         }
 
         LOGD("Config: cpu=%d io=%d cleaner=%d tweaks=%d blocker=%d", state.cpu, state.io, state.cleaner, state.tweaks,
