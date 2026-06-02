@@ -21,7 +21,7 @@ namespace qos::config
             uint64_t result = 0;
             auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), result);
 
-            if (ec == std::errc())
+            if (ec == std::errc() && ptr == val.data() + val.size())
             {
                 return result;
             }
