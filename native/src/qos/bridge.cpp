@@ -1,8 +1,11 @@
 #include "qos/bridge.hpp"
 #include "daemon/logger.hpp"
 
+#include <algorithm>
 #include <cerrno>
+#include <csignal>
 #include <cstdio>
+#include <cstring>
 #include <fcntl.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
@@ -47,6 +50,7 @@ extern "C" void notify_service_death(const char* context)
 {
     LOGE("Critical death notification: %s", context ? context : "Unknown Reason");
     LOGE("Requesting graceful shutdown...");
+    ::kill(::getpid(), SIGTERM);
 }
 
 extern "C" int register_psi_trigger(const char* path, int threshold_us, int window_us)
@@ -100,5 +104,21 @@ extern "C" int get_system_property(const char* key, char* value, size_t max_len)
     if (!key || !value || max_len == 0)
         return (errno = EINVAL, -1);
 
-    return __system_property_get(key, value);
+    char temp_buf[PROP_VALUE_MAX];
+
+    int len = __system_property_get(key, temp_buf);
+
+    if (len <= 0)
+    {
+        value[0] = '\0';
+        return 0;
+    }
+
+    size_t copy_len = std::min(static_cast<size_t>(len), max_len - 1);
+
+    std::memcpy(value, temp_buf, copy_len);
+
+    value[copy_len] = '\0';
+
+    return static_cast<int>(copy_len);
 }
