@@ -209,9 +209,9 @@ namespace qos::system
             return;
         }
 
-        LOGW("MCL_ONFAULT failed. Retrying with MCL_CURRENT...");
+        LOGW("MCL_ONFAULT failed. Retrying with MCL_CURRENT | MCL_FUTURE...");
 
-        if (::mlockall(MCL_CURRENT) == 0)
+        if (::mlockall(MCL_CURRENT | MCL_FUTURE) == 0)
         {
             LOGD("RAM Locking Active.");
             return;
