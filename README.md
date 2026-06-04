@@ -28,7 +28,7 @@ QoS is a low-overhead, daemon engineered to enforce Quality of Service across An
 
 2. **Asynchronous Event Engine in `/core`:** Written in Rust. Executes a highly efficient, non-blocking `epoll` multiplexer to dynamically manage CPU scheduling parameters, block I/O queues, and subsystem background services via direct `sysfs` mutations and PSI interrupts.
 
-3. **Management & Telemetry Client in `/app`:** Written in Kotlin using Jetpack Compose. An optional graphical frontend utilizing Clean Architecture. It interfaces with the daemon via privileged root shell execution to provide real-time telemetry and dynamic configuration management.
+3. **Management & Telemetry Client in `/app`:** Written in Kotlin using Jetpack Compose with Clean Architecture (MVVM). It interfaces with the QoS daemon via privileged root shell execution to provide live status monitoring, persistent module management, and advanced tuning for kernel scheduler and storage I/O parameters.
 
 ### System Architecture
 
@@ -205,7 +205,7 @@ W_BLK --> A_PM
 
 * **Static Foundations:** To ensure maximum stability and zero-parsing overhead during the critical execution path, baseline system optimizations are strictly hardcoded into the compiled binary. This specifically encompasses extensive system and property tweaks including VM behavior, TCP/IPv4 network rules, kernel log suppressions, and Dalvik flags, as well as foundational storage and scheduler configurations such as I/O scheduler priority arrays for NVMe/UFS/eMMC/Rotational drives and hardcoded queue flags.
 
-* **Dynamic Tuning:** Initialization parameters including CPU governor bounds, dynamic I/O limits, and subsystem toggles are modular. These can be customized via the `config.ini` initialization file or through the Companion App interface.
+* **Dynamic Tuning:** Initialization parameters including CPU governor bounds, dynamic I/O limits, and subsystem toggles are modular. These can be customized via the `config.ini` initialization file or through the Companion App interface. Any changes to these parameters require a device reboot to take effect.
 
 ---
 
@@ -229,7 +229,7 @@ W_BLK --> A_PM
 
 > **Companion App:** The QoS GUI manager APK is bundled within the module package. During the flashing process, you will be prompted to choose whether or not to install the companion app. The core daemon runs perfectly headless and does not strictly require the client app to function.
 >
-> **Diagnostics:** Execution logs are routed directly to the native Android logging system. They can be audited via the Companion App's Telemetry dashboard or through terminal Logcat by filtering the `QoS` tag using commands like `logcat -s QoS`.
+> **Diagnostics:** Execution logs are routed directly to the native Android logging system. They can be audited through terminal Logcat by filtering the `QoS` tag using commands like `logcat -s QoS`. In release daemon builds, only error logs are emitted, while all other execution logs are suppressed.
 
 ---
 
