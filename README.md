@@ -28,7 +28,7 @@ QoS is a low-overhead, daemon engineered to enforce Quality of Service across An
 
 2. **Asynchronous Event Engine in `/core`:** Written in Rust. Executes a highly efficient, non-blocking `epoll` multiplexer to dynamically manage CPU scheduling parameters, block I/O queues, and subsystem background services via direct `sysfs` mutations and PSI interrupts.
 
-3. **Management & Telemetry Client in `/app`:** Written in Kotlin using Jetpack Compose with Clean Architecture (MVVM). It interfaces with the QoS daemon via privileged root shell execution to provide live status monitoring, persistent module management, and advanced tuning for kernel scheduler and storage I/O parameters.
+3. **Management Client in `/app`:** Written in Kotlin using Jetpack Compose with Clean Architecture (MVVM). It interfaces with the QoS daemon via privileged root shell execution to provide live status monitoring, persistent module management, and advanced tuning for kernel scheduler and storage I/O parameters.
 
 ### System Architecture
 
