@@ -18,37 +18,37 @@
     <string name="status_missing">NOT FOUND</string>
 
     <string name="error_daemon_missing_title">Daemon Not Found</string>
-    <string name="error_daemon_missing_desc">The core system binary file was not found. Make sure the Magisk QoS module is installed and enabled, then restart your device.</string>
+    <string name="error_daemon_missing_desc">The core system binary was not found. Make sure the QoS Magisk module is installed and enabled, then restart your device.</string>
 
-    <string name="module_blocker_title">Blocker Controller</string>
-    <string name="module_blocker_subtitle">Disable heavy background services.</string>
-    <string name="module_blocker_desc">Enforces the disabled state of targeted background components (such as specific GMS analytics and ad services) to reduce unnecessary resource consumption and wakeups.</string>
+    <string name="module_blocker_title">Service Blocker</string>
+    <string name="module_blocker_subtitle">Disables background tracking services.</string>
+    <string name="module_blocker_desc">Disables specific tracking, analytics, and diagnostic services in the background to reduce unnecessary battery and data consumption.</string>
 
-    <string name="module_cleaner_title">Cleaner Controller</string>
-    <string name="module_cleaner_subtitle">Opportunistic cache &amp; stale data cleanup.</string>
-    <string name="module_cleaner_desc">Performs opportunistic background cleanup of cache and stale data based on system load, thermal conditions, and storage pressure. Designed to minimize impact on active applications and foreground tasks.</string>
+    <string name="module_cleaner_title">System Cleaner</string>
+    <string name="module_cleaner_subtitle">Removes cache and obsolete files.</string>
+    <string name="module_cleaner_desc">Removes cache and junk files in the background. It monitors the device temperature and workload to run cleanups only when the system is idle.</string>
 
-    <string name="module_cpu_title">CPU Controller</string>
-    <string name="module_cpu_subtitle">Dynamic CFS scheduler tuning.</string>
-    <string name="module_cpu_desc">Dynamically manages kernel CFS scheduler parameters and UClamp based on system load pressure (PSI) and thermal conditions. Protects the throughput of active tasks while maintaining maximum responsiveness.</string>
+    <string name="module_cpu_title">CPU Control</string>
+    <string name="module_cpu_subtitle">Balances responsiveness and power.</string>
+    <string name="module_cpu_desc">Monitors the workload and temperature to dynamically adjust processor performance. It maintains device responsiveness during active use and conserves power when idle.</string>
 
-    <string name="module_storage_title">Storage Controller</string>
-    <string name="module_storage_subtitle">Block device I/O queue tuning.</string>
-    <string name="module_storage_desc">Tunes block device I/O queues and read-ahead memory dynamically to maximize data throughput and drastically reduce disk access latency during I/O congestion.</string>
+    <string name="module_storage_title">Storage Control</string>
+    <string name="module_storage_subtitle">Manages read/write data queues.</string>
+    <string name="module_storage_desc">Adjusts data queues and read-ahead memory on the internal storage to maintain file access stability, especially during background multitasking.</string>
 
     <string name="module_tweaks_title">System Tweaks</string>
-    <string name="module_tweaks_subtitle">Apply static kernel optimizations.</string>
-    <string name="module_tweaks_desc">Applies a curated set of static kernel configurations, I/O scheduler parameters, and system properties at boot to significantly improve network latency and overall system stability.</string>
+    <string name="module_tweaks_subtitle">Applies boot-time configurations.</string>
+    <string name="module_tweaks_desc">Applies specific system settings every time the device boots up to manage RAM allocation, network connections, and system scheduling.</string>
 
     <string name="error_config_missing_title">Config Not Found</string>
-    <string name="error_config_missing_desc">The config file is missing. Please reinstall the Magisk module to restore configuration.</string>
+    <string name="error_config_missing_desc">The configuration file is missing. Please reinstall the Magisk module to restore it.</string>
 
-    <string name="advanced_cpu_title">Kernel CPU Limits</string>
-    <string name="advanced_storage_title">Storage I/O Limits</string>
+    <string name="advanced_cpu_title">CPU Performance Limits</string>
+    <string name="advanced_storage_title">Storage Performance Limits</string>
 
-    <string name="advanced_cpu_desc">Overrides default CPU kernel limits. Tuning these parameters allows you to manually control the scheduler\'s behavior for latency, wakeup, and task migration.</string>
-    <string name="advanced_storage_desc">Overrides default Storage I/O limits. Adjust read-ahead sizes and request queues manually for specialized disk performance.</string>
-    <string name="advanced_module_disabled">Enable the main module in the Modules screen to use advanced settings.</string>
+    <string name="advanced_cpu_desc">Manually define the minimum and maximum performance boundaries for the processor. Leave these empty to use the system defaults.</string>
+    <string name="advanced_storage_desc">Set the read speeds and data queue capacity on the internal storage. Leave these empty to use the system defaults.</string>
+    <string name="advanced_module_disabled">Enable the main feature in the Modules menu to use advanced settings.</string>
 
     <string name="advanced_label_latency">Latency (ns)</string>
     <string name="advanced_label_granularity">Granularity (ns)</string>
@@ -64,6 +64,6 @@
     <string name="advanced_prefix_max">Max: </string>
 
     <string name="advanced_action_modify">Modify Parameters</string>
-    <string name="advanced_sheet_cpu_title">CPU Limits Modification</string>
-    <string name="advanced_sheet_storage_title">Storage I/O Limits Modification</string>
+    <string name="advanced_sheet_cpu_title">Modify CPU Limits</string>
+    <string name="advanced_sheet_storage_title">Modify Storage Limits</string>
 </resources>
