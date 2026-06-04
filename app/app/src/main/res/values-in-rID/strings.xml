@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">QoS</string>
-    <string name="nav_services">Layanan</string>
+    <string name="nav_daemon">Daemon</string>
     <string name="nav_modules">Modul</string>
     <string name="nav_advanced">Lanjutan</string>
 
-    <string name="services_title">Layanan</string>
+    <string name="daemon_title">Daemon</string>
     <string name="action_stop">HENTIKAN</string>
     <string name="action_reboot">Mulai Ulang Perangkat</string>
 
@@ -16,6 +16,7 @@
     <string name="status_stopped">BERHENTI</string>
     <string name="status_stopping">MENGHENTIKAN...</string>
     <string name="status_missing">TIDAK DITEMUKAN</string>
+    <string name="status_searching">MENCARI...</string>
 
     <string name="error_daemon_missing_title">Daemon Tidak Ditemukan</string>
     <string name="error_daemon_missing_desc">Biner inti sistem tidak ditemukan. Pastikan modul Magisk QoS sudah terpasang dan aktif, lalu mulai ulang perangkat.</string>

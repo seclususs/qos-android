@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">QoS</string>
-    <string name="nav_services">Services</string>
+    <string name="nav_daemon">Daemon</string>
     <string name="nav_modules">Modules</string>
     <string name="nav_advanced">Advanced</string>
 
-    <string name="services_title">Services</string>
+    <string name="daemon_title">Daemon</string>
     <string name="action_stop">Stop</string>
     <string name="action_reboot">Reboot Device</string>
 
@@ -16,6 +16,7 @@
     <string name="status_stopped">STOPPED</string>
     <string name="status_stopping">STOPPING...</string>
     <string name="status_missing">NOT FOUND</string>
+    <string name="status_searching">MENCARI...</string>
 
     <string name="error_daemon_missing_title">Daemon Not Found</string>
     <string name="error_daemon_missing_desc">The core system binary was not found. Make sure the QoS Magisk module is installed and enabled, then restart your device.</string>

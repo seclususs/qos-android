@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 
 fun Modifier.defaultScreenPadding() =
     this.fillMaxSize().statusBarsPadding().padding(horizontal = 24.dp)
-        .padding(top = 2.dp, bottom = 24.dp)
+        .padding(top = 22.dp, bottom = 24.dp)
 
 @Composable
 fun Modifier.iconBackground(

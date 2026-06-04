@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.features.services
+package com.seclususs.qos.ui.features.daemon
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -56,7 +56,7 @@ import com.seclususs.qos.ui.components.modifiers.bouncyClickable
 import com.seclususs.qos.ui.components.modifiers.defaultScreenPadding
 
 @Composable
-fun ServicesScreen(viewModel: ServicesViewModel = hiltViewModel()) {
+fun DaemonScreen(viewModel: DaemonViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
 
@@ -70,7 +70,7 @@ fun ServicesScreen(viewModel: ServicesViewModel = hiltViewModel()) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(id = R.string.services_title),
+                text = stringResource(id = R.string.daemon_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -85,7 +85,7 @@ fun ServicesScreen(viewModel: ServicesViewModel = hiltViewModel()) {
 
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             ReactorCore(status = state.status, onToggle = {
-                if (state.status == DaemonStatus.ACTIVE) viewModel.onEvent(ServicesEvent.OnStopClicked)
+                if (state.status == DaemonStatus.ACTIVE) viewModel.onEvent(DaemonEvent.OnStopClicked)
             })
         }
 
@@ -94,7 +94,7 @@ fun ServicesScreen(viewModel: ServicesViewModel = hiltViewModel()) {
         ) {
             ActionButtonsContainer(
                 showReboot = state.needsReboot || state.status == DaemonStatus.INACTIVE,
-                onReboot = { viewModel.onEvent(ServicesEvent.OnRebootClicked) })
+                onReboot = { viewModel.onEvent(DaemonEvent.OnRebootClicked) })
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -133,7 +133,7 @@ private fun ActionButtonsContainer(showReboot: Boolean, onReboot: () -> Unit) {
 
 @Composable
 private fun ReactorCore(status: DaemonStatus, onToggle: () -> Unit) {
-    val isTransitioning = status == DaemonStatus.STOPPING
+    val isTransitioning = status == DaemonStatus.STOPPING || status == DaemonStatus.SEARCHING
     val isMissing = status == DaemonStatus.MISSING || status == DaemonStatus.INACTIVE
     val isClickable = status == DaemonStatus.ACTIVE
     val showArcsAndShadow = status == DaemonStatus.ACTIVE || isTransitioning
@@ -141,6 +141,7 @@ private fun ReactorCore(status: DaemonStatus, onToggle: () -> Unit) {
         targetValue = when (status) {
             DaemonStatus.ACTIVE -> MaterialTheme.colorScheme.primary
             DaemonStatus.STOPPING -> MaterialTheme.colorScheme.tertiary
+            DaemonStatus.SEARCHING -> MaterialTheme.colorScheme.tertiary
             DaemonStatus.INACTIVE, DaemonStatus.MISSING -> MaterialTheme.colorScheme.error
         }, animationSpec = tween(600), label = "color"
     )
@@ -172,6 +173,7 @@ private fun ReactorCore(status: DaemonStatus, onToggle: () -> Unit) {
             DaemonStatus.INACTIVE -> R.string.status_stopped
             DaemonStatus.STOPPING -> R.string.status_stopping
             DaemonStatus.MISSING -> R.string.status_missing
+            DaemonStatus.SEARCHING -> R.string.status_searching
         }
     ).uppercase()
 

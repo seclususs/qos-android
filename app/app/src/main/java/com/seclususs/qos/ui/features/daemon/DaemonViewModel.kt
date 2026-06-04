@@ -1,4 +1,4 @@
-package com.seclususs.qos.ui.features.services
+package com.seclususs.qos.ui.features.daemon
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,13 +16,13 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class ServicesViewModel @Inject constructor(
+class DaemonViewModel @Inject constructor(
     private val daemonRepository: DaemonRepository,
     private val appPreferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ServicesState())
-    val state: StateFlow<ServicesState> = _state.asStateFlow()
+    private val _state = MutableStateFlow(DaemonState())
+    val state: StateFlow<DaemonState> = _state.asStateFlow()
     private var isTransitioning = false
 
     init {
@@ -30,23 +30,23 @@ class ServicesViewModel @Inject constructor(
             _state.update { it.copy(needsReboot = needs) }
         }.launchIn(viewModelScope)
         _state.collectPolling(
-            scope = viewModelScope, intervalMs = 1000L
+            scope = viewModelScope, intervalMs = 800L
         ) {
             if (!isTransitioning) refreshInternal()
         }
     }
 
-    fun onEvent(event: ServicesEvent) {
+    fun onEvent(event: DaemonEvent) {
         when (event) {
-            is ServicesEvent.OnStopClicked -> handleStopDaemon()
-            is ServicesEvent.OnRebootClicked -> {
+            is DaemonEvent.OnStopClicked -> handleStopDaemon()
+            is DaemonEvent.OnRebootClicked -> {
                 viewModelScope.launch {
                     appPreferencesRepository.setNeedsReboot(false)
                     daemonRepository.rebootDevice()
                 }
             }
 
-            is ServicesEvent.RefreshInfo -> {
+            is DaemonEvent.RefreshInfo -> {
                 if (!isTransitioning) viewModelScope.launch { refreshInternal() }
             }
         }

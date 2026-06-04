@@ -12,11 +12,10 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -25,8 +24,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.seclususs.qos.ui.features.advanced.AdvancedScreen
+import com.seclususs.qos.ui.features.daemon.DaemonScreen
 import com.seclususs.qos.ui.features.modules.ModulesScreen
-import com.seclususs.qos.ui.features.services.ServicesScreen
 
 @Composable
 fun QosApp() {
@@ -35,7 +34,7 @@ fun QosApp() {
     val currentDestination = navBackStackEntry?.destination
 
     val selectedIndex = when {
-        currentDestination?.hasRoute<Services>() == true -> 0
+        currentDestination?.hasRoute<Daemon>() == true -> 0
         currentDestination?.hasRoute<Modules>() == true -> 1
         currentDestination?.hasRoute<Advanced>() == true -> 2
         else -> 0
@@ -54,13 +53,28 @@ fun QosApp() {
             )
         }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            NavBar(selectedIndex = selectedIndex, onItemSelected = { index ->
+    Box(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+    ) {
+        NavHost(
+            navController = navController,
+            startDestination = Daemon,
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = enterAnim,
+            exitTransition = exitAnim,
+            popEnterTransition = enterAnim,
+            popExitTransition = exitAnim
+        ) {
+            composable<Daemon> { DaemonScreen() }
+            composable<Modules> { ModulesScreen() }
+            composable<Advanced> { AdvancedScreen() }
+        }
+        NavBar(
+            selectedIndex = selectedIndex,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            onItemSelected = { index ->
                 val route = when (index) {
-                    0 -> Services; 1 -> Modules; else -> Advanced
+                    0 -> Daemon; 1 -> Modules; else -> Advanced
                 }
                 if (selectedIndex != index) {
                     navController.navigate(route) {
@@ -70,24 +84,5 @@ fun QosApp() {
                     }
                 }
             })
-        }) { innerPadding ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(innerPadding)
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            NavHost(
-                navController = navController,
-                startDestination = Services,
-                modifier = Modifier.fillMaxSize(),
-                enterTransition = enterAnim,
-                exitTransition = exitAnim,
-                popEnterTransition = enterAnim,
-                popExitTransition = exitAnim
-            ) {
-                composable<Services> { ServicesScreen() }
-                composable<Modules> { ModulesScreen() }
-                composable<Advanced> { AdvancedScreen() }
-            }
-        }
     }
 }

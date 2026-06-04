@@ -4,18 +4,18 @@ import androidx.annotation.Keep
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.seclususs.qos.R
 import kotlinx.serialization.Serializable
 
 @Keep
 @Serializable
-object Services
+object Daemon
 
 @Keep
 @Serializable
@@ -30,8 +30,8 @@ enum class TopLevelRoute(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
-    SERVICES(
-        R.string.nav_services, Icons.Filled.Dns, Icons.Outlined.Dns
+    DAEMON(
+        R.string.nav_daemon, Icons.Filled.Layers, Icons.Outlined.Layers
     ),
     MODULES(
         R.string.nav_modules, Icons.Filled.Extension, Icons.Outlined.Extension

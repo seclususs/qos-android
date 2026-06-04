@@ -23,6 +23,7 @@ class DaemonRepositoryImpl @Inject constructor(
     companion object {
         private const val DAEMON_BIN = "/data/adb/modules/sys_qos/system/bin/qos_daemon"
         private const val PID_FILE = "/data/adb/modules/sys_qos/daemon.pid"
+        private val SPACE_REGEX = Regex("\\s+")
     }
 
     override suspend fun checkDaemonExists(): Boolean = withContext(ioDispatcher) {
@@ -54,7 +55,7 @@ class DaemonRepositoryImpl @Inject constructor(
 
         if (out.size < 4) return@withContext DaemonInfo(pid = pid)
         try {
-            val stat = out[2].substringAfter(") ").trim().split(Regex("\\s+"))
+            val stat = out[2].substringAfter(") ").trim().split(SPACE_REGEX)
             val uptimeSec = out[3].substringBefore(" ").toDoubleOrNull() ?: 0.0
             val startTimeTicks = stat.getOrNull(19)?.toDoubleOrNull() ?: 0.0
             val procSec = uptimeSec - (startTimeTicks / 100.0)
