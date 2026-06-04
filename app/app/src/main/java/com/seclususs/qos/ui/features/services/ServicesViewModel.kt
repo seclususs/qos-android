@@ -3,108 +3,91 @@ package com.seclususs.qos.ui.features.services
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.core.utils.collectPolling
-import com.seclususs.qos.domain.usecase.DaemonUseCase
+import com.seclususs.qos.domain.repository.DaemonRepository
+import com.seclususs.qos.domain.repository.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class ServicesViewModel @Inject constructor(
-    private val daemonUseCase: DaemonUseCase
+    private val daemonRepository: DaemonRepository,
+    private val appPreferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ServicesState())
     val state: StateFlow<ServicesState> = _state.asStateFlow()
-
     private var isTransitioning = false
-    private var pollingJob: Job? = null
 
     init {
+        appPreferencesRepository.needsRebootFlow.onEach { needs ->
+            _state.update { it.copy(needsReboot = needs) }
+        }.launchIn(viewModelScope)
         _state.collectPolling(
-            scope = viewModelScope,
-            onStart = { startPolling() },
-            onStop = { stopPolling() })
-    }
-
-    private fun startPolling() {
-        if (pollingJob?.isActive == true) return
-        pollingJob = viewModelScope.launch {
-            refreshInternal()
-            while (true) {
-                delay(1000)
-                if (!isTransitioning) {
-                    refreshInternal()
-                }
-            }
+            scope = viewModelScope, intervalMs = 1000L
+        ) {
+            if (!isTransitioning) refreshInternal()
         }
-    }
-
-    private fun stopPolling() {
-        pollingJob?.cancel()
-        pollingJob = null
     }
 
     fun onEvent(event: ServicesEvent) {
         when (event) {
-            is ServicesEvent.OnStartClicked -> handleToggle(DaemonStatus.STARTING) { daemonUseCase.start() }
-            is ServicesEvent.OnStopClicked -> handleToggle(DaemonStatus.STOPPING) { daemonUseCase.stop() }
-            is ServicesEvent.OnRestartClicked -> handleToggle(DaemonStatus.RESTARTING) { daemonUseCase.restart() }
-            is ServicesEvent.RefreshMetrics -> if (!isTransitioning) viewModelScope.launch { refreshInternal() }
+            is ServicesEvent.OnStopClicked -> handleStopDaemon()
+            is ServicesEvent.OnRebootClicked -> {
+                viewModelScope.launch {
+                    appPreferencesRepository.setNeedsReboot(false)
+                    daemonRepository.rebootDevice()
+                }
+            }
+
+            is ServicesEvent.RefreshInfo -> {
+                if (!isTransitioning) viewModelScope.launch { refreshInternal() }
+            }
         }
     }
 
-    private fun handleToggle(targetStatus: DaemonStatus, action: suspend () -> Unit) {
+    private fun handleStopDaemon() {
         if (isTransitioning) return
         viewModelScope.launch {
             isTransitioning = true
-            _state.update { it.copy(status = targetStatus) }
-            action()
-            delay(1200)
+            _state.update { it.copy(status = DaemonStatus.STOPPING) }
+            daemonRepository.stopDaemon()
             refreshInternal()
             isTransitioning = false
         }
     }
 
     private suspend fun refreshInternal() {
-        val exists = daemonUseCase.checkExists()
+        val exists = daemonRepository.checkDaemonExists()
         if (!exists) {
             resetStateTo(DaemonStatus.MISSING)
             return
         }
 
-        val pid = daemonUseCase.getPid()
-        if (pid == "-") {
+        val pid = daemonRepository.getDaemonPid()?.takeIf { it != "-" } ?: run {
             resetStateTo(DaemonStatus.INACTIVE)
             return
         }
 
-        val metrics = daemonUseCase.getMetrics(pid)
-        val cpuRaw = metrics.cpuUsage.removeSuffix("%").trim().toFloatOrNull() ?: 0f
-        val cpuProg = (cpuRaw / 100f).coerceIn(0f, 1f)
-        val percentStr = metrics.ramUsage.substringAfter("(", "").substringBefore("%", "").trim()
-        val ramProg = (percentStr.toFloatOrNull() ?: 0f) / 100f
-        val displayRam = metrics.ramUsage.substringBefore("(").trim()
-
+        val info = daemonRepository.getDaemonInfo(pid)
         _state.update {
             it.copy(
-                status = DaemonStatus.ACTIVE,
-                pid = pid,
-                cpuUsage = metrics.cpuUsage,
-                ramUsage = displayRam,
-                uptime = metrics.uptime,
-                cpuProgress = cpuProg,
-                ramProgress = ramProg
+                status = DaemonStatus.ACTIVE, pid = info.pid, uptime = info.uptime
             )
         }
     }
 
     private fun resetStateTo(status: DaemonStatus) {
-        _state.update { ServicesState(status = status) }
+        _state.update {
+            it.copy(
+                status = status, pid = "-", uptime = "-"
+            )
+        }
     }
 }

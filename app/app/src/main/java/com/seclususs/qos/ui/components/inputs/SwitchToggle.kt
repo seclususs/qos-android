@@ -33,10 +33,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.seclususs.qos.ui.components.modifiers.bouncyClickable
 
 @Composable
-fun AnimatedSwitch(
-    isChecked: Boolean, isProcessing: Boolean
+fun SwitchToggle(
+    isChecked: Boolean, isProcessing: Boolean, onToggle: () -> Unit
 ) {
     val switchWidth = 52.dp
     val switchHeight = 30.dp
@@ -57,7 +58,9 @@ fun AnimatedSwitch(
 
     Box(
         modifier = Modifier.width(switchWidth).height(switchHeight).clip(CircleShape)
-            .background(trackColor), contentAlignment = Alignment.CenterStart
+            .background(trackColor)
+            .bouncyClickable(enabled = !isProcessing, onClick = onToggle, onLongClick = {}),
+        contentAlignment = Alignment.CenterStart
     ) {
         Box(
             modifier = Modifier.offset { IntOffset(thumbOffset.roundToPx(), 0) }.size(thumbSize)

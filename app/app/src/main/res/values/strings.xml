@@ -6,18 +6,17 @@
     <string name="nav_advanced">Advanced</string>
 
     <string name="services_title">Services</string>
-    <string name="action_start">Start</string>
     <string name="action_stop">Stop</string>
-    <string name="action_restart">Restart</string>
-    <string name="metric_cpu">CPU Usage</string>
-    <string name="metric_ram">RAM Usage</string>
+    <string name="action_reboot">Reboot Device</string>
+
     <string name="metric_uptime">Uptime</string>
-    <string name="metric_uptime_days">%1$s Days, %2$s</string>
+    <string name="metric_uptime_days">%1$s Days,\n%2$s</string>
     <string name="metric_pid">PID</string>
-    <string name="status_starting">STARTING...</string>
+
+    <string name="status_stopped">STOPPED</string>
     <string name="status_stopping">STOPPING...</string>
-    <string name="status_restarting">RESTARTING...</string>
     <string name="status_missing">NOT FOUND</string>
+
     <string name="error_daemon_missing_title">Daemon Not Found</string>
     <string name="error_daemon_missing_desc">The core system binary file was not found. Make sure the Magisk QoS module is installed and enabled, then restart your device.</string>
 
@@ -47,6 +46,10 @@
     <string name="advanced_cpu_title">Kernel CPU Limits</string>
     <string name="advanced_storage_title">Storage I/O Limits</string>
 
+    <string name="advanced_cpu_desc">Overrides default CPU kernel limits. Tuning these parameters allows you to manually control the scheduler\'s behavior for latency, wakeup, and task migration.</string>
+    <string name="advanced_storage_desc">Overrides default Storage I/O limits. Adjust read-ahead sizes and request queues manually for specialized disk performance.</string>
+    <string name="advanced_module_disabled">Enable the main module in the Modules screen to use advanced settings.</string>
+
     <string name="advanced_label_latency">Latency (ns)</string>
     <string name="advanced_label_granularity">Granularity (ns)</string>
     <string name="advanced_label_wakeup">Wakeup (ns)</string>
@@ -59,7 +62,6 @@
 
     <string name="advanced_prefix_min">Min: </string>
     <string name="advanced_prefix_max">Max: </string>
-    <string name="action_apply_config">Apply Configuration</string>
 
     <string name="advanced_action_modify">Modify Parameters</string>
     <string name="advanced_sheet_cpu_title">CPU Limits Modification</string>

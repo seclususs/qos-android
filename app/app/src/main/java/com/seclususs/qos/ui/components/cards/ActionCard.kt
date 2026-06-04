@@ -26,7 +26,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.seclususs.qos.ui.components.modifiers.bouncyClickable
 
 @Composable
 fun ActionCard(
@@ -39,9 +38,8 @@ fun ActionCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    QosCard(
-        modifier = modifier.fillMaxWidth().height(64.dp).bouncyClickable(onClick = onClick)
-    ) {
+    BaseCard(
+        modifier = modifier.fillMaxWidth().height(64.dp), onClick = onClick, onLongClick = {}) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically

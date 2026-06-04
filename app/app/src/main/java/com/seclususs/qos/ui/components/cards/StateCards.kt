@@ -24,7 +24,7 @@ import com.seclususs.qos.R
 fun ErrorStateCard(
     titleResId: Int, descResId: Int, icon: ImageVector
 ) {
-    QosCard(modifier = Modifier.fillMaxWidth()) {
+    BaseCard(modifier = Modifier.fillMaxWidth(), onClick = {}, onLongClick = {}) {
         Column(
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

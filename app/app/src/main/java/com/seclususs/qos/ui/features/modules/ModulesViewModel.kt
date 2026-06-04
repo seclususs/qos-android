@@ -3,11 +3,10 @@ package com.seclususs.qos.ui.features.modules
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.core.utils.collectPolling
-import com.seclususs.qos.domain.usecase.ConfigUseCase
-import com.seclususs.qos.domain.usecase.DaemonUseCase
+import com.seclususs.qos.domain.repository.ConfigRepository
+import com.seclususs.qos.domain.repository.DaemonRepository
+import com.seclususs.qos.domain.repository.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,36 +16,21 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ModulesViewModel @Inject constructor(
-    private val configUseCase: ConfigUseCase, private val daemonUseCase: DaemonUseCase
+    private val configRepository: ConfigRepository,
+    private val daemonRepository: DaemonRepository,
+    private val appPreferencesRepository: PreferencesRepository
 ) : ViewModel() {
-
     private val _state = MutableStateFlow(ModulesState())
     val state: StateFlow<ModulesState> = _state.asStateFlow()
-    private var pollingJob: Job? = null
 
     init {
         _state.collectPolling(
-            scope = viewModelScope,
-            onStart = { startPolling() },
-            onStop = { stopPolling() })
-    }
-
-    private fun startPolling() {
-        if (pollingJob?.isActive == true) return
-        pollingJob = viewModelScope.launch {
-            refreshInternal()
-            while (true) {
-                delay(1500)
-                if (_state.value.processingModules.isEmpty()) {
-                    refreshInternal()
-                }
+            scope = viewModelScope, intervalMs = 1500L
+        ) {
+            if (_state.value.processingModules.isEmpty()) {
+                refreshInternal()
             }
         }
-    }
-
-    private fun stopPolling() {
-        pollingJob?.cancel()
-        pollingJob = null
     }
 
     fun onEvent(event: ModulesEvent) {
@@ -54,7 +38,6 @@ class ModulesViewModel @Inject constructor(
             is ModulesEvent.ToggleModule -> {
                 viewModelScope.launch {
                     _state.update { it.copy(processingModules = it.processingModules + event.type) }
-
                     val currentConfig = _state.value.config
                     val newConfig = when (event.type) {
                         ModuleType.BLOCKER -> currentConfig.copy(blockerEnabled = event.enabled)
@@ -63,34 +46,35 @@ class ModulesViewModel @Inject constructor(
                         ModuleType.STORAGE -> currentConfig.copy(storageEnabled = event.enabled)
                         ModuleType.TWEAKS -> currentConfig.copy(tweaksEnabled = event.enabled)
                     }
-
-                    val success = configUseCase.update(newConfig)
+                    val success = configRepository.updateConfig(newConfig)
                     if (success) {
-                        daemonUseCase.restart()
+                        appPreferencesRepository.setNeedsReboot(true)
                         _state.update { it.copy(config = newConfig) }
                     }
                     _state.update { it.copy(processingModules = it.processingModules - event.type) }
                 }
             }
 
-            is ModulesEvent.ShowModuleDetails -> _state.update { it.copy(selectedModuleForDetails = event.type) }
-            is ModulesEvent.DismissModuleDetails -> _state.update { it.copy(selectedModuleForDetails = null) }
+            is ModulesEvent.ToggleModuleExpansion -> _state.update {
+                it.copy(expandedModule = if (it.expandedModule == event.type) null else event.type)
+            }
+
             is ModulesEvent.RefreshStatus -> viewModelScope.launch { refreshInternal() }
         }
     }
 
     private suspend fun refreshInternal() {
-        val daemonExists = daemonUseCase.checkExists()
+        val daemonExists = daemonRepository.checkDaemonExists()
         if (!daemonExists) {
             _state.update { it.copy(isDaemonMissing = true, isConfigMissing = false) }
             return
         }
-        val configExists = configUseCase.checkExists()
+        val configExists = configRepository.checkConfigExists()
         if (!configExists) {
             _state.update { it.copy(isDaemonMissing = false, isConfigMissing = true) }
             return
         }
-        val config = configUseCase.get()
+        val config = configRepository.getConfig()
         _state.update {
             it.copy(isDaemonMissing = false, isConfigMissing = false, config = config)
         }

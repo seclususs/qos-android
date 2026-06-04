@@ -2,10 +2,12 @@ package com.seclususs.qos.ui.features.advanced
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.seclususs.qos.core.utils.collectPolling
+import com.seclususs.qos.domain.model.ConfigKeys
 import com.seclususs.qos.domain.model.QosConfig
+import com.seclususs.qos.domain.repository.ConfigRepository
+import com.seclususs.qos.domain.repository.DaemonRepository
 import com.seclususs.qos.domain.repository.PreferencesRepository
-import com.seclususs.qos.domain.usecase.ConfigUseCase
-import com.seclususs.qos.domain.usecase.DaemonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,34 +18,39 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+private fun Map<String, String>.getLong(key: String, default: Long? = null): Long? =
+    this[key]?.toLongOrNull() ?: default
+
+private fun Map<String, String>.getUpdatedLong(key: String, current: Long?): Long? =
+    if (this.containsKey(key)) this[key]?.toLongOrNull() else current
+
 @HiltViewModel
 class AdvancedViewModel @Inject constructor(
-    private val configUseCase: ConfigUseCase,
-    private val daemonUseCase: DaemonUseCase,
+    private val configRepository: ConfigRepository,
+    private val daemonRepository: DaemonRepository,
     private val appPreferencesRepository: PreferencesRepository
 ) : ViewModel() {
-
     private val _state = MutableStateFlow(AdvancedState())
     val state: StateFlow<AdvancedState> = _state.asStateFlow()
 
     init {
         appPreferencesRepository.cachedCpuLimitsFlow.onEach { encoded ->
             _state.update {
-                it.copy(
-                    cachedCpuValues = encoded.decodeToMap()
-                )
+                it.copy(cachedCpuValues = encoded.decodeToMap())
             }
         }.launchIn(viewModelScope)
-
         appPreferencesRepository.cachedStorageLimitsFlow.onEach { encoded ->
             _state.update {
-                it.copy(
-                    cachedStorageValues = encoded.decodeToMap()
-                )
+                it.copy(cachedStorageValues = encoded.decodeToMap())
             }
         }.launchIn(viewModelScope)
-
-        viewModelScope.launch { refreshInternal() }
+        _state.collectPolling(
+            scope = viewModelScope, intervalMs = 1500L
+        ) {
+            if (!_state.value.isProcessingCpuToggle && !_state.value.isProcessingStorageToggle) {
+                refreshInternal()
+            }
+        }
     }
 
     fun onEvent(event: AdvancedEvent) {
@@ -51,16 +58,15 @@ class AdvancedViewModel @Inject constructor(
             is AdvancedEvent.ToggleCpu -> handleToggleCpu(event.enabled)
             is AdvancedEvent.ToggleStorage -> handleToggleStorage(event.enabled)
             is AdvancedEvent.ShowSheet -> _state.update { it.copy(activeSheet = event.type) }
-            is AdvancedEvent.HideSheet -> _state.update {
-                it.copy(
-                    activeSheet = null,
-                    cpuApplyState = ApplyState.IDLE,
-                    storageApplyState = ApplyState.IDLE
-                )
+            is AdvancedEvent.SaveAndHideSheet -> {
+                if (event.cpuValues != null) {
+                    applyCpuConfig(event.cpuValues)
+                } else if (event.storageValues != null) {
+                    applyStorageConfig(event.storageValues)
+                }
+                _state.update { it.copy(activeSheet = null) }
             }
 
-            is AdvancedEvent.ApplyCpuConfig -> applyCpuConfig(event.cpuValues)
-            is AdvancedEvent.ApplyStorageConfig -> applyStorageConfig(event.storageValues)
             is AdvancedEvent.RefreshStatus -> viewModelScope.launch { refreshInternal() }
         }
     }
@@ -68,41 +74,46 @@ class AdvancedViewModel @Inject constructor(
     private fun handleToggleCpu(enabled: Boolean) {
         viewModelScope.launch {
             _state.update { it.copy(isProcessingCpuToggle = true) }
-
-            val currentConfig = _state.value.config
+            val currentConfig = configRepository.getConfig()
             val newConfig: QosConfig
 
             if (enabled) {
                 val cached = _state.value.cachedCpuValues
                 val default = QosConfig()
                 newConfig = currentConfig.copy(
-                    minLatencyNs = getCachedOrDef(cached, "latency_min", default.minLatencyNs),
-                    maxLatencyNs = getCachedOrDef(cached, "latency_max", default.maxLatencyNs),
-                    minGranularityNs = getCachedOrDef(
-                        cached, "granularity_min", default.minGranularityNs
+                    minLatencyNs = cached.getLong(ConfigKeys.CPU_LATENCY_MIN, default.minLatencyNs),
+                    maxLatencyNs = cached.getLong(ConfigKeys.CPU_LATENCY_MAX, default.maxLatencyNs),
+                    minGranularityNs = cached.getLong(
+                        ConfigKeys.CPU_GRANULARITY_MIN, default.minGranularityNs
                     ),
-                    maxGranularityNs = getCachedOrDef(
-                        cached, "granularity_max", default.maxGranularityNs
+                    maxGranularityNs = cached.getLong(
+                        ConfigKeys.CPU_GRANULARITY_MAX, default.maxGranularityNs
                     ),
-                    minWakeupNs = getCachedOrDef(cached, "wakeup_min", default.minWakeupNs),
-                    maxWakeupNs = getCachedOrDef(cached, "wakeup_max", default.maxWakeupNs),
-                    minMigrationCost = getCachedOrDef(
-                        cached, "migration_cost_min", default.minMigrationCost
+                    minWakeupNs = cached.getLong(ConfigKeys.CPU_WAKEUP_MIN, default.minWakeupNs),
+                    maxWakeupNs = cached.getLong(ConfigKeys.CPU_WAKEUP_MAX, default.maxWakeupNs),
+                    minMigrationCost = cached.getLong(
+                        ConfigKeys.CPU_MIGRATION_COST_MIN, default.minMigrationCost
                     ),
-                    maxMigrationCost = getCachedOrDef(
-                        cached, "migration_cost_max", default.maxMigrationCost
+                    maxMigrationCost = cached.getLong(
+                        ConfigKeys.CPU_MIGRATION_COST_MAX, default.maxMigrationCost
                     ),
-                    minWaltInitPct = getCachedOrDef(
-                        cached, "walt_init_min", default.minWaltInitPct
+                    minWaltInitPct = cached.getLong(
+                        ConfigKeys.CPU_WALT_INIT_MIN, default.minWaltInitPct
                     ),
-                    maxWaltInitPct = getCachedOrDef(
-                        cached, "walt_init_max", default.maxWaltInitPct
+                    maxWaltInitPct = cached.getLong(
+                        ConfigKeys.CPU_WALT_INIT_MAX, default.maxWaltInitPct
                     ),
-                    minUclampMin = getCachedOrDef(cached, "uclamp_min_min", default.minUclampMin),
-                    maxUclampMin = getCachedOrDef(cached, "uclamp_min_max", default.maxUclampMin)
+                    minUclampMin = cached.getLong(
+                        ConfigKeys.CPU_UCLAMP_MIN_MIN, default.minUclampMin
+                    ),
+                    maxUclampMin = cached.getLong(
+                        ConfigKeys.CPU_UCLAMP_MIN_MAX, default.maxUclampMin
+                    )
                 )
             } else {
-                appPreferencesRepository.setCachedCpuLimits(_state.value.cpuValues.encodeToString())
+                appPreferencesRepository.setCachedCpuLimits(
+                    currentConfig.toCpuMap().encodeToString()
+                )
                 newConfig = currentConfig.copy(
                     minLatencyNs = null,
                     maxLatencyNs = null,
@@ -119,41 +130,43 @@ class AdvancedViewModel @Inject constructor(
                 )
             }
 
-            saveAndRestartDaemon(newConfig) { success ->
-                if (success) {
-                    _state.update {
-                        it.copy(
-                            config = newConfig,
-                            cpuLimitsEnabled = enabled,
-                            cpuValues = newConfig.toCpuMap()
-                        )
-                    }
+            val success = configRepository.updateConfig(newConfig)
+            if (success) {
+                appPreferencesRepository.setNeedsReboot(true)
+                _state.update {
+                    it.copy(
+                        config = newConfig, cpuLimitsEnabled = enabled
+                    )
                 }
-                _state.update { it.copy(isProcessingCpuToggle = false) }
             }
+            _state.update { it.copy(isProcessingCpuToggle = false) }
         }
     }
 
     private fun handleToggleStorage(enabled: Boolean) {
         viewModelScope.launch {
             _state.update { it.copy(isProcessingStorageToggle = true) }
-
-            val currentConfig = _state.value.config
+            val currentConfig = configRepository.getConfig()
             val newConfig: QosConfig
 
             if (enabled) {
                 val cached = _state.value.cachedStorageValues
                 val default = QosConfig()
                 newConfig = currentConfig.copy(
-                    minReadAhead = getCachedOrDef(cached, "read_ahead_min", default.minReadAhead),
-                    maxReadAhead = getCachedOrDef(cached, "read_ahead_max", default.maxReadAhead),
-                    minNrRequests = getCachedOrDef(
-                        cached, "nr_requests_min", default.minNrRequests
-                    ),
-                    maxNrRequests = getCachedOrDef(cached, "nr_requests_max", default.maxNrRequests)
+                    minReadAhead = cached.getLong(
+                        ConfigKeys.STORAGE_READ_AHEAD_MIN, default.minReadAhead
+                    ), maxReadAhead = cached.getLong(
+                        ConfigKeys.STORAGE_READ_AHEAD_MAX, default.maxReadAhead
+                    ), minNrRequests = cached.getLong(
+                        ConfigKeys.STORAGE_NR_REQUESTS_MIN, default.minNrRequests
+                    ), maxNrRequests = cached.getLong(
+                        ConfigKeys.STORAGE_NR_REQUESTS_MAX, default.maxNrRequests
+                    )
                 )
             } else {
-                appPreferencesRepository.setCachedStorageLimits(_state.value.storageValues.encodeToString())
+                appPreferencesRepository.setCachedStorageLimits(
+                    currentConfig.toStorageMap().encodeToString()
+                )
                 newConfig = currentConfig.copy(
                     minReadAhead = null,
                     maxReadAhead = null,
@@ -162,106 +175,96 @@ class AdvancedViewModel @Inject constructor(
                 )
             }
 
-            saveAndRestartDaemon(newConfig) { success ->
-                if (success) {
-                    _state.update {
-                        it.copy(
-                            config = newConfig,
-                            storageLimitsEnabled = enabled,
-                            storageValues = newConfig.toStorageMap()
-                        )
-                    }
+            val success = configRepository.updateConfig(newConfig)
+            if (success) {
+                appPreferencesRepository.setNeedsReboot(true)
+                _state.update {
+                    it.copy(
+                        config = newConfig, storageLimitsEnabled = enabled
+                    )
                 }
-                _state.update { it.copy(isProcessingStorageToggle = false) }
             }
+            _state.update { it.copy(isProcessingStorageToggle = false) }
         }
     }
 
     private fun applyCpuConfig(cpuValues: Map<String, String>) {
-        _state.update { it.copy(cpuApplyState = ApplyState.LOADING) }
-        viewModelScope.launch { appPreferencesRepository.setCachedCpuLimits(cpuValues.encodeToString()) }
-
-        val newConfig = _state.value.config.copy(
-            minLatencyNs = cpuValues["latency_min"]?.toLongOrNull(),
-            maxLatencyNs = cpuValues["latency_max"]?.toLongOrNull(),
-            minGranularityNs = cpuValues["granularity_min"]?.toLongOrNull(),
-            maxGranularityNs = cpuValues["granularity_max"]?.toLongOrNull(),
-            minWakeupNs = cpuValues["wakeup_min"]?.toLongOrNull(),
-            maxWakeupNs = cpuValues["wakeup_max"]?.toLongOrNull(),
-            minMigrationCost = cpuValues["migration_cost_min"]?.toLongOrNull(),
-            maxMigrationCost = cpuValues["migration_cost_max"]?.toLongOrNull(),
-            minWaltInitPct = cpuValues["walt_init_min"]?.toLongOrNull(),
-            maxWaltInitPct = cpuValues["walt_init_max"]?.toLongOrNull(),
-            minUclampMin = cpuValues["uclamp_min_min"]?.toLongOrNull(),
-            maxUclampMin = cpuValues["uclamp_min_max"]?.toLongOrNull()
-        )
-
-        applyConfigUpdates(newConfig, onSuccess = {
-            _state.update {
-                it.copy(
-                    config = newConfig, cpuValues = cpuValues, cpuApplyState = ApplyState.SUCCESS
-                )
-            }
-        }, onError = { _state.update { it.copy(cpuApplyState = ApplyState.IDLE) } })
-    }
-
-    private fun applyStorageConfig(storageValues: Map<String, String>) {
-        _state.update { it.copy(storageApplyState = ApplyState.LOADING) }
-        viewModelScope.launch { appPreferencesRepository.setCachedStorageLimits(storageValues.encodeToString()) }
-
-        val newConfig = _state.value.config.copy(
-            minReadAhead = storageValues["read_ahead_min"]?.toLongOrNull(),
-            maxReadAhead = storageValues["read_ahead_max"]?.toLongOrNull(),
-            minNrRequests = storageValues["nr_requests_min"]?.toLongOrNull(),
-            maxNrRequests = storageValues["nr_requests_max"]?.toLongOrNull()
-        )
-
-        applyConfigUpdates(newConfig, onSuccess = {
-            _state.update {
-                it.copy(
-                    config = newConfig,
-                    storageValues = storageValues,
-                    storageApplyState = ApplyState.SUCCESS
-                )
-            }
-        }, onError = { _state.update { it.copy(storageApplyState = ApplyState.IDLE) } })
-    }
-
-    private fun applyConfigUpdates(
-        newConfig: QosConfig, onSuccess: () -> Unit, onError: () -> Unit
-    ) {
+        if (cpuValues.isEmpty()) return
         viewModelScope.launch {
-            val success = configUseCase.update(newConfig)
+            val currentConfig = configRepository.getConfig()
+            val newConfig = currentConfig.copy(
+                minLatencyNs = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_LATENCY_MIN, currentConfig.minLatencyNs
+                ), maxLatencyNs = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_LATENCY_MAX, currentConfig.maxLatencyNs
+                ), minGranularityNs = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_GRANULARITY_MIN, currentConfig.minGranularityNs
+                ), maxGranularityNs = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_GRANULARITY_MAX, currentConfig.maxGranularityNs
+                ), minWakeupNs = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_WAKEUP_MIN, currentConfig.minWakeupNs
+                ), maxWakeupNs = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_WAKEUP_MAX, currentConfig.maxWakeupNs
+                ), minMigrationCost = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_MIGRATION_COST_MIN, currentConfig.minMigrationCost
+                ), maxMigrationCost = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_MIGRATION_COST_MAX, currentConfig.maxMigrationCost
+                ), minWaltInitPct = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_WALT_INIT_MIN, currentConfig.minWaltInitPct
+                ), maxWaltInitPct = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_WALT_INIT_MAX, currentConfig.maxWaltInitPct
+                ), minUclampMin = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_UCLAMP_MIN_MIN, currentConfig.minUclampMin
+                ), maxUclampMin = cpuValues.getUpdatedLong(
+                    ConfigKeys.CPU_UCLAMP_MIN_MAX, currentConfig.maxUclampMin
+                )
+            )
+            appPreferencesRepository.setCachedCpuLimits(newConfig.toCpuMap().encodeToString())
+            val success = configRepository.updateConfig(newConfig)
             if (success) {
-                daemonUseCase.restart()
-                onSuccess()
-            } else {
-                onError()
+                appPreferencesRepository.setNeedsReboot(true)
+                _state.update { it.copy(config = newConfig) }
             }
         }
     }
 
-    private suspend fun saveAndRestartDaemon(newConfig: QosConfig, onComplete: (Boolean) -> Unit) {
-        val success = configUseCase.update(newConfig)
-        if (success) {
-            daemonUseCase.restart()
-            onComplete(true)
-        } else {
-            onComplete(false)
+    private fun applyStorageConfig(storageValues: Map<String, String>) {
+        if (storageValues.isEmpty()) return
+        viewModelScope.launch {
+            val currentConfig = configRepository.getConfig()
+            val newConfig = currentConfig.copy(
+                minReadAhead = storageValues.getUpdatedLong(
+                    ConfigKeys.STORAGE_READ_AHEAD_MIN, currentConfig.minReadAhead
+                ), maxReadAhead = storageValues.getUpdatedLong(
+                    ConfigKeys.STORAGE_READ_AHEAD_MAX, currentConfig.maxReadAhead
+                ), minNrRequests = storageValues.getUpdatedLong(
+                    ConfigKeys.STORAGE_NR_REQUESTS_MIN, currentConfig.minNrRequests
+                ), maxNrRequests = storageValues.getUpdatedLong(
+                    ConfigKeys.STORAGE_NR_REQUESTS_MAX, currentConfig.maxNrRequests
+                )
+            )
+            appPreferencesRepository.setCachedStorageLimits(
+                newConfig.toStorageMap().encodeToString()
+            )
+            val success = configRepository.updateConfig(newConfig)
+            if (success) {
+                appPreferencesRepository.setNeedsReboot(true)
+                _state.update { it.copy(config = newConfig) }
+            }
         }
     }
 
     private suspend fun refreshInternal() {
-        if (!daemonUseCase.checkExists()) {
+        if (!daemonRepository.checkDaemonExists()) {
             _state.update { it.copy(isDaemonMissing = true, isConfigMissing = false) }
             return
         }
-        if (!configUseCase.checkExists()) {
+        if (!configRepository.checkConfigExists()) {
             _state.update { it.copy(isDaemonMissing = false, isConfigMissing = true) }
             return
         }
 
-        val config = configUseCase.get()
+        val config = configRepository.getConfig()
         val isCpuEnabled =
             config.minLatencyNs != null || config.maxLatencyNs != null || config.minGranularityNs != null || config.maxGranularityNs != null || config.minWakeupNs != null || config.maxWakeupNs != null || config.minMigrationCost != null || config.maxMigrationCost != null || config.minWaltInitPct != null || config.maxWaltInitPct != null || config.minUclampMin != null || config.maxUclampMin != null
         val isStorageEnabled =
@@ -273,16 +276,9 @@ class AdvancedViewModel @Inject constructor(
                 isConfigMissing = false,
                 config = config,
                 cpuLimitsEnabled = isCpuEnabled,
-                storageLimitsEnabled = isStorageEnabled,
-                cpuValues = config.toCpuMap(),
-                storageValues = config.toStorageMap()
+                storageLimitsEnabled = isStorageEnabled
             )
         }
-    }
-
-    private fun getCachedOrDef(cached: Map<String, String>, key: String, def: Long?): Long? {
-        val str = cached[key]
-        return if (str != null) str.toLongOrNull() else def
     }
 
     private fun Map<String, String>.encodeToString(): String =
@@ -297,24 +293,24 @@ class AdvancedViewModel @Inject constructor(
     }
 
     private fun QosConfig.toCpuMap(): Map<String, String> = mapOf(
-        "latency_min" to (minLatencyNs?.toString() ?: ""),
-        "latency_max" to (maxLatencyNs?.toString() ?: ""),
-        "granularity_min" to (minGranularityNs?.toString() ?: ""),
-        "granularity_max" to (maxGranularityNs?.toString() ?: ""),
-        "wakeup_min" to (minWakeupNs?.toString() ?: ""),
-        "wakeup_max" to (maxWakeupNs?.toString() ?: ""),
-        "migration_cost_min" to (minMigrationCost?.toString() ?: ""),
-        "migration_cost_max" to (maxMigrationCost?.toString() ?: ""),
-        "walt_init_min" to (minWaltInitPct?.toString() ?: ""),
-        "walt_init_max" to (maxWaltInitPct?.toString() ?: ""),
-        "uclamp_min_min" to (minUclampMin?.toString() ?: ""),
-        "uclamp_min_max" to (maxUclampMin?.toString() ?: "")
+        ConfigKeys.CPU_LATENCY_MIN to (minLatencyNs?.toString() ?: ""),
+        ConfigKeys.CPU_LATENCY_MAX to (maxLatencyNs?.toString() ?: ""),
+        ConfigKeys.CPU_GRANULARITY_MIN to (minGranularityNs?.toString() ?: ""),
+        ConfigKeys.CPU_GRANULARITY_MAX to (maxGranularityNs?.toString() ?: ""),
+        ConfigKeys.CPU_WAKEUP_MIN to (minWakeupNs?.toString() ?: ""),
+        ConfigKeys.CPU_WAKEUP_MAX to (maxWakeupNs?.toString() ?: ""),
+        ConfigKeys.CPU_MIGRATION_COST_MIN to (minMigrationCost?.toString() ?: ""),
+        ConfigKeys.CPU_MIGRATION_COST_MAX to (maxMigrationCost?.toString() ?: ""),
+        ConfigKeys.CPU_WALT_INIT_MIN to (minWaltInitPct?.toString() ?: ""),
+        ConfigKeys.CPU_WALT_INIT_MAX to (maxWaltInitPct?.toString() ?: ""),
+        ConfigKeys.CPU_UCLAMP_MIN_MIN to (minUclampMin?.toString() ?: ""),
+        ConfigKeys.CPU_UCLAMP_MIN_MAX to (maxUclampMin?.toString() ?: "")
     )
 
     private fun QosConfig.toStorageMap(): Map<String, String> = mapOf(
-        "read_ahead_min" to (minReadAhead?.toString() ?: ""),
-        "read_ahead_max" to (maxReadAhead?.toString() ?: ""),
-        "nr_requests_min" to (minNrRequests?.toString() ?: ""),
-        "nr_requests_max" to (maxNrRequests?.toString() ?: "")
+        ConfigKeys.STORAGE_READ_AHEAD_MIN to (minReadAhead?.toString() ?: ""),
+        ConfigKeys.STORAGE_READ_AHEAD_MAX to (maxReadAhead?.toString() ?: ""),
+        ConfigKeys.STORAGE_NR_REQUESTS_MIN to (minNrRequests?.toString() ?: ""),
+        ConfigKeys.STORAGE_NR_REQUESTS_MAX to (maxNrRequests?.toString() ?: "")
     )
 }

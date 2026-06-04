@@ -4,12 +4,12 @@ import android.content.Context
 import com.seclususs.qos.R
 import com.seclususs.qos.core.di.IoDispatcher
 import com.seclususs.qos.data.local.root.RootShell
-import com.seclususs.qos.domain.model.DaemonMetrics
+import com.seclususs.qos.domain.model.DaemonInfo
 import com.seclususs.qos.domain.repository.DaemonRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,8 +23,6 @@ class DaemonRepositoryImpl @Inject constructor(
     companion object {
         private const val DAEMON_BIN = "/data/adb/modules/sys_qos/system/bin/qos_daemon"
         private const val PID_FILE = "/data/adb/modules/sys_qos/daemon.pid"
-        private const val SERVICE_SCRIPT = "/data/adb/modules/sys_qos/service.sh"
-        private var hasAttemptedAutoFix = false
     }
 
     override suspend fun checkDaemonExists(): Boolean = withContext(ioDispatcher) {
@@ -44,16 +42,51 @@ class DaemonRepositoryImpl @Inject constructor(
         return@withContext rootShell.execute(script)?.trim()
     }
 
-    override suspend fun startDaemon(): Boolean = withContext(ioDispatcher) {
-        rootShell.executeSilently("sh $SERVICE_SCRIPT")
-        return@withContext true
+    override suspend fun getDaemonInfo(pid: String): DaemonInfo = withContext(ioDispatcher) {
+        if (pid.isBlank() || pid == "-") return@withContext DaemonInfo()
+
+        val cmd =
+            """cat /proc/$pid/status 2>/dev/null; echo '=='; cat /proc/meminfo 2>/dev/null; echo '=='; cat /proc/$pid/stat 2>/dev/null; echo '=='; cat /proc/uptime 2>/dev/null"""
+        val out =
+            rootShell.execute(cmd)?.split("==")?.map { it.trim() } ?: return@withContext DaemonInfo(
+                pid = pid
+            )
+
+        if (out.size < 4) return@withContext DaemonInfo(pid = pid)
+        try {
+            val stat = out[2].substringAfter(") ").trim().split(Regex("\\s+"))
+            val uptimeSec = out[3].substringBefore(" ").toDoubleOrNull() ?: 0.0
+            val startTimeTicks = stat.getOrNull(19)?.toDoubleOrNull() ?: 0.0
+            val procSec = uptimeSec - (startTimeTicks / 100.0)
+
+            if (procSec > 0) {
+                val days = (procSec / 86400).toInt()
+                val hours = ((procSec % 86400) / 3600).toInt()
+                val minutes = ((procSec % 3600) / 60).toInt()
+                val secs = (procSec % 60).toInt()
+                val timeString = String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, secs)
+                val uptime = if (days > 0) {
+                    context.getString(R.string.metric_uptime_days, days.toString(), timeString)
+                } else {
+                    timeString
+                }
+                return@withContext DaemonInfo(uptime, pid)
+            }
+        } catch (_: Exception) {
+        }
+
+        return@withContext DaemonInfo(pid = pid)
     }
 
     override suspend fun stopDaemon(): Boolean = withContext(ioDispatcher) {
         val script = """
             if [ -f $PID_FILE ]; then
+                kill -15 `cat $PID_FILE` 2>/dev/null
+                sleep 0.2
                 kill -9 `cat $PID_FILE` 2>/dev/null
             fi
+            killall -15 qos_daemon 2>/dev/null
+            sleep 0.1
             killall -9 qos_daemon 2>/dev/null
             rm -f $PID_FILE
         """.trimIndent()
@@ -61,58 +94,8 @@ class DaemonRepositoryImpl @Inject constructor(
         return@withContext true
     }
 
-    override suspend fun restartDaemon(): Boolean = withContext(ioDispatcher) {
-        stopDaemon()
-        delay(500)
-        startDaemon()
+    override suspend fun rebootDevice(): Boolean = withContext(ioDispatcher) {
+        rootShell.executeSilently("su -c svc power reboot || reboot")
         return@withContext true
-    }
-
-    override suspend fun getDaemonMetrics(pid: String): DaemonMetrics = withContext(ioDispatcher) {
-        if (pid.isBlank() || pid == "-") return@withContext DaemonMetrics()
-
-        val result = rootShell.execute("ps -o %cpu,rss,%mem,etime -p $pid | tail -n 1")
-        if (result.isNullOrBlank() || result.contains("ELAPSED") || result.contains("%CPU")) {
-            if (!hasAttemptedAutoFix) {
-                hasAttemptedAutoFix = true
-                restartDaemon()
-            }
-            return@withContext DaemonMetrics()
-        }
-
-        hasAttemptedAutoFix = false
-
-        try {
-            val parts = result.trim().split(Regex("\\s+"))
-            if (parts.size >= 4) {
-                val cpu = "${parts[0]}%"
-                val ramKb = parts[1].toLongOrNull() ?: 0L
-                val ramMb = ramKb / 1024
-                val ramPercent = parts[2]
-                val ram = "${ramMb}MB ($ramPercent%)"
-                val rawUptime = parts[3]
-                return@withContext DaemonMetrics(
-                    cpuUsage = cpu, ramUsage = ram, uptime = formatUptime(rawUptime)
-                )
-            }
-        } catch (_: Exception) {
-        }
-
-        return@withContext DaemonMetrics()
-    }
-
-    private fun formatUptime(raw: String): String {
-        return try {
-            if (raw.contains("-")) {
-                val parts = raw.split("-")
-                context.getString(R.string.metric_uptime_days, parts[0], parts[1])
-            } else if (raw.count { it == ':' } == 1) {
-                "00:$raw"
-            } else {
-                raw
-            }
-        } catch (_: Exception) {
-            raw
-        }
     }
 }

@@ -11,12 +11,11 @@ data class ModulesState(
     val isConfigMissing: Boolean = false,
     val config: QosConfig = QosConfig(),
     val processingModules: Set<ModuleType> = emptySet(),
-    val selectedModuleForDetails: ModuleType? = null
+    val expandedModule: ModuleType? = null
 )
 
 sealed interface ModulesEvent {
     data class ToggleModule(val type: ModuleType, val enabled: Boolean) : ModulesEvent
-    data class ShowModuleDetails(val type: ModuleType) : ModulesEvent
-    data object DismissModuleDetails : ModulesEvent
+    data class ToggleModuleExpansion(val type: ModuleType) : ModulesEvent
     data object RefreshStatus : ModulesEvent
 }

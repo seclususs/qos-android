@@ -6,18 +6,17 @@
     <string name="nav_advanced">Lanjutan</string>
 
     <string name="services_title">Layanan</string>
-    <string name="action_start">Mulai</string>
-    <string name="action_stop">Berhenti</string>
-    <string name="action_restart">Mulai Ulang</string>
-    <string name="metric_cpu">Penggunaan CPU</string>
-    <string name="metric_ram">Penggunaan RAM</string>
+    <string name="action_stop">HENTIKAN</string>
+    <string name="action_reboot">Reboot Perangkat</string>
+
     <string name="metric_uptime">Waktu Aktif</string>
-    <string name="metric_uptime_days">%1$s Hari, %2$s</string>
+    <string name="metric_uptime_days">%1$s Hari,\n%2$s</string>
     <string name="metric_pid">PID</string>
-    <string name="status_starting">MEMULAI...</string>
+
+    <string name="status_stopped">BERHENTI</string>
     <string name="status_stopping">MENGHENTIKAN...</string>
-    <string name="status_restarting">MEMULAI ULANG...</string>
     <string name="status_missing">TIDAK DITEMUKAN</string>
+
     <string name="error_daemon_missing_title">Daemon Tidak Ditemukan</string>
     <string name="error_daemon_missing_desc">Biner sistem inti tidak ditemukan. Pastikan modul Magisk QoS sudah terpasang dan aktif, lalu mulai ulang perangkat Anda.</string>
 
@@ -47,6 +46,10 @@
     <string name="advanced_cpu_title">Batas Kernel CPU</string>
     <string name="advanced_storage_title">Batas Storage I/O</string>
 
+    <string name="advanced_cpu_desc">Mengesampingkan batas kernel CPU bawaan. Menyetel parameter ini memungkinkan Anda mengontrol perilaku penjadwal untuk latensi, wakeup, dan migrasi tugas secara manual.</string>
+    <string name="advanced_storage_desc">Mengesampingkan batas I/O Penyimpanan bawaan. Sesuaikan ukuran read-ahead dan antrean permintaan secara manual untuk performa disk khusus.</string>
+    <string name="advanced_module_disabled">Aktifkan modul utama di layar Modul untuk menggunakan pengaturan lanjutan.</string>
+
     <string name="advanced_label_latency">Latency (ns)</string>
     <string name="advanced_label_granularity">Granularity (ns)</string>
     <string name="advanced_label_wakeup">Wakeup (ns)</string>
@@ -59,7 +62,6 @@
 
     <string name="advanced_prefix_min">Min: </string>
     <string name="advanced_prefix_max">Max: </string>
-    <string name="action_apply_config">Terapkan Konfigurasi</string>
 
     <string name="advanced_action_modify">Modifikasi Parameter</string>
     <string name="advanced_sheet_cpu_title">Modifikasi Batas CPU</string>

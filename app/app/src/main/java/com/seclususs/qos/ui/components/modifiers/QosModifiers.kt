@@ -3,8 +3,9 @@ package com.seclususs.qos.ui.components.modifiers
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,21 +33,28 @@ fun Modifier.iconBackground(
     size: Dp = 48.dp, color: Color = MaterialTheme.colorScheme.primary
 ): Modifier = this.size(size).clip(CircleShape).background(color.copy(alpha = 0.15f))
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Modifier.bouncyClickable(
-    enabled: Boolean = true, pressedScale: Float = 0.96f, onClick: () -> Unit
+    enabled: Boolean = true,
+    pressedScale: Float = 0.94f,
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null
 ): Modifier {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled) pressedScale else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "bouncyClickable"
+        targetValue = if (isPressed && enabled) pressedScale else 1f, animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow
+        ), label = "bouncyClickable"
     )
-    return this.graphicsLayer { scaleX = scale; scaleY = scale }.clickable(
-        interactionSource = interactionSource,
-        indication = null,
-        enabled = enabled,
-        onClick = onClick
-    )
+    val clickableModifier = if (onClick != null || onLongClick != null) {
+        Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            enabled = enabled,
+            onClick = onClick ?: {},
+            onLongClick = onLongClick ?: {})
+    } else Modifier
+    return this.graphicsLayer { scaleX = scale; scaleY = scale }.then(clickableModifier)
 }

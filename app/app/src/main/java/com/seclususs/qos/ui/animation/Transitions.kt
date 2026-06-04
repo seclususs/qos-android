@@ -21,11 +21,3 @@ fun <S> defaultSharedTransition(): AnimatedContentTransitionScope<S>.() -> Conte
         spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
     }
 }
-
-fun <S> scaleFadeTransition(): AnimatedContentTransitionScope<S>.() -> ContentTransform = {
-    (fadeIn(animationSpec = tween(200)) + scaleIn(
-        initialScale = 0.8f, animationSpec = tween(200)
-    )) togetherWith (fadeOut(animationSpec = tween(200)) + scaleOut(
-        targetScale = 0.8f, animationSpec = tween(200)
-    ))
-}
