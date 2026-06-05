@@ -9,14 +9,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.seclususs.qos.domain.model.SystemStatus
 import com.seclususs.qos.ui.components.modifiers.defaultScreenPadding
 
 @Composable
 fun QosScreen(
-    title: String,
-    isDaemonMissing: Boolean = false,
-    isConfigMissing: Boolean = false,
-    content: @Composable () -> Unit
+    title: String, systemStatus: SystemStatus = SystemStatus.OK, content: @Composable () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -28,9 +26,9 @@ fun QosScreen(
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            StateAwareContent(
-                isDaemonMissing = isDaemonMissing, isConfigMissing = isConfigMissing
-            ) { content() }
+            StateAwareContent(systemStatus = systemStatus) {
+                content()
+            }
         }
     }
 }

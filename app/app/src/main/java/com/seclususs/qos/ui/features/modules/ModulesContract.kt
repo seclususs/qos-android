@@ -1,14 +1,16 @@
 package com.seclususs.qos.ui.features.modules
 
+import androidx.compose.runtime.Stable
 import com.seclususs.qos.domain.model.QosConfig
+import com.seclususs.qos.domain.model.SystemStatus
 
 enum class ModuleType {
     BLOCKER, CLEANER, CPU, STORAGE, TWEAKS
 }
 
+@Stable
 data class ModulesState(
-    val isDaemonMissing: Boolean = false,
-    val isConfigMissing: Boolean = false,
+    val systemStatus: SystemStatus = SystemStatus.OK,
     val config: QosConfig = QosConfig(),
     val processingModules: Set<ModuleType> = emptySet(),
     val expandedModule: ModuleType? = null

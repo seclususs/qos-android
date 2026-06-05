@@ -21,10 +21,18 @@ class AppStore @Inject constructor(
     private val dataStore = context.dataStore
 
     companion object {
+        val ADVANCED_CPU_ENABLED_KEY = booleanPreferencesKey("advanced_cpu_enabled")
+        val ADVANCED_STORAGE_ENABLED_KEY = booleanPreferencesKey("advanced_storage_enabled")
         val CACHED_CPU_LIMITS_KEY = stringPreferencesKey("cached_cpu_limits")
         val CACHED_STORAGE_LIMITS_KEY = stringPreferencesKey("cached_storage_limits")
         val NEEDS_REBOOT_KEY = booleanPreferencesKey("needs_reboot")
     }
+
+    override val advancedCpuEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { it[ADVANCED_CPU_ENABLED_KEY] ?: false }
+
+    override val advancedStorageEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { it[ADVANCED_STORAGE_ENABLED_KEY] ?: false }
 
     override val cachedCpuLimitsFlow: Flow<String> =
         dataStore.data.map { it[CACHED_CPU_LIMITS_KEY] ?: "" }
@@ -34,6 +42,14 @@ class AppStore @Inject constructor(
 
     override val needsRebootFlow: Flow<Boolean> =
         dataStore.data.map { it[NEEDS_REBOOT_KEY] ?: false }
+
+    override suspend fun setAdvancedCpuEnabled(enabled: Boolean) {
+        dataStore.edit { it[ADVANCED_CPU_ENABLED_KEY] = enabled }
+    }
+
+    override suspend fun setAdvancedStorageEnabled(enabled: Boolean) {
+        dataStore.edit { it[ADVANCED_STORAGE_ENABLED_KEY] = enabled }
+    }
 
     override suspend fun setCachedCpuLimits(data: String) {
         dataStore.edit { it[CACHED_CPU_LIMITS_KEY] = data }

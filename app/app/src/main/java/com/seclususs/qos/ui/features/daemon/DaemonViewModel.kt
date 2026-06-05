@@ -6,6 +6,7 @@ import com.seclususs.qos.core.utils.collectPolling
 import com.seclususs.qos.domain.repository.DaemonRepository
 import com.seclususs.qos.domain.repository.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 @HiltViewModel
 class DaemonViewModel @Inject constructor(
@@ -57,6 +59,7 @@ class DaemonViewModel @Inject constructor(
         viewModelScope.launch {
             isTransitioning = true
             _state.update { it.copy(status = DaemonStatus.STOPPING) }
+            delay(3000.milliseconds)
             daemonRepository.stopDaemon()
             refreshInternal()
             isTransitioning = false
@@ -69,12 +72,10 @@ class DaemonViewModel @Inject constructor(
             resetStateTo(DaemonStatus.MISSING)
             return
         }
-
         val pid = daemonRepository.getDaemonPid()?.takeIf { it != "-" } ?: run {
             resetStateTo(DaemonStatus.INACTIVE)
             return
         }
-
         val info = daemonRepository.getDaemonInfo(pid)
         _state.update {
             it.copy(

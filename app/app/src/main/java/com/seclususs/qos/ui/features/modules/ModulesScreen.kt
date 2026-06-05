@@ -33,13 +33,37 @@ private data class ModuleItem(
     val type: ModuleType, val titleRes: Int, val subtitleRes: Int, val icon: ImageVector
 )
 
+private val modulesList = listOf(
+    ModuleItem(
+        ModuleType.BLOCKER,
+        R.string.module_blocker_title,
+        R.string.module_blocker_subtitle,
+        Icons.Filled.Security
+    ), ModuleItem(
+        ModuleType.CLEANER,
+        R.string.module_cleaner_title,
+        R.string.module_cleaner_subtitle,
+        Icons.Filled.CleaningServices
+    ), ModuleItem(
+        ModuleType.CPU, R.string.module_cpu_title, R.string.module_cpu_subtitle, Icons.Filled.Memory
+    ), ModuleItem(
+        ModuleType.STORAGE,
+        R.string.module_storage_title,
+        R.string.module_storage_subtitle,
+        Icons.Filled.Storage
+    ), ModuleItem(
+        ModuleType.TWEAKS,
+        R.string.module_tweaks_title,
+        R.string.module_tweaks_subtitle,
+        Icons.Filled.Build
+    )
+)
+
 @Composable
 fun ModulesScreen(viewModel: ModulesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     QosScreen(
-        title = stringResource(id = R.string.nav_modules),
-        isDaemonMissing = state.isDaemonMissing,
-        isConfigMissing = state.isConfigMissing
+        title = stringResource(id = R.string.nav_modules), systemStatus = state.systemStatus
     ) {
         ModulesContent(state, onEvent = viewModel::onEvent)
     }
@@ -47,35 +71,6 @@ fun ModulesScreen(viewModel: ModulesViewModel = hiltViewModel()) {
 
 @Composable
 private fun ModulesContent(state: ModulesState, onEvent: (ModulesEvent) -> Unit) {
-    val modulesList = listOf(
-        ModuleItem(
-            ModuleType.BLOCKER,
-            R.string.module_blocker_title,
-            R.string.module_blocker_subtitle,
-            Icons.Filled.Security
-        ), ModuleItem(
-            ModuleType.CLEANER,
-            R.string.module_cleaner_title,
-            R.string.module_cleaner_subtitle,
-            Icons.Filled.CleaningServices
-        ), ModuleItem(
-            ModuleType.CPU,
-            R.string.module_cpu_title,
-            R.string.module_cpu_subtitle,
-            Icons.Filled.Memory
-        ), ModuleItem(
-            ModuleType.STORAGE,
-            R.string.module_storage_title,
-            R.string.module_storage_subtitle,
-            Icons.Filled.Storage
-        ), ModuleItem(
-            ModuleType.TWEAKS,
-            R.string.module_tweaks_title,
-            R.string.module_tweaks_subtitle,
-            Icons.Filled.Build
-        )
-    )
-
     Column(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)

@@ -44,17 +44,17 @@ class DaemonRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getDaemonInfo(pid: String): DaemonInfo = withContext(ioDispatcher) {
-        if (pid.isBlank() || pid == "-") return@withContext DaemonInfo()
+        if (pid.isBlank() || pid == "-") return@withContext DaemonInfo(pid = pid)
 
         val cmd =
-            """cat /proc/$pid/status 2>/dev/null; echo '=='; cat /proc/meminfo 2>/dev/null; echo '=='; cat /proc/$pid/stat 2>/dev/null; echo '=='; cat /proc/uptime 2>/dev/null"""
+            "cat /proc/$pid/status 2>/dev/null; echo '=='; cat /proc/meminfo 2>/dev/null; echo '=='; cat /proc/$pid/stat 2>/dev/null; echo '=='; cat /proc/uptime 2>/dev/null"
         val out =
             rootShell.execute(cmd)?.split("==")?.map { it.trim() } ?: return@withContext DaemonInfo(
                 pid = pid
             )
 
         if (out.size < 4) return@withContext DaemonInfo(pid = pid)
-        try {
+        return@withContext runCatching {
             val stat = out[2].substringAfter(") ").trim().split(SPACE_REGEX)
             val uptimeSec = out[3].substringBefore(" ").toDoubleOrNull() ?: 0.0
             val startTimeTicks = stat.getOrNull(19)?.toDoubleOrNull() ?: 0.0
@@ -71,12 +71,11 @@ class DaemonRepositoryImpl @Inject constructor(
                 } else {
                     timeString
                 }
-                return@withContext DaemonInfo(uptime, pid)
+                DaemonInfo(uptime, pid)
+            } else {
+                DaemonInfo(pid = pid)
             }
-        } catch (_: Exception) {
-        }
-
-        return@withContext DaemonInfo(pid = pid)
+        }.getOrDefault(DaemonInfo(pid = pid))
     }
 
     override suspend fun stopDaemon(): Boolean = withContext(ioDispatcher) {

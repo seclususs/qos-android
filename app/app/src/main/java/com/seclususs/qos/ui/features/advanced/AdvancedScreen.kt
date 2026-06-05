@@ -42,6 +42,62 @@ private data class ConfigItem(
     val minKey: String, val maxKey: String, val titleRes: Int, val minPh: String, val maxPh: String
 )
 
+private val cpuConfigItems = listOf(
+    ConfigItem(
+        ConfigKeys.CPU_LATENCY_MIN,
+        ConfigKeys.CPU_LATENCY_MAX,
+        R.string.advanced_label_latency,
+        "8000000",
+        "20000000"
+    ), ConfigItem(
+        ConfigKeys.CPU_GRANULARITY_MIN,
+        ConfigKeys.CPU_GRANULARITY_MAX,
+        R.string.advanced_label_granularity,
+        "2500000",
+        "6500000"
+    ), ConfigItem(
+        ConfigKeys.CPU_WAKEUP_MIN,
+        ConfigKeys.CPU_WAKEUP_MAX,
+        R.string.advanced_label_wakeup,
+        "1500000",
+        "6500000"
+    ), ConfigItem(
+        ConfigKeys.CPU_MIGRATION_COST_MIN,
+        ConfigKeys.CPU_MIGRATION_COST_MAX,
+        R.string.advanced_label_migration_cost,
+        "200000",
+        "600000"
+    ), ConfigItem(
+        ConfigKeys.CPU_WALT_INIT_MIN,
+        ConfigKeys.CPU_WALT_INIT_MAX,
+        R.string.advanced_label_walt_init,
+        "10",
+        "40"
+    ), ConfigItem(
+        ConfigKeys.CPU_UCLAMP_MIN_MIN,
+        ConfigKeys.CPU_UCLAMP_MIN_MAX,
+        R.string.advanced_label_uclamp_min,
+        "0",
+        "384"
+    )
+)
+
+private val storageConfigItems = listOf(
+    ConfigItem(
+        ConfigKeys.STORAGE_READ_AHEAD_MIN,
+        ConfigKeys.STORAGE_READ_AHEAD_MAX,
+        R.string.advanced_label_read_ahead,
+        "128",
+        "1024"
+    ), ConfigItem(
+        ConfigKeys.STORAGE_NR_REQUESTS_MIN,
+        ConfigKeys.STORAGE_NR_REQUESTS_MAX,
+        R.string.advanced_label_nr_requests,
+        "64",
+        "256"
+    )
+)
+
 @Composable
 fun AdvancedScreen(viewModel: AdvancedViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -51,9 +107,7 @@ fun AdvancedScreen(viewModel: AdvancedViewModel = hiltViewModel()) {
     var storageExpanded by remember { mutableStateOf(false) }
 
     QosScreen(
-        title = stringResource(id = R.string.nav_advanced),
-        isDaemonMissing = state.isDaemonMissing,
-        isConfigMissing = state.isConfigMissing
+        title = stringResource(id = R.string.nav_advanced), systemStatus = state.systemStatus
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
@@ -97,65 +151,12 @@ private fun AdvancedBottomSheet(state: AdvancedState, onEvent: (AdvancedEvent) -
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val titleRes =
         if (state.activeSheet == AdvancedSheetType.CPU) R.string.advanced_sheet_cpu_title else R.string.advanced_sheet_storage_title
-
-    val localCpu = remember(state.activeSheet) { mutableStateMapOf<String, String>() }
-    val localStorage = remember(state.activeSheet) { mutableStateMapOf<String, String>() }
-
-    val cpuConfigItems = listOf(
-        ConfigItem(
-            ConfigKeys.CPU_LATENCY_MIN,
-            ConfigKeys.CPU_LATENCY_MAX,
-            R.string.advanced_label_latency,
-            "8000000",
-            "20000000"
-        ), ConfigItem(
-            ConfigKeys.CPU_GRANULARITY_MIN,
-            ConfigKeys.CPU_GRANULARITY_MAX,
-            R.string.advanced_label_granularity,
-            "2500000",
-            "6500000"
-        ), ConfigItem(
-            ConfigKeys.CPU_WAKEUP_MIN,
-            ConfigKeys.CPU_WAKEUP_MAX,
-            R.string.advanced_label_wakeup,
-            "1500000",
-            "6500000"
-        ), ConfigItem(
-            ConfigKeys.CPU_MIGRATION_COST_MIN,
-            ConfigKeys.CPU_MIGRATION_COST_MAX,
-            R.string.advanced_label_migration_cost,
-            "200000",
-            "600000"
-        ), ConfigItem(
-            ConfigKeys.CPU_WALT_INIT_MIN,
-            ConfigKeys.CPU_WALT_INIT_MAX,
-            R.string.advanced_label_walt_init,
-            "10",
-            "40"
-        ), ConfigItem(
-            ConfigKeys.CPU_UCLAMP_MIN_MIN,
-            ConfigKeys.CPU_UCLAMP_MIN_MAX,
-            R.string.advanced_label_uclamp_min,
-            "0",
-            "384"
-        )
-    )
-    val storageConfigItems = listOf(
-        ConfigItem(
-            ConfigKeys.STORAGE_READ_AHEAD_MIN,
-            ConfigKeys.STORAGE_READ_AHEAD_MAX,
-            R.string.advanced_label_read_ahead,
-            "128",
-            "1024"
-        ), ConfigItem(
-            ConfigKeys.STORAGE_NR_REQUESTS_MIN,
-            ConfigKeys.STORAGE_NR_REQUESTS_MAX,
-            R.string.advanced_label_nr_requests,
-            "64",
-            "256"
-        )
-    )
-
+    val localCpu = remember(state.activeSheet, state.cachedCpuValues) {
+        mutableStateMapOf<String, String>().apply { putAll(state.cachedCpuValues) }
+    }
+    val localStorage = remember(state.activeSheet, state.cachedStorageValues) {
+        mutableStateMapOf<String, String>().apply { putAll(state.cachedStorageValues) }
+    }
     BottomSheet(
         title = stringResource(id = titleRes), onDismissRequest = {
             if (state.activeSheet == AdvancedSheetType.CPU) {

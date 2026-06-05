@@ -18,8 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -100,7 +100,7 @@ private fun RowScope.CustomNavBarItem(
         ), contentAlignment = Alignment.Center
     ) {
         Box(
-            modifier = Modifier.width(pillWidth).height(48.dp).background(
+            modifier = Modifier.requiredWidth(pillWidth).height(48.dp).background(
                 color = pillColor, shape = RoundedCornerShape(percent = 50)
             )
         )

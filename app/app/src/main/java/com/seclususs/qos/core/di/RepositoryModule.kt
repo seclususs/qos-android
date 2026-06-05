@@ -31,7 +31,7 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
-    abstract fun bindAppPreferencesRepository(
+    abstract fun bindPreferencesRepository(
         appStore: AppStore
     ): PreferencesRepository
 }

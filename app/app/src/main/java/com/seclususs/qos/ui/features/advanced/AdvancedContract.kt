@@ -1,12 +1,14 @@
 package com.seclususs.qos.ui.features.advanced
 
+import androidx.compose.runtime.Stable
 import com.seclususs.qos.domain.model.QosConfig
+import com.seclususs.qos.domain.model.SystemStatus
 
 enum class AdvancedSheetType { CPU, STORAGE }
 
+@Stable
 data class AdvancedState(
-    val isDaemonMissing: Boolean = false,
-    val isConfigMissing: Boolean = false,
+    val systemStatus: SystemStatus = SystemStatus.OK,
     val config: QosConfig = QosConfig(),
     val cpuLimitsEnabled: Boolean = false,
     val storageLimitsEnabled: Boolean = false,

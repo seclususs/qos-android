@@ -3,10 +3,13 @@ package com.seclususs.qos.ui.features.modules
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.seclususs.qos.core.utils.collectPolling
+import com.seclususs.qos.domain.model.SystemStatus
 import com.seclususs.qos.domain.repository.ConfigRepository
 import com.seclususs.qos.domain.repository.DaemonRepository
 import com.seclususs.qos.domain.repository.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,11 +50,13 @@ class ModulesViewModel @Inject constructor(
                         ModuleType.TWEAKS -> currentConfig.copy(tweaksEnabled = event.enabled)
                     }
                     val success = configRepository.updateConfig(newConfig)
-                    if (success) {
-                        appPreferencesRepository.setNeedsReboot(true)
-                        _state.update { it.copy(config = newConfig) }
+                    if (success) appPreferencesRepository.setNeedsReboot(true)
+                    _state.update {
+                        it.copy(
+                            config = if (success) newConfig else it.config,
+                            processingModules = it.processingModules - event.type
+                        )
                     }
-                    _state.update { it.copy(processingModules = it.processingModules - event.type) }
                 }
             }
 
@@ -64,19 +69,21 @@ class ModulesViewModel @Inject constructor(
     }
 
     private suspend fun refreshInternal() {
-        val daemonExists = daemonRepository.checkDaemonExists()
-        if (!daemonExists) {
-            _state.update { it.copy(isDaemonMissing = true, isConfigMissing = false) }
-            return
-        }
-        val configExists = configRepository.checkConfigExists()
-        if (!configExists) {
-            _state.update { it.copy(isDaemonMissing = false, isConfigMissing = true) }
-            return
-        }
-        val config = configRepository.getConfig()
-        _state.update {
-            it.copy(isDaemonMissing = false, isConfigMissing = false, config = config)
+        coroutineScope {
+            val daemonExistsDeferred = async { daemonRepository.checkDaemonExists() }
+            val configExistsDeferred = async { configRepository.checkConfigExists() }
+            if (!daemonExistsDeferred.await()) {
+                _state.update { it.copy(systemStatus = SystemStatus.DAEMON_MISSING) }
+                return@coroutineScope
+            }
+            if (!configExistsDeferred.await()) {
+                _state.update { it.copy(systemStatus = SystemStatus.CONFIG_MISSING) }
+                return@coroutineScope
+            }
+            val config = configRepository.getConfig()
+            _state.update {
+                it.copy(systemStatus = SystemStatus.OK, config = config)
+            }
         }
     }
 }
