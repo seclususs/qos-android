@@ -1,6 +1,44 @@
 # Changelog
 
-## v2.7 (Latest)
+## v2.8 (Latest)
+
+- **Resource Management:** Eliminated a critical file descriptor leak within the FFI boundary during daemon initialization. By taking absolute ownership of the raw `signal_fd` at the very start of the `start_services` execution block, the Rust backend is now guaranteed to safely drop and close the kernel file descriptor even if execution aborts early, strictly honoring the C++ memory contract.
+
+- **FFI Boundary:** Eliminated heap allocations during kernel and Android C++ bridging calls by replacing dynamic `CString` generation with a strict stack-allocated byte array wrapper. This achieves a pure zero-allocation FFI layer when manipulating system properties and PSI triggers.
+
+- **Error Handling:** Transformed the `QosError` enum into a zero-allocation structure by replacing heavy `String` types with `Cow<'static, str>`. This allows static error literals to be passed strictly by reference without triggering heap allocations, while gracefully falling back to dynamic memory only for heavily formatted runtime strings.
+
+- **Traversal Engine:** Resolved pseudo-filesystem dependencies and SELinux compatibility issues by removing the `/proc/self/fd/` string reconstruction method. The engine now transitions to native POSIX file-descriptor relative operations via `rustix::fs::openat` and `rustix::fs::unlinkat`, guaranteeing immunity against TOCTOU symlink hijacking without triggering strict Android `procfs` access denials.
+
+- **Memory Footprint:** Achieved true zero-allocation directory traversal in the `CleanerWorker` fast-loop. The engine abandons Rust's high-level `std::fs::read_dir`—which allocates heavy `PathBuf` strings on the heap for every file—in favor of `rustix::fs::Dir::read_from`. It now parses raw kernel C-string pointers directly into byte slices, completely eliminating heap fragmentation during massive cache sweeps.
+
+- **Syscall Optimization:** Drastically reduced kernel-space overhead during file inspection by replacing the heavy `entry.metadata()` attribute, which invokes a full `stat` syscall, with pinpoint `rustix::fs::statx` queries. By explicitly masking only the exact attributes needed like `MTIME`, `SIZE`, or `TYPE`, the OS avoids gathering and populating unused file metadata, yielding massive I/O throughput gains on deep directory trees.
+
+- **Micro-Optimization:** Eliminated expensive `SystemTime::duration_since` object instantiations and temporal calculations inside the tight cleaner loop. The engine shifts the temporal baseline to a single, pre-calculated Unix timestamp prior to execution, replacing heavy time-struct logic with lightning-fast integer arithmetic. This shaves off millions of redundant CPU cycles during aggressive storage evictions.
+
+- **String Processing:** Optimized target extension matching by abandoning `ffi::OsStr` to byte array conversions. File names are now evaluated directly at the kernel boundary as raw C-string bytes, providing instantaneous constant-time matching for safe and trash extensions without intermediate allocations.
+
+- **Hardware Clamping:** Bulletproofed the C++ configuration loader by introducing absolute hardware boundaries via `std::clamp` and `std::swap`. The engine now automatically intercepts and corrects inverted parameters to prevent Rust backend panics, while forcefully clamping extreme CPU and I/O inputs to safe kernel thresholds. This guarantees total OS stability against destructive user configurations without sacrificing safe tuning freedom.
+
+- **Config Hardening:** Eliminated silent parsing failures in the configuration loader by enforcing strict boundary validation within the zero-allocation `std::from_chars` engine. The C++ parser now explicitly rejects malformed inputs containing trailing garbage or unit mismatches by validating the exact memory pointer termination, completely shielding the Rust backend from receiving silently truncated and potentially destructive kernel values.
+
+- **Sentinel Handling:** Hardened the Rust FFI translation layer by implementing a strict sentinel value resolution mechanism. This ensures that empty or explicitly defaulted C++ configuration properties are seamlessly mapped to the internal safe defaults within the Rust backend, preventing invalid maximum-integer logic errors during limits initialization.
+
+- **Config Resolution:** Eliminated parsing blind spots within the C++ configuration loader by expanding the evaluation matrix to dynamically capture all limit permutations. The engine now flawlessly intercepts isolated partial overrides—such as modifying only UClamp or read-ahead values—without demanding a monolithic block, guaranteeing that granular user constraints are accurately propagated.
+
+- **Execution Hardening:** Eliminated the risk of daemon cloning and unauthorized shell executions by establishing a strict UID 0 root gatekeeper and a POSIX single instance lock at the C++ bootstrap layer. This zero-overhead, fail-fast mechanism guarantees exclusive ownership of kernel nodes, shielding the Rust backend from fatal PID collisions and mathematical race conditions during concurrent startup anomalies.
+
+- **Runtime Resilience:** Eliminated silent thread zombies during fatal panics by elevating local `SIGTERM` signals to a process-wide broadcast. Additionally, the engine fortifies the Android property FFI boundary against buffer overflows by enforcing strict memory copy length boundaries and guaranteed null-termination when reading raw system properties.
+
+- **RAM Hardening:** Guaranteed complete daemon immunity against kernel swapping and Android zRAM eviction by enforcing the `MCL_FUTURE` flag during the memory locking fallback sequence. This strictly pins the dynamically spawned Rust background threads and service vectors to physical memory, preventing destructive paging latency and preserving absolute responsiveness after the C++ bootstrap phase.
+
+- **App Optimization:** Reduced application complexity and footprint by removing daemon startup, restart, and telemetry functionality. The Companion App continues to support daemon termination, but configuration changes now require a device reboot to take effect, which securely restarts the daemon with the updated parameters. These features were removed because daemon control and telemetry operations could be blocked by restrictive Android security policies, resulting in inconsistent behavior across different devices. The user interface was also redesigned to reflect this new streamlined workflow, providing a cleaner, more intuitive experience for managing configurations.
+
+---
+
+## History (Archived)
+
+### v2.7
 - **Event Loop:** Fixed a critical timing race condition in `runtime.rs` by correctly updating `service.last_tick` inside the successful event execution branch, preventing heavy controller algorithms from incorrectly double-firing during timeout cycles.
 - **Kernel I/O:** Eliminated dummy `eventfd` allocations in time-based controllers (Blocker, Cleaner) by changing the handler interface to `Option<RawFd>`. This drastically reduces kernel memory footprint and `epoll` tracking slot waste.
 - **Thermal Predictor:** Rewrote the Smith Predictor history lookup from an O(N) iterative backward scan to an O(1) sliding-window approach using a moving tail pointer, heavily reducing CPU cycles during delay compensation.
@@ -17,12 +55,8 @@
 - **Service Recovery:** Fixed a critical File Descriptor (FD) hijacking vulnerability and FD leaks during daemon self-healing. Replaced unsafe raw integer (`i32`) passing with strict `OwnedFd` type-state semantics. Implemented `.try_clone()` for atomic `O_CLOEXEC` duplication (`F_DUPFD_CLOEXEC`), guaranteeing that recovering services like `SignalController` receive isolated descriptors without silently stealing recycled FDs from active background threads.
 - **Companion App:** Introduced an optional, root-powered Android application (Jetpack Compose) for seamless daemon management. It provides a GUI for real-time telemetry (CPU/RAM/Uptime polling), instant daemon lifecycle control (Start/Stop/Restart via `libsu`), and dynamic visual tuning of core modules and advanced kernel limits, securely bridging user inputs directly to the Magisk module's `config.ini` without requiring manual CLI interventions.
 
----
-
 ### v2.6 
 - **Refactor(cleaner):** Removed the active package cache logic (`reusable_pkg_cache` and `refresh_active_packages_cache`) in `CleanerWorker` to simplify the cleaning evaluation process, and lowered the `age_stale_media` threshold from 7 days to 3 days.
-
----
 
 ### v2.5
 - **Architecture:** Modernized the codebase by enforcing strict `clippy::pedantic` lints globally, replacing unsafe raw type casting with safe conversions, and utilizing modern inline string interpolation.
@@ -35,8 +69,6 @@
 - **I/O:** Integrated the `itoa` crate for lightning-fast, zero-allocation integer-to-string conversions during stream writes, and hardened security path validation by strictly limiting access to `/sys/` and `/proc/`.
 - **Reliability:** Hardened the daemon's core event loops against integer overflow panics during extreme uptimes by implementing safe bounds checking and saturating subtractions for `epoll` timeouts.
 
----
-
 ### v2.4
 - **Blocker:** Introduced a new Component Blocker service to selectively disable targeted GMS background tasks, reducing resource drain and unnecessary wakeups.
 - **Build:** Switched global optimization profile from Size (`-Oz`) to Speed (`-O3`) for both Native and Rust targets, prioritizing raw execution throughput over binary size.
@@ -44,16 +76,12 @@
 - **Polling:** Relaxed the minimum adaptive polling interval floor (50ms → 100ms) to reduce CPU cycle consumption during high-frequency sampling states.
 - **Config:** Updated runtime configuration loader to support the new `blocker` module toggle and initialization sequence.
 
----
-
 ### v2.3
 - **Cleaner:** Migrated internal signaling to eventfd via rustix, replacing dummy file handles to reduce syscall overhead and improve resource efficiency.
 - **Display:** Removed experimental touch-boost and refresh rate control to streamline architecture and reduce runtime overhead.
 - **Native:** Removed display service initialization logic and diagnostics from the C++ runtime, but retained the low-level SurfaceFlinger FFI bridge for future use.
 - **Memory:** Optimized resident footprint by constraining stack limits to 512KB and removing aggressive heap purging to streamline allocation dynamics.
 - **CPU:** Tuned scheduler update thresholds to minimize redundant sysfs writes and filter out transient fluctuations.
-
----
 
 ### v2.2
 
@@ -81,8 +109,6 @@
 - **Affinity Fallback:** Implemented fail-safe to default to all cores if topology metrics unreadable.
 - **Sysfs Helper:** Added `read_sysfs_long` for safe, error-tolerant kernel parameter reading during init.
 
----
-
 ### v2.1
 - **Memory:** Refined control behavior with bounded history tracking and smoother extfrag scaling
 - **Monitoring:** Improved vmstat parsing robustness by avoiding implicit default values
@@ -91,8 +117,6 @@
 - **Architecture:** Removed overengineered control paths and unused tunables
 - **Memory Usage:** Reduced runtime allocation overhead across control loops
 - **Polling:** Tightened adaptive polling bounds for more responsive and stable operation
-
----
 
 ### v2.0
 - **Core:** Shifted control flow toward unified predictive–reactive state-driven logic
@@ -106,8 +130,6 @@
 - **Precision:** Standardized control calculations on single-precision floating point
 - **Polling:** Tuned adaptive polling behavior for faster response and stable decay
 
----
-
 ### v1.9
 - **Core:** Implemented Closed-Loop PID Thermal Regulation
 - **Scheduling:** Enforced Daemon UClamp & Timer Slack Coalescing
@@ -117,10 +139,6 @@
 - **Diagnostics:** Implemented Granular Kernel Feature Discovery
 - **Optimization:** Optimized Memory Footprint via Immediate Decay (`mallopt`)
 - **Config:** Refactored Config Parser for Fault Tolerance
-
----
-
-## History (Archived)
 
 ### v1.8
 - Replaced integral PSI metrics with Real-Time Differential Load Sensing
